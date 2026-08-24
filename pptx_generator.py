@@ -27,7 +27,7 @@ from template_tokens import (
 MasterSource = Union[bytes, bytearray, BinaryIO, str, Path]
 
 # Reload marker for Streamlit — bump when injection logic changes
-_INJECT_VERSION = "2026-08-23-this-week-hymn-pptx-insert"
+_INJECT_VERSION = "2026-08-24-pptx-from-slides-v1"
 
 _PLACEHOLDER_ONLY_RE = re.compile(r"^\s*\{\{([A-Za-z0-9_]+)\}\}\s*$")
 
@@ -74,8 +74,8 @@ _COVER_EN_FONT_PT = 34
 _FONT_NAME = "Malgun Gothic"
 # Hard cap — hymn / scripture / creed: exactly 4 visual lines per slide
 _STRICT_LINES_PER_SLIDE = 4
-# Wide enough for normal hymnal lines; only wrap truly long lines at phrase breaks
-_STRICT_BODY_CHARS = 28
+# ~22 CJK chars fit a 9.6" body at 28pt; 28 was overflowing into the next line
+_STRICT_BODY_CHARS = 22
 _STRICT_BODY_FONT_PT = 28
 
 
@@ -131,8 +131,8 @@ def _set_run_font(
 
 def _wrap_phrase_line(line: str, max_chars: int) -> list[str]:
     """
-    Wrap only when needed. Prefer spaces / punctuation — never mid-phrase syllable chops
-    for normal hymnal / 교독문 lines.
+    Wrap only when needed. Prefer spaces / punctuation — never orphan commas
+    onto their own line, and avoid mid-phrase syllable chops for normal lines.
     """
     line = (line or "").strip()
     if not line:
@@ -142,12 +142,21 @@ def _wrap_phrase_line(line: str, max_chars: int) -> list[str]:
     if len(line) <= max_chars:
         return [line]
 
-    # Break candidates: whitespace and common Korean/Western punctuation
+    punct_only = re.compile(r"^[,，、·;；:：]+$")
     parts = re.split(r"(\s+|[,，、·;；:：])", line)
     out: list[str] = []
     cur = ""
     for part in parts:
         if not part:
+            continue
+        # Keep punctuation with the preceding phrase (never a lone "," slide line)
+        if punct_only.match(part):
+            if cur:
+                cur = cur + part
+            elif out:
+                out[-1] = out[-1] + part
+            else:
+                cur = part
             continue
         candidate = cur + part
         if len(candidate.rstrip()) <= max_chars:
@@ -157,14 +166,20 @@ def _wrap_phrase_line(line: str, max_chars: int) -> list[str]:
             out.append(cur.rstrip())
             cur = part.lstrip() if part.isspace() else part
         else:
-            # Oversized token — keep-all only as last resort
             from text_format import wrap_keep_all
 
             out.extend(wrap_keep_all(part.strip(), max_chars) or [part.strip()[:max_chars]])
             cur = ""
     if cur.strip():
         out.append(cur.rstrip())
-    return out if out else [line[:max_chars]]
+    # Final sweep: glue any residual punctuation-only lines
+    merged: list[str] = []
+    for ln in out if out else [line[:max_chars]]:
+        if merged and punct_only.match(ln.strip()):
+            merged[-1] = merged[-1] + ln.strip()
+        else:
+            merged.append(ln)
+    return merged
 
 
 def _strict_visual_lines(text: str) -> list[str]:
@@ -197,83 +212,23 @@ def _pages_keep_lines(full_text: str, *, lines_per_page: int = 4) -> list[str]:
 
 def _write_strict_line_slots(slide, shape, text: str, *, token_key: str) -> None:
     """
-    Replace one body textbox with 4 fixed-height single-line boxes.
-    Prevents PowerPoint from wrapping a paragraph into extra visual lines
-    that spill past the slide frame.
+    Fill creed / bible / responsive body as ONE wrapping text frame.
+
+    Older builds deleted the master box and spawned 4 non-wrapping slots, which
+    caused mid-phrase chops and glyphs spilling into the next line (looked like
+    overlapping text). Keep the designed frame and let PowerPoint wrap safely.
     """
+    del slide  # shape already belongs to the slide
     try:
-        left, top, width, height = int(shape.left), int(shape.top), int(shape.width), int(shape.height)
+        _clamp_shape_to_slide(shape)
     except Exception:
-        return
+        pass
     try:
-        shape._element.getparent().remove(shape._element)  # noqa: SLF001
+        tf = shape.text_frame
+        tf.word_wrap = True
     except Exception:
-        return
-
-    lines = _strict_visual_lines(text)
-    slots = _STRICT_LINES_PER_SLIDE
-    slot_h = max(int(Inches(0.70)), height // slots)
-    gap = int(Inches(0.06))
-    is_responsive = _is_responsive_token(token_key)
-    for i in range(slots):
-        line = lines[i] if i < len(lines) else ""
-        box_top = top + i * slot_h
-        box_h = max(int(Inches(0.55)), slot_h - gap)
-        if box_top + box_h > int(SAFE_BOTTOM):
-            box_h = max(int(Inches(0.45)), int(SAFE_BOTTOM) - box_top)
-        if box_h < int(Inches(0.4)):
-            break
-        box = slide.shapes.add_textbox(left, box_top, width, box_h)
-        box.name = token_key if i == 0 else f"{token_key}__L{i + 1}"
-        tf = box.text_frame
-        try:
-            tf.word_wrap = False  # one line only — never grow vertically
-            tf.auto_size = None
-            tf.vertical_anchor = MSO_ANCHOR.MIDDLE
-            tf.margin_left = Inches(0.08)
-            tf.margin_right = Inches(0.08)
-            tf.margin_top = Inches(0.02)
-            tf.margin_bottom = Inches(0.02)
-        except Exception:
-            pass
-        p = tf.paragraphs[0]
-        p.alignment = PP_ALIGN.LEFT if is_responsive else PP_ALIGN.CENTER
-        try:
-            p.line_spacing = 1.0
-            p.space_after = Pt(0)
-            p.space_before = Pt(0)
-        except Exception:
-            pass
-
-        role = _responsive_role(line) if is_responsive else None
-        if role and (":" in line or "：" in line):
-            m = re.match(r"^([^:：]+)([:：]\s*)(.*)$", line)
-            if m:
-                label, colon, rest = m.group(1), m.group(2), m.group(3)
-                color = _COLOR_LEADER if role == "leader" else _COLOR_CONG
-                run0 = p.add_run()
-                run0.text = label + colon
-                _set_run_font(run0, name=_FONT_NAME, size_pt=_STRICT_BODY_FONT_PT, bold=True, color=color)
-                run1 = p.add_run()
-                run1.text = rest
-                _set_run_font(run1, name=_FONT_NAME, size_pt=_STRICT_BODY_FONT_PT, bold=False, color=color)
-                continue
-
-        run = p.add_run()
-        run.text = line
-        color = _COLOR_BODY
-        bold = False
-        if role == "leader":
-            color, bold = _COLOR_LEADER, True
-        elif role == "cong":
-            color, bold = _COLOR_CONG, True
-        _set_run_font(
-            run,
-            name=_FONT_NAME,
-            size_pt=_STRICT_BODY_FONT_PT,
-            bold=bold,
-            color=color,
-        )
+        pass
+    _fill_textframe_multiline(shape.text_frame, text, token_key=token_key)
 
 
 def sanitize_token_map(tokens: dict[str, str]) -> dict[str, str]:
@@ -593,9 +548,9 @@ def _fill_textframe_multiline(tf, text: str, *, align=None, token_key: str | Non
     is_strict = _is_strict_paged_body(token_key)
     font_pt = _font_pt_for_token(token_key, sample)
     if is_strict:
-        # Ignore master sample size — fixed projection size for 4-line pages
+        # Projection pages: use the frame's real capacity, not an over-wide fixed width
         font_pt = _STRICT_BODY_FONT_PT
-        max_chars = _STRICT_BODY_CHARS
+        max_chars = min(_STRICT_BODY_CHARS, max(12, max_chars))
 
     logical = text.split("\n") if text else [""]
     if not logical:
@@ -628,10 +583,10 @@ def _fill_textframe_multiline(tf, text: str, *, align=None, token_key: str | Non
         )
     )
     if is_strict:
-        # Pre-wrap to visual lines and hard-cap — PPT must not reflow past the frame
+        # Soft-wrap long lines to frame width; keep ≤4 lines (continuation slides handle the rest)
         soft: list[str] = []
         for raw in logical:
-            soft.extend(_wrap_line(raw, _STRICT_BODY_CHARS))
+            soft.extend(_wrap_phrase_line(raw, max_chars))
         lines = soft[:_STRICT_LINES_PER_SLIDE] or [""]
     elif is_body or token_key == "ORDER_TEXT" or no_clip:
         lines = logical
@@ -1493,16 +1448,37 @@ def generate_worship_pptx(
     insert_this_week: bool = True,
 ) -> BytesIO:
     """
-    Open the user-provided master PPTX and inject weekly worship text only.
+    Build the Sunday worship deck from the same slide list as HTML.
 
-    Hymn numbers (e.g. 7장) are resolved to title + lyrics and written into
-    {{HYMN_1}}, {{HYMN_1_LYRICS}}, {{HYMN_1_SCORE}}, etc.
+    Master token injection is retired as the primary path — it caused overlapping
+    body text. Optional master / this_week args remain for API compatibility.
+    """
+    from pptx_from_slides import generate_worship_pptx_slides_first
 
-    When this_week PPT files exist, their slides are copied as-is after each
-    hymn intro (HYMN_1 / HYMN_2 / HYMN_3) — score images included, no rewrite.
+    out = generate_worship_pptx_slides_first(
+        data,
+        allow_remote=allow_remote,
+        master=master,
+        this_week_hymns=this_week_hymns,
+        insert_this_week=False,  # lyric slides already include hymn text
+    )
+    generate_worship_pptx.last_insert_notes = getattr(  # type: ignore[attr-defined]
+        generate_worship_pptx_slides_first, "last_insert_notes", []
+    )
+    _ = insert_this_week
+    return out
 
-    Line breaks are real paragraphs (Enter), never soft-break _x000B_ / \\v.
-    Each shape is filled from its own {{TOKEN}} so hymn slots do not cross-contaminate.
+
+def generate_worship_pptx_legacy_master(
+    data: WorshipData,
+    *,
+    master: Optional[MasterSource] = None,
+    allow_remote: bool = True,
+    this_week_hymns: Optional[list[Path]] = None,
+    insert_this_week: bool = True,
+) -> BytesIO:
+    """
+    Previous master-injection path (kept for emergency fallback only).
     """
     if master is None:
         raise ValueError(
@@ -1532,8 +1508,7 @@ def generate_worship_pptx(
     insert_notes: list[str] = []
     if insert_this_week:
         insert_notes = insert_this_week_hymn_decks(prs, this_week_hymns)
-    # Stash for callers / Streamlit toast (non-serialized side channel)
-    generate_worship_pptx.last_insert_notes = insert_notes  # type: ignore[attr-defined]
+    generate_worship_pptx_legacy_master.last_insert_notes = insert_notes  # type: ignore[attr-defined]
 
     buffer = BytesIO()
     prs.save(buffer)

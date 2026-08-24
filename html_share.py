@@ -41,7 +41,8 @@ def lan_ip() -> str:
 
 def share_url(filename: str = "worship_live.html", *, port: int | None = None) -> str:
     p = int(port or _port or DEFAULT_PORT)
-    return f"http://{lan_ip()}:{p}/{filename.lstrip('/')}"
+    # present=1 → iPad/iPhone opens worship slides instead of the desktop editor UI
+    return f"http://{lan_ip()}:{p}/{filename.lstrip('/')}?present=1"
 
 
 def is_running() -> bool:

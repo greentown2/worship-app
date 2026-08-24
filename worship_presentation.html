@@ -2,8 +2,14 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Worship PPT & PDF Generator</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#000000">
+    <meta name="apple-mobile-web-app-title" content="주일예배">
+    <link rel="manifest" href="worship.webmanifest">
+    <title>주일 예배 화면</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.8/dist/web/static/pretendard.css" />
     <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@400;600;700&display=swap" rel="stylesheet">
@@ -23,6 +29,21 @@
             color: var(--text-main);
             margin: 0;
             overflow-x: hidden;
+            -webkit-text-size-adjust: 100%;
+            touch-action: manipulation;
+        }
+        html, body {
+            height: 100%;
+            min-height: 100%;
+            min-height: -webkit-fill-available;
+            min-height: 100dvh;
+        }
+        html.is-presenting,
+        body.is-presenting {
+            overflow: hidden !important;
+            height: var(--vvh, 100dvh);
+            overscroll-behavior: none;
+            background: #000;
         }
         .font-serif {
             font-family: 'Noto Serif KR', serif;
@@ -31,19 +52,50 @@
             display: none;
             position: fixed;
             inset: 0;
+            width: 100%;
+            height: 100%;
+            height: var(--vvh, 100dvh);
             background-color: #000;
             z-index: 9999;
             flex-direction: column;
             justify-content: center;
             align-items: center;
+            touch-action: none;
+            -webkit-user-select: none;
+            user-select: none;
+            padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+            box-sizing: border-box;
         }
         #presentation-view.active {
             display: flex;
+        }
+        #presentation-view:fullscreen,
+        #presentation-view:-webkit-full-screen {
+            width: 100%;
+            height: 100%;
+            background: #000;
+        }
+        #presentation-view:fullscreen .slide-container,
+        #presentation-view:-webkit-full-screen .slide-container,
+        body.standalone-worship #presentation-view.active .slide-container,
+        body.touch-worship #presentation-view.active .slide-container {
+            width: 100%;
+            height: 100%;
+            max-width: none;
+            max-height: none;
+            box-shadow: none;
+            border-radius: 0;
+        }
+        @media all and (display-mode: standalone), all and (display-mode: fullscreen) {
+            header.app-chrome, .dashboard-layout, #mobile-present-gate {
+                display: none !important;
+            }
         }
         .slide-container {
             width: 100vw;
             height: 56.25vw;
             max-height: 100vh;
+            max-height: 100dvh;
             max-width: 177.78vh;
             background: radial-gradient(circle at center, #1a233a 0%, #0a0f1d 100%);
             position: relative;
@@ -51,6 +103,79 @@
             box-shadow: 0 0 50px rgba(0,0,0,0.8);
             display: flex;
             flex-direction: column;
+        }
+        /* iPhone / iPad: fill the whole screen for worship projection */
+        body.touch-worship #presentation-view.active .slide-container {
+            width: 100%;
+            height: 100%;
+            max-width: none;
+            max-height: none;
+            box-shadow: none;
+            border-radius: 0;
+        }
+        #mobile-present-gate {
+            display: none;
+            position: fixed;
+            inset: 0;
+            z-index: 8000;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 18px;
+            padding: 28px 24px;
+            padding-bottom: max(28px, env(safe-area-inset-bottom));
+            background: radial-gradient(circle at center, #1a233a 0%, #0a0f1d 100%);
+            text-align: center;
+        }
+        #mobile-present-gate .gate-btn {
+            width: min(420px, 92vw);
+            padding: 18px 22px;
+            border: 0;
+            border-radius: 14px;
+            background: linear-gradient(135deg, #2563eb, #4f46e5);
+            color: #fff;
+            font-size: 1.25rem;
+            font-weight: 700;
+            box-shadow: 0 10px 30px rgba(37, 99, 235, 0.35);
+        }
+        #mobile-present-gate .gate-hint {
+            color: #94a3b8;
+            font-size: 0.95rem;
+            line-height: 1.5;
+            max-width: 28rem;
+        }
+        @media (max-width: 1024px) {
+            body.touch-worship header.app-chrome,
+            body.touch-worship .dashboard-layout {
+                display: none !important;
+            }
+            body.touch-worship #mobile-present-gate:not(.hidden-gate) {
+                display: flex;
+            }
+            body.touch-worship.is-presenting #mobile-present-gate {
+                display: none !important;
+            }
+            .text-huge { font-size: 7.2vmin; }
+            .text-title { font-size: 5.4vmin; }
+            .text-lyric { font-size: 5.8vmin; line-height: 1.45; }
+            .text-body { font-size: 4.2vmin; line-height: 1.55; }
+            .slide-header { font-size: 3.2vmin; }
+            .slide-header .text-3xl { font-size: 3.4vmin !important; }
+        }
+        .present-nav-hint {
+            display: none;
+            position: absolute;
+            bottom: max(12px, env(safe-area-inset-bottom));
+            left: 0;
+            right: 0;
+            text-align: center;
+            color: rgba(255,255,255,0.45);
+            font-size: 12px;
+            z-index: 60;
+            pointer-events: none;
+        }
+        body.touch-worship.is-presenting .present-nav-hint {
+            display: block;
         }
         .slide-bg-decoration {
             position: absolute;
@@ -98,11 +223,94 @@
             min-height: 0;
             overflow-y: auto;
             box-sizing: border-box;
+            -webkit-overflow-scrolling: touch;
         }
         .slide-body.scripture-body {
             justify-content: flex-start;
-            padding-top: 3.5%;
-            padding-bottom: 7.5vh;
+            padding-top: 4%;
+            padding-bottom: 8vh;
+        }
+        /* iPad / iPhone: non-scripture ~center; scripture stays a bit higher */
+        body.touch-worship.is-presenting .slide-body {
+            justify-content: center;
+            padding-top: 4vmin;
+            padding-bottom: 8vmin;
+            padding-left: 5%;
+            padding-right: 5%;
+        }
+        body.touch-worship.is-presenting .slide-body.scripture-body {
+            justify-content: flex-start;
+            padding-top: 4.5vmin; /* one line higher so the last line stays visible */
+            padding-bottom: 16vmin;
+        }
+        body.touch-worship.is-presenting .slide-body > .text-body,
+        body.touch-worship.is-presenting .slide-body > .text-lyric {
+            margin-top: 0;
+            max-height: none;
+        }
+        body.touch-worship.is-presenting .text-lyric {
+            font-size: 5.2vmin;
+            line-height: 1.4;
+        }
+        body.touch-worship.is-presenting .text-body {
+            font-size: 3.9vmin;
+            line-height: 1.45;
+        }
+        body.touch-worship.is-presenting .text-huge {
+            font-size: 6.5vmin;
+        }
+        body.touch-worship.is-presenting .text-title {
+            font-size: 5vmin;
+        }
+        /* Cover (first page): slightly larger type; church footer bold 2×, raised mid-way */
+        body.touch-worship.is-presenting .cover-body .text-huge {
+            font-size: 8.2vmin;
+        }
+        body.touch-worship.is-presenting .cover-body .text-title {
+            font-size: 6.0vmin;
+        }
+        body.touch-worship.is-presenting .cover-body .cover-leader {
+            font-size: 3.4vmin;
+            margin-top: 1.8vmin;
+        }
+        body.touch-worship.is-presenting .cover-footer {
+            position: absolute;
+            left: 0;
+            right: 0;
+            bottom: 26%;
+            text-align: center;
+            font-size: 2.3vmin;
+            font-weight: 500;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            color: #94a3b8;
+            font-family: 'Noto Serif KR', serif;
+            padding: 0 5%;
+            line-height: 1.35;
+        }
+        body.touch-worship.is-presenting .order-list {
+            text-align: center !important;
+            margin-left: auto;
+            margin-right: auto;
+        }
+        .present-exit-btn {
+            display: none;
+            position: absolute;
+            top: max(10px, env(safe-area-inset-top));
+            right: max(12px, env(safe-area-inset-right));
+            z-index: 80;
+            width: 40px;
+            height: 40px;
+            border: 0;
+            border-radius: 999px;
+            background: rgba(15, 23, 42, 0.55);
+            color: rgba(255,255,255,0.75);
+            font-size: 18px;
+            line-height: 1;
+            pointer-events: auto;
+        }
+        body.touch-worship.is-presenting .present-exit-btn {
+            display: block;
         }
         .slide-footer {
             padding: 2% 5%;
@@ -140,7 +348,17 @@ window.WORSHIP_LOOKUP = {"hymns":{"1":"만복의 근원 하나님","2":"찬양 �
 <!-- WORSHIP_PAYLOAD -->
 </head>
 <body class="bg-slate-900 overflow-hidden">
-    <header class="bg-slate-800 border-b border-slate-700 h-[80px] flex items-center justify-between px-6 shadow-md z-20 relative">
+    <div id="mobile-present-gate" class="hidden-gate" aria-live="polite">
+        <div class="w-14 h-14 bg-gradient-to-br from-yellow-500 to-yellow-700 rounded-xl flex items-center justify-center shadow-lg mb-2">
+            <i class="fa-solid fa-cross text-white text-2xl"></i>
+        </div>
+        <h2 class="text-2xl font-serif font-bold text-white">주일 예배 화면</h2>
+        <p class="gate-hint" id="gateMainHint">주소창 없이 보려면 <b>전체화면으로 예배 시작</b>을 누르세요.<br>iPhone은 Safari <b>공유</b> → <b>홈 화면에 추가</b> 후 아이콘으로 열면 주소창이 사라집니다.</p>
+        <button type="button" class="gate-btn" id="btnStartFullscreen" onclick="startPresentation()">전체화면으로 예배 시작</button>
+        <p class="gate-hint" id="mobileSlideCountHint"></p>
+        <p class="gate-hint" id="fsHelpNote" style="display:none;color:#fbbf24;"></p>
+    </div>
+    <header class="app-chrome bg-slate-800 border-b border-slate-700 h-[80px] flex items-center justify-between px-6 shadow-md z-20 relative">
         <div class="flex items-center space-x-4">
             <div class="w-10 h-10 bg-gradient-to-br from-yellow-500 to-yellow-700 rounded-lg flex items-center justify-center shadow-lg">
                 <i class="fa-solid fa-cross text-white text-xl"></i>
@@ -377,6 +595,8 @@ window.WORSHIP_LOOKUP = {"hymns":{"1":"만복의 근원 하나님","2":"찬양 �
             <div class="absolute bottom-0 left-0 h-1 bg-slate-800 w-full z-50">
                 <div id="progress-bar" class="h-full bg-blue-500 w-0 transition-all duration-300"></div>
             </div>
+            <div class="present-nav-hint">← 밀기 · 왼쪽/오른쪽 탭으로 이동</div>
+            <button type="button" class="present-exit-btn" id="presentExitBtn" aria-label="예배 화면 종료" title="종료">×</button>
             <div id="control-hint" class="absolute top-4 left-1/2 transform -translate-x-1/2 bg-black/50 text-white/60 text-sm py-1.5 px-5 rounded-full z-50 transition-opacity duration-1000 font-sans shadow-lg">
                 키보드 스페이스바 또는 좌/우 방향키로 이동 · ESC로 종료
             </div>
@@ -391,6 +611,115 @@ window.WORSHIP_LOOKUP = {"hymns":{"1":"만복의 근원 하나님","2":"찬양 �
         let usedStreamlitSlides = false;
         let pptReady = false;
         let artifactsStale = false;
+        let usedFullscreen = false;
+        let touchStartX = null;
+        let touchStartY = null;
+        let touchStartAt = 0;
+        let suppressExitUntil = 0;
+
+        function isTouchWorshipDevice() {
+            try {
+                const coarse = window.matchMedia('(pointer: coarse)').matches;
+                const narrow = window.matchMedia('(max-width: 1024px)').matches;
+                const touch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+                return touch && (coarse || narrow || /iPad|iPhone|iPod|Android/i.test(navigator.userAgent));
+            } catch (e) {
+                return false;
+            }
+        }
+
+        function wantsPresentMode() {
+            try {
+                const q = new URLSearchParams(window.location.search);
+                if (q.get('present') === '1' || q.get('present') === 'true') return true;
+            } catch (e) {}
+            return isTouchWorshipDevice();
+        }
+
+        function nextPresentationSlide() {
+            if (!isPresenting) return;
+            if (currentPresentationIndex < slidesData.length - 1) {
+                currentPresentationIndex++;
+                updatePresentationView();
+            }
+        }
+
+        function prevPresentationSlide() {
+            if (!isPresenting) return;
+            if (currentPresentationIndex > 0) {
+                currentPresentationIndex--;
+                updatePresentationView();
+            }
+        }
+
+        function bindPresentationTouch() {
+            const view = document.getElementById('presentation-view');
+            if (!view || view.dataset.touchBound === '1') return;
+            view.dataset.touchBound = '1';
+
+            view.addEventListener('touchstart', (e) => {
+                if (!isPresenting || e.touches.length !== 1) return;
+                touchStartX = e.touches[0].clientX;
+                touchStartY = e.touches[0].clientY;
+                touchStartAt = Date.now();
+            }, { passive: true });
+
+            view.addEventListener('touchend', (e) => {
+                if (!isPresenting || touchStartX == null) return;
+                const t = e.changedTouches[0];
+                const dx = t.clientX - touchStartX;
+                const dy = t.clientY - touchStartY;
+                const dt = Date.now() - touchStartAt;
+                touchStartX = null;
+                touchStartY = null;
+
+                // Horizontal swipe
+                if (Math.abs(dx) >= 40 && Math.abs(dx) > Math.abs(dy) * 1.15) {
+                    if (dx < 0) nextPresentationSlide();
+                    else prevPresentationSlide();
+                    return;
+                }
+
+                // Tap zones only (no double-tap exit — that made the screen vanish mid-service)
+                if (dt < 350 && Math.abs(dx) < 18 && Math.abs(dy) < 18) {
+                    const w = window.innerWidth || 1;
+                    if (t.clientX > w * 0.62) nextPresentationSlide();
+                    else if (t.clientX < w * 0.38) prevPresentationSlide();
+                }
+            }, { passive: true });
+        }
+
+        function ensurePresentationVisible() {
+            if (!isPresenting) return;
+            const view = document.getElementById('presentation-view');
+            if (!view) return;
+            view.classList.add('active');
+            document.body.classList.add('is-presenting');
+            document.documentElement.classList.add('is-presenting');
+            if (isStandaloneWorship()) document.body.classList.add('standalone-worship');
+            const gate = document.getElementById('mobile-present-gate');
+            if (gate) gate.classList.add('hidden-gate');
+            syncViewportHeight();
+            // Scroll active scripture body to top so last lines stay reachable
+            const active = document.querySelector('.slide-content.active .slide-body');
+            if (active) {
+                try { active.scrollTop = 0; } catch (e) {}
+            }
+        }
+
+        async function recoverFullscreenIfNeeded() {
+            if (!isPresenting || suppressExitUntil > Date.now()) return;
+            if (isStandaloneWorship() || isFullscreenNow()) {
+                ensurePresentationVisible();
+                return;
+            }
+            ensurePresentationVisible();
+            // Soft recovery — may fail without gesture; CSS fullscreen still keeps slides visible
+            const view = document.getElementById('presentation-view');
+            if (view && isTouchWorshipDevice()) {
+                usedFullscreen = isFullscreenNow();
+            }
+        }
 
         function lookupData() {
             return (window.WORSHIP_PAYLOAD && window.WORSHIP_PAYLOAD.lookup) || window.WORSHIP_LOOKUP || { hymns: {}, hymnLyrics: {}, responsive: {}, scripture: {} };
@@ -1381,8 +1710,6 @@ window.WORSHIP_LOOKUP = {"hymns":{"1":"만복의 근원 하나님","2":"찬양 �
     <div class="body-tight" style="margin-top:4px">${bibleLines || '(본문 없음)'}</div>
     <h3>생명의 말씀</h3>
     <div class="body">${esc(sermon || '—')}</div>
-    <h3>찬송가</h3>
-    ${hymnHtml}
     <h3>교독문 · ${esc(respTitle)}</h3>
     <div class="body-tight">${respLines || '(교독문 없음)'}</div>
     <h3>사도신경</h3>
@@ -1425,12 +1752,83 @@ window.WORSHIP_LOOKUP = {"hymns":{"1":"만복의 근원 하나님","2":"찬양 �
                 updatePreview();
             }
             document.addEventListener('keydown', handleKeydown);
+            // Safari may drop native fullscreen briefly — never tear down the worship deck
             document.addEventListener('fullscreenchange', () => {
-                if (!document.fullscreenElement) exitPresentation();
+                if (!isPresenting) return;
+                if (!document.fullscreenElement) {
+                    usedFullscreen = false;
+                    ensurePresentationVisible();
+                } else {
+                    usedFullscreen = true;
+                }
             });
+            document.addEventListener('webkitfullscreenchange', () => {
+                if (!isPresenting) return;
+                if (!document.webkitFullscreenElement) {
+                    usedFullscreen = false;
+                    ensurePresentationVisible();
+                } else {
+                    usedFullscreen = true;
+                }
+            });
+            document.addEventListener('visibilitychange', () => {
+                if (document.visibilityState === 'visible' && isPresenting) {
+                    ensurePresentationVisible();
+                    setTimeout(() => recoverFullscreenIfNeeded(), 200);
+                }
+            });
+            window.addEventListener('pageshow', () => {
+                if (isPresenting) ensurePresentationVisible();
+            });
+            window.addEventListener('resize', () => {
+                if (isPresenting) {
+                    syncViewportHeight();
+                    hideBrowserChrome();
+                }
+            });
+            if (window.visualViewport) {
+                window.visualViewport.addEventListener('resize', () => {
+                    if (isPresenting) syncViewportHeight();
+                });
+                window.visualViewport.addEventListener('scroll', () => {
+                    if (isPresenting) syncViewportHeight();
+                });
+            }
+            const exitBtn = document.getElementById('presentExitBtn');
+            if (exitBtn) {
+                exitBtn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    exitPresentation();
+                });
+            }
+
+            // iPhone / iPad: hide tangled editor, show worship gate (or auto-present)
+            if (wantsPresentMode()) {
+                document.body.classList.add('touch-worship');
+                const gate = document.getElementById('mobile-present-gate');
+                if (gate) {
+                    gate.classList.remove('hidden-gate');
+                    const hint = document.getElementById('mobileSlideCountHint');
+                    if (hint && slidesData.length) hint.textContent = `슬라이드 ${slidesData.length}장`;
+                }
+                try {
+                    const q = new URLSearchParams(window.location.search);
+                    // Do NOT auto-start: iPad fullscreen needs a real tap gesture
+                    if (isStandaloneWorship() && slidesData.length) {
+                        document.body.classList.add('standalone-worship');
+                        setTimeout(() => startPresentation(), 80);
+                    } else if (q.get('present') === '1' || q.get('present') === 'true') {
+                        // Stay on gate so the user taps "전체화면으로 예배 시작"
+                        const btn = document.getElementById('btnStartFullscreen');
+                        if (btn) btn.focus();
+                    }
+                } catch (e) {}
+            }
+            bindPresentationTouch();
             setTimeout(() => {
                 const hint = document.getElementById('control-hint');
-                if (hint) hint.style.opacity = '0';
+                if (hint && !isTouchWorshipDevice()) hint.style.opacity = '0';
             }, 4000);
         };
 
@@ -1484,7 +1882,7 @@ window.WORSHIP_LOOKUP = {"hymns":{"1":"만복의 근원 하나님","2":"찬양 �
                 type: 'title',
                 title: '예배 순서',
                 subtitle: 'Order of Worship',
-                content: `<div class="grid grid-cols-1 gap-y-4 text-left w-full max-w-4xl mx-auto mt-8 text-2xl text-slate-200">${orderRows}</div>`,
+                content: `<div class="order-list grid grid-cols-1 gap-y-4 text-center w-full max-w-4xl mx-auto mt-8 text-2xl text-slate-200">${orderRows}</div>`,
             });
 
             // 1 hymn intro + lyrics
@@ -1613,16 +2011,16 @@ window.WORSHIP_LOOKUP = {"hymns":{"1":"만복의 근원 하나님","2":"찬양 �
 
             if (slide.type === 'cover') {
                 const extra = slide.extra
-                    ? `<p class="text-2xl text-slate-300 mt-6 tracking-wide">${slide.extra}</p>`
+                    ? `<p class="cover-leader text-2xl text-slate-300 mt-6 tracking-wide">${slide.extra}</p>`
                     : '';
                 html = `
-                    <div class="slide-body">
+                    <div class="slide-body cover-body">
                         <div class="w-24 h-1 bg-yellow-500 rounded-full mb-8"></div>
                         <h1 class="font-serif text-huge font-bold text-white mb-6 tracking-wide drop-shadow-2xl">${slide.title}</h1>
                         <p class="text-title text-blue-300 font-light tracking-widest">${slide.subtitle || ''}</p>
                         ${extra}
                     </div>
-                    <div class="absolute bottom-10 w-full text-center text-xl text-slate-400 font-serif tracking-widest uppercase">
+                    <div class="cover-footer absolute bottom-10 w-full text-center text-xl text-slate-400 font-serif tracking-widest uppercase">
                         ${slide.footer || ''}
                     </div>
                 `;
@@ -1661,13 +2059,26 @@ window.WORSHIP_LOOKUP = {"hymns":{"1":"만복의 근원 하나님","2":"찬양 �
                     </div>
                 `;
             }
-            else if (slide.type === 'scripture' || slide.type === 'responsive') {
+            else if (slide.type === 'scripture') {
                 html = `
                     <div class="slide-header">
                         <div class="text-3xl text-yellow-500 font-bold tracking-wider">${slide.header || ''}</div>
                         <div class="text-3xl text-slate-300">${slide.title || ''}</div>
                     </div>
                     <div class="slide-body scripture-body">
+                        <div class="text-body text-white w-full max-w-6xl mx-auto drop-shadow-lg">
+                            ${slide.content || ''}
+                        </div>
+                    </div>
+                `;
+            }
+            else if (slide.type === 'responsive') {
+                html = `
+                    <div class="slide-header">
+                        <div class="text-3xl text-yellow-500 font-bold tracking-wider">${slide.header || ''}</div>
+                        <div class="text-3xl text-slate-300">${slide.title || ''}</div>
+                    </div>
+                    <div class="slide-body">
                         <div class="text-body text-white w-full max-w-6xl mx-auto drop-shadow-lg">
                             ${slide.content || ''}
                         </div>
@@ -1757,9 +2168,100 @@ window.WORSHIP_LOOKUP = {"hymns":{"1":"만복의 근원 하나님","2":"찬양 �
                 }
             }
         }
+        function isStandaloneWorship() {
+            try {
+                if (window.navigator.standalone === true) return true;
+                if (window.matchMedia('(display-mode: standalone)').matches) return true;
+                if (window.matchMedia('(display-mode: fullscreen)').matches) return true;
+            } catch (e) {}
+            return false;
+        }
+
+        function isFullscreenNow() {
+            return !!(
+                document.fullscreenElement ||
+                document.webkitFullscreenElement ||
+                document.msFullscreenElement
+            );
+        }
+
+        function isIPhone() {
+            try {
+                if (/iPhone|iPod/i.test(navigator.userAgent || '')) return true;
+            } catch (e) {}
+            return false;
+        }
+
+        function syncViewportHeight() {
+            try {
+                const h = (window.visualViewport && window.visualViewport.height)
+                    ? window.visualViewport.height
+                    : window.innerHeight;
+                document.documentElement.style.setProperty('--vvh', `${Math.round(h)}px`);
+                const view = document.getElementById('presentation-view');
+                if (view && isPresenting) {
+                    view.style.height = `${Math.round(h)}px`;
+                }
+            } catch (e) {}
+        }
+
+        function hideBrowserChrome() {
+            syncViewportHeight();
+            try {
+                // Nudge Safari to collapse the URL bar when possible
+                const grow = Math.max(window.innerHeight, document.documentElement.clientHeight) + 80;
+                document.documentElement.style.minHeight = `${grow}px`;
+                window.scrollTo(0, 1);
+                setTimeout(() => {
+                    window.scrollTo(0, 0);
+                    document.documentElement.style.minHeight = '';
+                    syncViewportHeight();
+                }, 120);
+            } catch (e) {
+                syncViewportHeight();
+            }
+        }
+
+        async function enterTrueFullscreen(el) {
+            // iPhone: prefer documentElement; iPad/desktop: prefer the presentation node
+            const targets = isIPhone()
+                ? [document.documentElement, document.body, el]
+                : [el, document.documentElement, document.body];
+            for (const t of targets.filter(Boolean)) {
+                try {
+                    if (typeof t.requestFullscreen === 'function') {
+                        try {
+                            await t.requestFullscreen({ navigationUI: 'hide' });
+                        } catch (e0) {
+                            await t.requestFullscreen();
+                        }
+                        if (isFullscreenNow()) return true;
+                    }
+                } catch (e) {}
+                try {
+                    if (typeof t.webkitRequestFullscreen === 'function') {
+                        t.webkitRequestFullscreen();
+                        if (isFullscreenNow()) return true;
+                    }
+                } catch (e) {}
+                try {
+                    if (typeof t.webkitRequestFullScreen === 'function') {
+                        // Legacy Safari
+                        t.webkitRequestFullScreen(Element.ALLOW_KEYBOARD_INPUT || 1);
+                        if (isFullscreenNow()) return true;
+                    }
+                } catch (e) {}
+            }
+            return isFullscreenNow();
+        }
+
         async function startPresentation() {
             const view = document.getElementById('presentation-view');
             const wrapper = document.getElementById('fs-slides-wrapper');
+            if (!slidesData.length) {
+                alert('표시할 슬라이드가 없습니다. Streamlit에서 HTML을 다시 생성해 주세요.');
+                return;
+            }
 
             wrapper.innerHTML = '';
             slidesData.forEach((slide, index) => {
@@ -1774,25 +2276,65 @@ window.WORSHIP_LOOKUP = {"hymns":{"1":"만복의 근원 하나님","2":"찬양 �
 
             view.classList.add('active');
             isPresenting = true;
-            try {
-                if (view.requestFullscreen) {
-                    await view.requestFullscreen();
-                } else if (view.webkitRequestFullscreen) {
-                    await view.webkitRequestFullscreen();
-                } else if (view.msRequestFullscreen) {
-                    await view.msRequestFullscreen();
+            document.body.classList.add('is-presenting');
+            document.documentElement.classList.add('is-presenting');
+            if (isStandaloneWorship()) document.body.classList.add('standalone-worship');
+            const gate = document.getElementById('mobile-present-gate');
+            if (gate) gate.classList.add('hidden-gate');
+            bindPresentationTouch();
+            hideBrowserChrome();
+
+            usedFullscreen = false;
+            suppressExitUntil = Date.now() + 1500;
+            // Same user-gesture as the button tap (required on iPhone/iPad Safari)
+            const okFs = isStandaloneWorship() ? true : await enterTrueFullscreen(view);
+            usedFullscreen = isFullscreenNow();
+            hideBrowserChrome();
+            if (!okFs && !usedFullscreen && !isStandaloneWorship() && isTouchWorshipDevice()) {
+                const note = document.getElementById('fsHelpNote');
+                if (note) {
+                    note.style.display = 'block';
+                    note.innerHTML = isIPhone()
+                        ? 'iPhone에서 주소창을 완전히 숨기려면: 하단 <b>공유</b> → <b>홈 화면에 추가</b> → 홈 화면 <b>주일예배</b> 아이콘으로 다시 여세요.'
+                        : '주소창이 남으면: Safari <b>공유</b> → <b>홈 화면에 추가</b> → 추가한 아이콘으로 다시 여세요.';
                 }
-            } catch(e) {
-                console.warn("Fullscreen API failed, falling back to windowed mode.");
+            }
+            ensurePresentationVisible();
+            syncViewportHeight();
+            try {
+                if (screen.orientation && screen.orientation.lock) {
+                    await screen.orientation.lock('landscape').catch(() => {});
+                }
+            } catch (e) {}
+
+            const hint = document.getElementById('control-hint');
+            if (hint) {
+                hint.style.opacity = isTouchWorshipDevice() ? '0' : '1';
+                if (!isTouchWorshipDevice()) {
+                    setTimeout(() => { hint.style.opacity = '0'; }, 2500);
+                }
             }
         }
         function exitPresentation() {
             const view = document.getElementById('presentation-view');
             view.classList.remove('active');
             isPresenting = false;
-            if (document.fullscreenElement) {
-                document.exitFullscreen().catch(err => console.log(err));
+            document.body.classList.remove('is-presenting');
+            document.documentElement.classList.remove('is-presenting');
+            document.documentElement.style.removeProperty('--vvh');
+            if (view) view.style.height = '';
+            if (wantsPresentMode()) {
+                const gate = document.getElementById('mobile-present-gate');
+                if (gate) gate.classList.remove('hidden-gate');
             }
+            const fs = document.fullscreenElement || document.webkitFullscreenElement;
+            if (fs) {
+                const exitFs = document.exitFullscreen || document.webkitExitFullscreen;
+                if (exitFs) {
+                    try { exitFs.call(document); } catch (err) { console.log(err); }
+                }
+            }
+            usedFullscreen = false;
         }
         function updatePresentationView() {
             const slides = document.querySelectorAll('.slide-content');
@@ -1801,25 +2343,24 @@ window.WORSHIP_LOOKUP = {"hymns":{"1":"만복의 근원 하나님","2":"찬양 �
             const currentSlide = document.getElementById(`fs-slide-${currentPresentationIndex}`);
             if(currentSlide) {
                 currentSlide.classList.add('active');
+                const body = currentSlide.querySelector('.slide-body');
+                if (body) {
+                    try { body.scrollTop = 0; } catch (e) {}
+                }
             }
-            const progress = ((currentPresentationIndex + 1) / slidesData.length) * 100;
+            const progress = ((currentPresentationIndex + 1) / Math.max(slidesData.length, 1)) * 100;
             document.getElementById('progress-bar').style.width = `${progress}%`;
+            ensurePresentationVisible();
         }
         function handleKeydown(e) {
             if (!isPresenting) return;
             if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'PageDown') {
                 e.preventDefault();
-                if (currentPresentationIndex < slidesData.length - 1) {
-                    currentPresentationIndex++;
-                    updatePresentationView();
-                }
+                nextPresentationSlide();
             }
             else if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
                 e.preventDefault();
-                if (currentPresentationIndex > 0) {
-                    currentPresentationIndex--;
-                    updatePresentationView();
-                }
+                prevPresentationSlide();
             }
             else if (e.key === 'Escape') {
                 exitPresentation();

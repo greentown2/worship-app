@@ -21,7 +21,7 @@ ROOT = Path(__file__).resolve().parent
 TEMPLATE_PATH = ROOT / "worship_presentation.html"
 COVER_IMAGE_PATH = ROOT / "assets" / "crucifix_cover.png"
 
-_HTML_VERSION = "2026-08-24-cover-refine-v6"
+_HTML_VERSION = "2026-08-24-iphone-chrome-hide-v8"
 
 
 def _esc(text: str) -> str:
@@ -304,7 +304,7 @@ def build_presentation_slides(data: WorshipData, *, allow_remote: bool = True) -
             "title": "예배 순서",
             "subtitle": "Order of Worship",
             "content": (
-                '<div class="grid grid-cols-1 gap-y-4 text-left w-full max-w-4xl mx-auto mt-8 '
+                '<div class="order-list grid grid-cols-1 gap-y-4 text-center w-full max-w-4xl mx-auto mt-8 '
                 'text-2xl text-slate-200">'
                 + "".join(order_rows)
                 + "</div>"
@@ -570,4 +570,26 @@ def generate_worship_html(
         out = template.replace("<!-- WORSHIP_PAYLOAD -->", injection)
     else:
         out = template.replace("</head>", injection + "</head>", 1)
+
+    # PWA manifest next to shared HTML (iPad home-screen = true fullscreen)
+    try:
+        manifest = {
+            "name": "주일 예배 화면",
+            "short_name": "주일예배",
+            "start_url": "./worship_live.html?present=1",
+            "scope": "./",
+            "display": "fullscreen",
+            "orientation": "any",
+            "background_color": "#000000",
+            "theme_color": "#000000",
+            "lang": "ko",
+        }
+        (ROOT / "output").mkdir(parents=True, exist_ok=True)
+        (ROOT / "output" / "worship.webmanifest").write_text(
+            json.dumps(manifest, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+    except OSError:
+        pass
+
     return out.encode("utf-8")

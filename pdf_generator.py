@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-_PDF_VERSION = "2026-08-24-cover-refine-v6"
+_PDF_VERSION = "2026-08-24-creed-word-no-hymns-v8"
 
 from io import BytesIO
 from pathlib import Path
@@ -409,6 +409,22 @@ def _styles() -> dict[str, ParagraphStyle]:
             textColor=INK,
             spaceAfter=2,
         ),
+        "body_xs": ParagraphStyle(
+            "BodyXs",
+            fontName=FONT,
+            fontSize=6.6,
+            leading=9.2,
+            textColor=INK,
+            spaceAfter=1.5,
+        ),
+        "creed_sm": ParagraphStyle(
+            "CreedSm",
+            fontName=FONT,
+            fontSize=7.0,
+            leading=9.6,
+            textColor=INK,
+            spaceAfter=1.5,
+        ),
         "body_bold": ParagraphStyle(
             "BodyBold",
             fontName=FONT_BOLD,
@@ -617,8 +633,8 @@ def _section_rule() -> HRFlowable:
 
 
 def _flow_scripture_hymns(data: WorshipData, styles: dict, *, lyric_lines: int = 0) -> list:
-    """Inside right panel — scripture, hymn titles, responsive reading, creed."""
-    del lyric_lines  # lyrics no longer printed on this face
+    """Inside right panel — scripture, sermon, responsive, creed (no hymn list)."""
+    del lyric_lines
     story: list = [
         _para("WORD & HYMN", styles["face_tag"]),
     ]
@@ -630,7 +646,8 @@ def _flow_scripture_hymns(data: WorshipData, styles: dict, *, lyric_lines: int =
         if ref:
             story.append(_para(ref, styles["body_bold"]))
         if body:
-            story.append(_para(body, styles["body_sm"]))
+            style = styles["body_xs"] if len(body) > 280 else styles["body_sm"]
+            story.append(_para(body, style))
 
     if _clean(data.sermon_title) or _clean(data.sermon_subtitle):
         story.append(_para("생명의 말씀", styles["section"]))
@@ -640,30 +657,24 @@ def _flow_scripture_hymns(data: WorshipData, styles: dict, *, lyric_lines: int =
         if _clean(data.sermon_subtitle):
             story.append(_para(data.sermon_subtitle, styles["body_sm"]))
 
-    hymn_slots = (
-        ("1. 찬양과 기도", data.praise_hymn),
-        ("4. 찬송가", data.hymn),
-        ("8. 감사와 봉헌", data.offering_hymn),
-    )
-    hymn_rows = [(label, _hymn_line(h)) for label, h in hymn_slots if _hymn_line(h)]
-    if hymn_rows:
-        story.append(_para("찬송가", styles["section"]))
-        story.append(_section_rule())
-        for label, title in hymn_rows:
-            story.append(_para(f"{label}  ·  {title}", styles["body_bold"]))
-
     resp_title = _clean(data.responsive_reading_title) or "교독문"
     resp_body = _clean(data.responsive_reading)
     if resp_body:
-        story.append(_para(f"교독문 · {resp_title}" if resp_title != "교독문" else "교독문", styles["section"]))
+        story.append(
+            _para(
+                f"교독문 · {resp_title}" if resp_title != "교독문" else "교독문",
+                styles["section"],
+            )
+        )
         story.append(_section_rule())
-        story.append(_para(resp_body, styles["body_sm"]))
+        style = styles["body_xs"] if len(resp_body) > 320 else styles["body_sm"]
+        story.append(_para(resp_body, style))
 
     creed = _clean(data.apostles_creed)
     if creed:
         story.append(_para("사도신경", styles["section"]))
         story.append(_section_rule())
-        story.append(_para(creed, styles["body_sm"]))
+        story.append(_para(creed, styles["creed_sm"]))
 
     if len(story) <= 1:
         story.append(_para("성경 본문 · 교독문 · 사도신경을 입력하면 이 면에 표시됩니다.", styles["empty_hint"]))
@@ -861,7 +872,7 @@ def bulletin_preview_text(data: WorshipData) -> str:
             row += f"  —  {detail}"
         lines.append(row)
 
-    lines += ["", "[오른쪽] 오늘의 말씀 · 찬송 제목 · 교독 · 사도신경"]
+    lines += ["", "[오른쪽] 오늘의 말씀 · 교독 · 사도신경"]
     ref = _clean(data.scripture_reference)
     body = _clean(data.scripture_text)
     if ref:
@@ -869,16 +880,6 @@ def bulletin_preview_text(data: WorshipData) -> str:
     if body:
         lines.extend(body.splitlines())
     lines += ["", f"생명의 말씀  ·  {_clean(data.sermon_title) or '(제목 미입력)'}"]
-    lines.append("")
-    lines.append("찬송가")
-    for label, h in (
-        ("1. 찬양과 기도", data.praise_hymn),
-        ("4. 찬송가", data.hymn),
-        ("8. 감사와 봉헌", data.offering_hymn),
-    ):
-        title = _hymn_line(h)
-        if title:
-            lines.append(f"{label}  ·  {title}")
     resp = _clean(data.responsive_reading)
     if resp:
         lines += ["", f"교독문 · {_clean(data.responsive_reading_title) or '교독문'}", *resp.splitlines()]

@@ -550,11 +550,14 @@ def _publish_html_for_devices(html_bytes: bytes) -> dict:
 
 
 def _rebuild_pptx_for_data(data: WorshipData, *, allow_remote: bool, service_date) -> bytes | None:
-    """Build worship PPT from the same WorshipData used for HTML."""
-    master = st.session_state.get("master_pptx_bytes")
-    if not master:
-        return None
-    out = generate_worship_pptx(data, master=master, allow_remote=allow_remote)
+    """Build worship PPT from the same WorshipData / slide list used for HTML."""
+    data.include_hymn_lyrics = True
+    out = generate_worship_pptx(
+        data,
+        master=st.session_state.get("master_pptx_bytes"),
+        allow_remote=allow_remote,
+        insert_this_week=False,
+    )
     pptx_bytes = out.getvalue()
     base = Path(st.session_state.get("master_pptx_name") or "worship").stem
     st.session_state["pptx_file"] = pptx_bytes
@@ -1135,8 +1138,8 @@ def main():
         )
     ):
         st.rerun()
-    # PPT master has no lyric slides — always intro-only for worship deck
-    data.include_hymn_lyrics = False
+    # PPT is built from the same slide list as HTML (includes hymn lyric pages)
+    data.include_hymn_lyrics = True
 
     # this_week PPT files are merged into the master at HYMN_1/2/3 after generation
     try:
@@ -1277,29 +1280,27 @@ def main():
             except Exception as exc:
                 st.warning(f"마스터 갱신 중 문제: {exc}")
 
-        if st.session_state.get("master_pptx_bytes"):
-            try:
-                out = generate_worship_pptx(
-                    data,
-                    master=st.session_state["master_pptx_bytes"],
-                    allow_remote=allow_remote,
-                )
-                st.session_state["pptx_file"] = out.getvalue()
-                base = Path(st.session_state.get("master_pptx_name") or "worship").stem
-                st.session_state["pptx_name"] = f"{base}_{service_date.strftime('%Y%m%d')}.pptx"
-                st.session_state["pptx_fingerprint"] = content_fingerprint
-                notes = getattr(generate_worship_pptx, "last_insert_notes", None) or []
-                if notes:
-                    st.info("이번 주 찬송 PPT 삽입 · " + " · ".join(notes))
-            except Exception as exc:
-                import traceback
+        try:
+            out = generate_worship_pptx(
+                data,
+                master=st.session_state.get("master_pptx_bytes"),
+                allow_remote=allow_remote,
+                insert_this_week=False,
+            )
+            st.session_state["pptx_file"] = out.getvalue()
+            base = Path(st.session_state.get("master_pptx_name") or "worship").stem
+            st.session_state["pptx_name"] = f"{base}_{service_date.strftime('%Y%m%d')}.pptx"
+            st.session_state["pptx_fingerprint"] = content_fingerprint
+            notes = getattr(generate_worship_pptx, "last_insert_notes", None) or []
+            if notes:
+                st.info(" · ".join(notes))
+        except Exception as exc:
+            import traceback
 
-                st.session_state.pop("pptx_file", None)
-                st.session_state.pop("pptx_fingerprint", None)
-                st.error(f"PPT 주입 오류: {exc}")
-                st.code(traceback.format_exc())
-        elif make_both:
-            st.warning("PPT 마스터가 없어 주보만 생성했습니다.")
+            st.session_state.pop("pptx_file", None)
+            st.session_state.pop("pptx_fingerprint", None)
+            st.error(f"PPT 생성 오류: {exc}")
+            st.code(traceback.format_exc())
 
         # Only embed PPT/PDF that match this exact worship content
         pptx_for_html = None
@@ -1376,14 +1377,11 @@ def main():
             )
             if make_ppt:
                 try:
-                    if not st.session_state.get("master_pptx_bytes"):
-                        build_master_templates.build_master_pptx(bundled_master)
-                        st.session_state["master_pptx_bytes"] = bundled_master.read_bytes()
-                        st.session_state["master_pptx_name"] = "master_worship.pptx"
                     out = generate_worship_pptx(
                         data,
-                        master=st.session_state["master_pptx_bytes"],
+                        master=st.session_state.get("master_pptx_bytes"),
                         allow_remote=allow_remote,
+                        insert_this_week=False,
                     )
                     st.session_state["pptx_file"] = out.getvalue()
                     base = Path(st.session_state.get("master_pptx_name") or "worship").stem
