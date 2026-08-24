@@ -13,10 +13,68 @@ from bulletin_parser import (
     parse_multipage_bulletin,
     parse_uploaded_bulletin_multipage,
 )
+from text_normalize import normalize_breaks, normalize_line_list
+
+# Streamlit can keep stale modules in memory — always reload from disk
+import importlib
+
+import bulletin_parser
+import defaults
+import models
+import build_master_templates
+import data_enrich
+import hymn_lookup
+import html_presentation
+import lookup_bundle
+import pdf_generator
+import ppt_library
+import pptx_generator
+import pptx_slide_copy
+import responsive_lookup
+import scripture_lookup
+import template_tokens
+
+importlib.reload(defaults)
+importlib.reload(models)
+importlib.reload(scripture_lookup)
+importlib.reload(hymn_lookup)
+importlib.reload(responsive_lookup)
+importlib.reload(data_enrich)
+importlib.reload(bulletin_parser)
+importlib.reload(lookup_bundle)
+importlib.reload(build_master_templates)
+importlib.reload(template_tokens)
+importlib.reload(pdf_generator)
+importlib.reload(ppt_library)
+importlib.reload(pptx_slide_copy)
+importlib.reload(pptx_generator)
+importlib.reload(html_presentation)
+try:
+    scripture_lookup._load_common.cache_clear()
+except Exception:
+    pass
+try:
+    hymn_lookup._load_lyrics.cache_clear()
+    hymn_lookup._load_index.cache_clear()
+except Exception:
+    pass
+try:
+    responsive_lookup._load_readings.cache_clear()
+    responsive_lookup._load_index.cache_clear()
+except Exception:
+    pass
+
+from bulletin_parser import (
+    PAGE_ROLES,
+    ROLE_LABELS,
+    parse_multipage_bulletin,
+    parse_uploaded_bulletin_multipage,
+)
 from data_enrich import enrich_worship_data, hymn_label
 from defaults import (
     CHURCH_NAME_EN,
     CHURCH_NAME_KO,
+    CHURCH_NAME_KO_ALIASES,
     DEFAULT_APOSTLES_CREED,
     DEFAULT_BENEDICTION,
     DEFAULT_RESPONSIVE_READING,
@@ -24,15 +82,20 @@ from defaults import (
     DEFAULT_SERVICE_TITLE,
     DEFAULT_WORSHIP_PRAYER,
 )
-from hymn_lookup import lookup_hymn
 from models import HymnEntry, WorshipData
+from hymn_lookup import lookup_hymn, parse_hymn_number
+from html_presentation import generate_worship_html
 from pdf_generator import bulletin_preview_text, generate_worship_pdf
-from pptx_generator import generate_worship_pptx, scan_placeholders
+from pptx_generator import generate_worship_pptx, pptx_slide_previews, scan_placeholders
+from responsive_lookup import format_responsive_label, lookup_responsive, parse_responsive_number
 from scripture_lookup import lookup_scripture, verses_to_body
-from text_normalize import normalize_breaks, normalize_line_list
+
+DEFAULT_WORSHIP_LEADER = getattr(defaults, "DEFAULT_WORSHIP_LEADER", "엄영민 목사")
+
+_PDF_VERSION = getattr(pdf_generator, "_PDF_VERSION", "folded-letter")
 
 st.set_page_config(
-    page_title="Fullerton Villa Worship Generator",
+    page_title="Worship PPT & PDF Generator",
     page_icon="✝",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -41,20 +104,79 @@ st.set_page_config(
 st.markdown(
     """
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;600;700&display=swap');
-    html, body, [class*="css"] { font-family: "Noto Sans KR", "Malgun Gothic", sans-serif; }
-    .main .block-container { padding-top: 1.1rem; padding-bottom: 3rem; max-width: 980px; }
-    h1 { font-weight: 700 !important; letter-spacing: -0.02em; }
-    .subtitle { color: #4a5560; margin-top: -0.5rem; margin-bottom: 1rem; }
+    @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&family=Source+Serif+4:wght@600;700&display=swap');
+    :root {
+      --ink: #152019;
+      --muted: #5a665e;
+      --accent: #2f4a36;
+      --accent-soft: #e6efe8;
+      --line: #d5ddd7;
+      --panel: #f7faf8;
+    }
+    html, body, [class*="css"] {
+      font-family: "Noto Sans KR", "Malgun Gothic", sans-serif;
+      color: var(--ink);
+    }
+    .stApp {
+      background:
+        radial-gradient(1200px 500px at 10% -10%, #e8f0ea 0%, transparent 55%),
+        linear-gradient(180deg, #f4f7f5 0%, #eef3f0 100%);
+    }
+    .main .block-container { padding-top: 1.35rem; padding-bottom: 3.5rem; max-width: 1040px; }
+    h1 {
+      font-family: "Source Serif 4", "Noto Sans KR", serif !important;
+      font-weight: 700 !important;
+      letter-spacing: -0.03em !important;
+      color: var(--ink) !important;
+      font-size: 2.05rem !important;
+    }
+    .subtitle {
+      color: var(--muted);
+      margin-top: -0.35rem;
+      margin-bottom: 1.15rem;
+      font-size: 0.98rem;
+      letter-spacing: -0.01em;
+    }
+    [data-testid="stSidebar"] {
+      background: linear-gradient(180deg, #1c2a21 0%, #24362b 100%);
+      border-right: 1px solid #314539;
+    }
+    [data-testid="stSidebar"] * { color: #e7eee9 !important; }
+    [data-testid="stSidebar"] .stMarkdown p { color: #c5d2ca !important; }
     .bulletin-banner {
-        background: linear-gradient(135deg, #fbf8f1 0%, #e7efe6 100%);
-        border: 1px solid #b7c4b5; border-radius: 10px;
-        padding: 0.85rem 1.05rem; margin: 0.25rem 0 0.85rem 0;
+        background: linear-gradient(135deg, #f8fbf9 0%, var(--accent-soft) 100%);
+        border: 1px solid var(--line);
+        border-left: 4px solid var(--accent);
+        border-radius: 8px;
+        padding: 0.95rem 1.1rem;
+        margin: 0.35rem 0 1rem 0;
+        box-shadow: 0 1px 0 rgba(21,32,25,0.04);
     }
-    div[data-testid="stDownloadButton"] button {
-        background-color: #3d5a40; color: #fff; font-weight: 600; border: none;
+    div[data-testid="stDownloadButton"] button,
+    div[data-testid="stButton"] button[kind="primary"] {
+        background-color: var(--accent) !important;
+        color: #fff !important;
+        font-weight: 650 !important;
+        border: none !important;
+        border-radius: 8px !important;
     }
-    .order-step { font-weight: 700; color: #3d5a40; margin-top: 0.45rem; }
+    div[data-testid="stButton"] button {
+        border-radius: 8px !important;
+        border-color: var(--line) !important;
+    }
+    .order-step {
+        font-weight: 700;
+        color: var(--accent);
+        margin-top: 0.7rem;
+        padding: 0.35rem 0 0.15rem 0;
+        border-bottom: 1px solid var(--line);
+        letter-spacing: -0.01em;
+    }
+    div[data-testid="stVerticalBlockBorderWrapper"] {
+        background: var(--panel);
+        border: 1px solid var(--line) !important;
+        border-radius: 10px !important;
+    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -68,11 +190,14 @@ def _init_state():
         "service_title": DEFAULT_SERVICE_TITLE,
         "service_time": DEFAULT_SERVICE_TIME,
         "preacher": "",
+        "worship_leader": DEFAULT_WORSHIP_LEADER,
         "praise_num": "7",
         "praise_title": "",
         "apostles_creed": DEFAULT_APOSTLES_CREED,
-        "responsive_title": "교독문",
-        "responsive_body": DEFAULT_RESPONSIVE_READING,
+        "responsive_num": "13",
+        "responsive_title": "교독문 13번  ·  시편 23편",
+        "responsive_body": "",
+        "resolved_responsive": None,
         "hymn_num": "30",
         "hymn_title": "",
         "prayer_text": DEFAULT_WORSHIP_PRAYER,
@@ -95,13 +220,48 @@ def _init_state():
         "master_pptx_bytes": None,
         "master_pptx_name": "",
         "master_pptx_placeholders": [],
-        "include_lyrics_ppt": True,
+        "include_lyrics_ppt": False,
         "upload_parse_notes": [],
         "upload_raw_preview": "",
     }
     for k, v in defaults.items():
         if k not in st.session_state:
             st.session_state[k] = v
+
+    # Prefer current brand spelling — wipe legacy wrong names (esp. PPT leftovers)
+    _cko = (st.session_state.get("church_ko") or "").strip()
+    _aliases = set(CHURCH_NAME_KO_ALIASES) | {
+        "플러튼 빌라 교회",
+        "플로튼 장로교회",
+        "플로튼 장로 교회",
+    }
+    if (not _cko) or (_cko in _aliases) or ("플로튼" in _cko) or ("장로교회" in _cko.replace(" ", "")):
+        st.session_state["church_ko"] = CHURCH_NAME_KO
+    # Always use the full official English name on the cover
+    st.session_state["church_en"] = CHURCH_NAME_EN
+    if not (st.session_state.get("worship_leader") or "").strip():
+        st.session_state["worship_leader"] = DEFAULT_WORSHIP_LEADER
+    # Keep creed dense (no blank paragraph gaps); prefer user-saved template
+    _creed_now = (st.session_state.get("apostles_creed") or "").strip()
+    if _creed_now and "\n\n" in _creed_now.replace("\r\n", "\n"):
+        dense = "\n".join(ln.strip() for ln in _creed_now.splitlines() if ln.strip())
+        if dense:
+            st.session_state["apostles_creed"] = dense
+            _creed_now = dense
+    if not _creed_now:
+        st.session_state["apostles_creed"] = DEFAULT_APOSTLES_CREED
+
+    # Drop leftover 새번역 scripture body so the next lookup fills 개역개정
+    _sbody = (st.session_state.get("scripture_text_area") or "").strip()
+    if _sbody and (
+        scripture_lookup._looks_like_rnksv(_sbody)
+        or "새번역" in (st.session_state.get("scripture_reference_input") or "")
+    ):
+        st.session_state["scripture_text_area"] = ""
+        st.session_state["_pending_scripture_body"] = ""
+        ref_now = (st.session_state.get("scripture_reference_input") or "").replace(" (새번역)", "").strip()
+        if ref_now:
+            st.session_state["scripture_reference_input"] = ref_now
 
     # Apply pending widget values BEFORE any widgets are created
     pending = {
@@ -115,6 +275,9 @@ def _init_state():
         "_p_offering_title": "offering_title",
         "_pending_scripture_ref": "scripture_reference_input",
         "_pending_scripture_body": "scripture_text_area",
+        "_pending_responsive_title": "responsive_title",
+        "_pending_responsive_body": "responsive_body",
+        "_pending_responsive_num": "responsive_num",
     }
     for src, dst in pending.items():
         if src in st.session_state:
@@ -135,18 +298,41 @@ def _init_state():
                 plan["announcements"] = [int(x) for x in str(value).split(",") if x.strip().isdigit()]
                 continue
             st.session_state[key] = value
-            # Seed hymn lyric caches via local lookup
-            if key.endswith("_num") and value:
-                from hymn_lookup import lookup_hymn as _lh
-
-                hit = _lh(str(value), allow_remote=False)
-                if hit and hit.lyrics:
-                    st.session_state[f"lyrics_cache_{key}"] = list(hit.lyrics)
+            # Seed hymn lyric caches + titles via local lookup
+            if key in ("praise_num", "hymn_num", "offering_num") and value:
+                hit = lookup_hymn(str(value), allow_remote=False)
+                if hit:
+                    if hit.lyrics:
+                        st.session_state[f"lyrics_cache_{key}"] = list(hit.lyrics)
                     title_key = key.replace("_num", "_title")
-                    if title_key in st.session_state and not st.session_state.get(title_key):
+                    if hit.title and not (st.session_state.get(title_key) or "").strip():
                         st.session_state[title_key] = hit.title
+                    st.session_state[f"resolved_hymn_{key}"] = {
+                        "number": hit.number,
+                        "title": hit.title,
+                        "source": hit.source,
+                        "lyrics": len(hit.lyrics or []),
+                    }
         if plan:
             st.session_state["page_plan"] = plan
+        # Mark 교독문 / 성경 as resolved when upload filled them
+        if st.session_state.get("responsive_num") or st.session_state.get("responsive_body"):
+            rn = parse_responsive_number(str(st.session_state.get("responsive_num") or ""))
+            st.session_state["resolved_responsive"] = {
+                "number": rn or 0,
+                "title": st.session_state.get("responsive_title") or "",
+                "found": bool(st.session_state.get("responsive_body")),
+                "source": "upload",
+            }
+        if st.session_state.get("scripture_reference_input") and st.session_state.get(
+            "scripture_text_area"
+        ):
+            st.session_state["resolved_scripture"] = {
+                "reference": st.session_state.get("scripture_reference_input"),
+                "found": True,
+                "source": "upload",
+                "message": "",
+            }
 
 
 def _apply_multipage_bulletin(mp) -> None:
@@ -196,30 +382,47 @@ def _rebuild_plan_from_roles(role_map: dict[int, str]) -> dict[str, list[int]]:
     return plan
 
 
+def _lyrics_line_score(lines: list[str]) -> int:
+    body = [ln for ln in (lines or []) if (ln or "").strip()]
+    return len(body) * 10 + sum(len(ln) for ln in body)
+
+
 def _hymn_from_keys(num_key: str, title_key: str, *, allow_remote: bool) -> HymnEntry:
     num = normalize_breaks(st.session_state.get(num_key) or "").strip()
     title = normalize_breaks(st.session_state.get(title_key) or "").strip()
+    text_lyrics = normalize_line_list(
+        (st.session_state.get(f"lyrics_text_{num_key}") or "").splitlines()
+    )
     cached = normalize_line_list(st.session_state.get(f"lyrics_cache_{num_key}") or [])
+    seed = text_lyrics or cached
     if not (num or title):
-        return HymnEntry()
-    result = lookup_hymn(num or title, title, allow_remote=allow_remote)
+        return HymnEntry(lyrics=list(seed), include_lyrics=bool(seed))
+    # When a number is present, resolve title from the catalog (not a stale title)
+    result = lookup_hymn(
+        num or title,
+        "" if parse_hymn_number(num) else title,
+        allow_remote=allow_remote,
+    )
     if result:
-        lyrics = normalize_line_list(result.lyrics or cached or [])
-        # Prefer fuller of lookup vs cache
-        if cached and len(cached) > len(lyrics):
-            lyrics = cached
+        lyrics = normalize_line_list(result.lyrics or seed or [])
+        # Prefer editable textarea / fuller cache over thin lookup stubs
+        if seed and _lyrics_line_score(seed) >= _lyrics_line_score(lyrics):
+            lyrics = seed
+        catalog_title = result.title or title
         entry = HymnEntry(
             number=f"{result.number}장" if result.number else num,
-            title=result.title or title,
+            title=catalog_title,
             lyrics=lyrics,
             include_lyrics=True,
         )
     else:
-        entry = HymnEntry(number=num, title=title, lyrics=list(cached), include_lyrics=True)
+        entry = HymnEntry(number=num, title=title, lyrics=list(seed), include_lyrics=True)
     if entry.lyrics:
         st.session_state[f"lyrics_cache_{num_key}"] = entry.lyrics
-    elif cached:
-        entry.lyrics = list(cached)
+        if not (st.session_state.get(f"lyrics_text_{num_key}") or "").strip():
+            st.session_state[f"lyrics_text_{num_key}"] = "\n".join(entry.lyrics)
+    elif seed:
+        entry.lyrics = list(seed)
     return entry
 
 
@@ -228,30 +431,66 @@ def _build_worship_data(service_date, *, allow_remote: bool, force_lyrics: bool 
     ref = normalize_breaks(st.session_state.get("scripture_reference_input") or "").strip()
     if ref:
         result = lookup_scripture(ref, allow_remote=allow_remote)
-        if result.found and result.verses:
+        if (
+            result.found
+            and result.verses
+            and not scripture_lookup._looks_like_rnksv(result.verses)
+            and not scripture_lookup._is_bad_verses(result.verses)
+        ):
             full = normalize_breaks(verses_to_body(result.verses))
-            # Always prefer the complete looked-up range over a short/manual stub
-            if not body or len(full) >= len(body):
-                body = full
+            # Prefer freshly resolved 개역개정 text for PPT/PDF
+            body = full
             ref = result.reference or ref
+            # Queue body for the text area only — never rewrite the input with
+            # a labeled ref that used to break re-parsing (now also stripped).
+            if (st.session_state.get("scripture_text_area") or "").strip() != body:
+                st.session_state["_pending_scripture_body"] = body
+
+    resp_num = normalize_breaks(st.session_state.get("responsive_num") or "").strip()
+    resp_title = normalize_breaks(st.session_state.get("responsive_title") or "").strip()
+    resp_body = normalize_breaks(st.session_state.get("responsive_body") or "").strip()
+    resp_key = resp_num or resp_title
+    resp_incomplete = (not resp_body) or not ("인도자:" in resp_body and "회중:" in resp_body)
+    if resp_key and resp_incomplete:
+        hit = lookup_responsive(resp_key, allow_remote=allow_remote)
+        if hit.found and hit.body:
+            labeled = format_responsive_label(hit.number, hit.title)
+            resp_body = normalize_breaks(hit.body)
+            resp_title = labeled
+            if (st.session_state.get("responsive_body") or "").strip() != resp_body:
+                st.session_state["_pending_responsive_body"] = resp_body
+            if (st.session_state.get("responsive_title") or "").strip() != labeled:
+                st.session_state["_pending_responsive_title"] = labeled
+            if hit.number and str(st.session_state.get("responsive_num") or "").strip() != str(hit.number):
+                st.session_state["_pending_responsive_num"] = str(hit.number)
 
     data = WorshipData(
-        church_name_en=(st.session_state.get("church_en") or CHURCH_NAME_EN).strip(),
-        church_name_ko=(st.session_state.get("church_ko") or CHURCH_NAME_KO).strip(),
+        church_name_en=CHURCH_NAME_EN,
+        church_name_ko=(
+            CHURCH_NAME_KO
+            if (
+                ((st.session_state.get("church_ko") or "").strip() in set(CHURCH_NAME_KO_ALIASES))
+                or ("플로튼" in (st.session_state.get("church_ko") or ""))
+                or ("장로교회" in (st.session_state.get("church_ko") or "").replace(" ", ""))
+                or not (st.session_state.get("church_ko") or "").strip()
+            )
+            else (st.session_state.get("church_ko") or CHURCH_NAME_KO).strip()
+        ),
         service_title=(st.session_state.get("service_title") or DEFAULT_SERVICE_TITLE).strip(),
         date=service_date.strftime("%Y년 %m월 %d일"),
         service_time=(st.session_state.get("service_time") or DEFAULT_SERVICE_TIME).strip(),
         preacher=(st.session_state.get("preacher") or "").strip(),
+        worship_leader=(st.session_state.get("worship_leader") or DEFAULT_WORSHIP_LEADER).strip(),
         praise_hymn=_hymn_from_keys("praise_num", "praise_title", allow_remote=allow_remote),
         apostles_creed=(st.session_state.get("apostles_creed") or "").strip(),
-        responsive_reading_title=(st.session_state.get("responsive_title") or "").strip(),
-        responsive_reading=(st.session_state.get("responsive_body") or "").strip(),
+        responsive_reading_title=resp_title or resp_num,
+        responsive_reading=resp_body,
         hymn=_hymn_from_keys("hymn_num", "hymn_title", allow_remote=allow_remote),
         worship_prayer=(st.session_state.get("prayer_text") or "").strip(),
         worship_prayer_leader=(st.session_state.get("prayer_leader") or "").strip(),
         scripture_reference=ref,
         scripture_text=body,
-        response_hymn=_hymn_from_keys("response_num", "response_title", allow_remote=allow_remote),
+        response_hymn=HymnEntry(),  # removed from order — keep empty
         sermon_title=(st.session_state.get("sermon_title") or "").strip(),
         sermon_subtitle=(st.session_state.get("sermon_subtitle") or "").strip(),
         offering_hymn=_hymn_from_keys("offering_num", "offering_title", allow_remote=allow_remote),
@@ -289,60 +528,198 @@ def _build_worship_data(service_date, *, allow_remote: bool, force_lyrics: bool 
     return enrich_worship_data(data, allow_remote=allow_remote, force_hymn_lyrics=force_lyrics)
 
 
+def _on_hymn_num_change(num_key: str, title_key: str) -> None:
+    """Streamlit widget callback: hymn number → catalog title (ignore previous title)."""
+    want = parse_hymn_number(st.session_state.get(num_key) or "")
+    if not want:
+        return
+    allow = bool(st.session_state.get("_allow_remote", True))
+    prev = st.session_state.get(f"resolved_hymn_{num_key}") or {}
+    # Number drives the title — never keep the previous hymn's title as override
+    if prev.get("number") != want:
+        st.session_state.pop(f"lyrics_cache_{num_key}", None)
+        st.session_state.pop(f"lyrics_text_{num_key}", None)
+    hit = lookup_hymn(str(want), "", allow_remote=allow)
+    if not hit or not hit.number:
+        st.session_state[f"resolved_hymn_{num_key}"] = {
+            "number": want,
+            "title": "",
+            "source": "missing",
+            "lyrics": 0,
+        }
+        return
+    st.session_state[num_key] = str(hit.number)
+    if hit.title:
+        st.session_state[title_key] = hit.title
+    if hit.lyrics and getattr(hit, "found_lyrics", True):
+        st.session_state[f"lyrics_cache_{num_key}"] = list(hit.lyrics)
+    st.session_state[f"resolved_hymn_{num_key}"] = {
+        "number": hit.number,
+        "title": hit.title,
+        "source": getattr(hit, "source", "") or "",
+        "lyrics": len(hit.lyrics or []),
+    }
+
+
+def _on_responsive_num_change() -> None:
+    raw = (st.session_state.get("responsive_num") or "").strip()
+    want = parse_responsive_number(raw)
+    if not want:
+        return
+    allow = bool(st.session_state.get("_allow_remote", True))
+    hit = lookup_responsive(str(want), allow_remote=allow)
+    if not (hit.found and hit.body):
+        st.session_state["resolved_responsive"] = {
+            "number": want,
+            "title": "",
+            "found": False,
+            "source": "missing",
+        }
+        return
+    st.session_state["responsive_num"] = str(hit.number)
+    st.session_state["responsive_title"] = format_responsive_label(hit.number, hit.title)
+    st.session_state["responsive_body"] = normalize_breaks(hit.body)
+    st.session_state["resolved_responsive"] = {
+        "number": hit.number,
+        "title": hit.title,
+        "found": True,
+        "source": hit.source,
+    }
+
+
+def _on_scripture_ref_change() -> None:
+    ref = (st.session_state.get("scripture_reference_input") or "").strip()
+    if not ref:
+        return
+    allow = bool(st.session_state.get("_allow_remote", True))
+    result = lookup_scripture(ref, allow_remote=allow)
+    parsed = scripture_lookup.parse_scripture_reference(ref)
+    if (
+        result.found
+        and result.verses
+        and not scripture_lookup._looks_like_rnksv(result.verses)
+        and not scripture_lookup._is_bad_verses(result.verses)
+    ):
+        if parsed:
+            st.session_state["scripture_reference_input"] = parsed.display
+        st.session_state["scripture_text_area"] = normalize_breaks(verses_to_body(result.verses))
+        st.session_state["resolved_scripture"] = {
+            "reference": parsed.display if parsed else (result.reference or ref),
+            "found": True,
+            "source": result.source,
+            "message": "",
+        }
+    else:
+        st.session_state["resolved_scripture"] = {
+            "reference": ref,
+            "found": False,
+            "source": getattr(result, "source", "") or "",
+            "message": getattr(result, "message", "") or "본문을 찾지 못했습니다.",
+        }
+
+
 def _hymn_inputs(label: str, num_key: str, title_key: str, fetch_key: str, allow_remote: bool):
+    """Hymn number → auto title only (lyrics optional later / PDF checkbox)."""
     st.markdown(f'<p class="order-step">{label}</p>', unsafe_allow_html=True)
-    c1, c2, c3 = st.columns([1.1, 3.2, 1.2])
+    st.session_state["_allow_remote"] = allow_remote
+
+    # Sync before widgets (covers IME / missed on_change when number already changed)
+    want = parse_hymn_number(st.session_state.get(num_key) or "")
+    resolved = st.session_state.get(f"resolved_hymn_{num_key}") or {}
+    title_now = (st.session_state.get(title_key) or "").strip()
+    if want and (resolved.get("number") != want or not title_now):
+        _on_hymn_num_change(num_key, title_key)
+
+    c1, c2 = st.columns([1.2, 3.8])
     with c1:
-        st.text_input("장번호", key=num_key, placeholder="예: 7")
+        st.text_input(
+            "장번호",
+            key=num_key,
+            placeholder="예: 7",
+            on_change=_on_hymn_num_change,
+            args=(num_key, title_key),
+        )
     with c2:
-        st.text_input("제목", key=title_key, placeholder="자동 입력 / 직접 수정")
-    with c3:
-        st.write("")
-        st.write("")
-        if st.button("가사 불러오기", key=fetch_key, use_container_width=True):
-            h = _hymn_from_keys(num_key, title_key, allow_remote=allow_remote)
-            st.session_state[f"_p_{num_key}"] = h.number
-            st.session_state[f"_p_{title_key}"] = h.title
-            if h.lyrics:
-                st.session_state[f"lyrics_cache_{num_key}"] = h.lyrics
-            st.rerun()
+        st.text_input("제목", key=title_key, placeholder="번호 입력 시 자동")
+    resolved = st.session_state.get(f"resolved_hymn_{num_key}")
     h = _hymn_from_keys(num_key, title_key, allow_remote=False)
-    if h.number or h.title:
-        st.caption(f"연동: **{hymn_label(h) or '—'}** · 가사 {len(h.lyrics)}줄")
+    if resolved and resolved.get("number") and resolved.get("source") != "missing":
+        st.caption(f"자동 제목: **{hymn_label(h) or resolved.get('title')}**")
+    elif h.number or h.title:
+        st.caption(f"연동: **{hymn_label(h) or '—'}**")
+    else:
+        st.caption("장번호를 입력하면 제목이 자동으로 채워집니다. (21세기 새찬송가)")
 
 
 def main():
     _init_state()
 
-    st.title("Fullerton Villa Worship Generator")
+    # First load: fill titles/bodies from default numbers without waiting for Enter
+    if not st.session_state.get("_bootstrapped_lookups"):
+        for nk, tk in (
+            ("praise_num", "praise_title"),
+            ("hymn_num", "hymn_title"),
+            ("offering_num", "offering_title"),
+        ):
+            if parse_hymn_number(st.session_state.get(nk) or "") and not (
+                st.session_state.get(tk) or ""
+            ).strip():
+                _on_hymn_num_change(nk, tk)
+        if parse_responsive_number(st.session_state.get("responsive_num") or "") and not (
+            st.session_state.get("responsive_body") or ""
+        ).strip():
+            _on_responsive_num_change()
+        if (st.session_state.get("scripture_reference_input") or "").strip() and not (
+            st.session_state.get("scripture_text_area") or ""
+        ).strip():
+            _on_scripture_ref_change()
+        st.session_state["_bootstrapped_lookups"] = True
+
+    st.title("Worship PPT & PDF Generator")
     st.markdown(
-        '<p class="subtitle">플로튼 빌라 교회 전통 예배 순서 · 인쇄용 주보 PDF · 시니어 PPT</p>',
+        '<p class="subtitle">'
+        "① 다중 페이지 주보 업로드 → ② 번호만으로 찬송·교독·성경 자동 채움 → "
+        "③ 주보 PDF · PPT · 예배화면 HTML을 <strong>한 번에</strong> 생성"
+        "</p>",
         unsafe_allow_html=True,
     )
 
     with st.sidebar:
+        st.header("통합 흐름")
+        st.markdown(
+            "1. **템플릿** — 다중 페이지 업로드/매핑  \n"
+            "2. **자동 불러오기** — 찬송·교독·성경 번호  \n"
+            "3. **일치 출력** — 주보 PDF + PPT + HTML"
+        )
+        st.divider()
         st.header("예배 순서")
         st.markdown(
             "1. 찬양과 기도  \n2. 사도신경  \n3. 교독문  \n4. 찬송가  \n"
-            "5. 예배의 기도  \n6. 오늘의 말씀  \n7. 찬양  \n8. 생명의 말씀  \n"
-            "9. 감사와 봉헌  \n10. 축도"
+            "5. 예배의 기도  \n6. 오늘의 말씀  \n7. 생명의 말씀  \n"
+            "8. 감사와 봉헌  \n9. 축도 · 안내  \n10. 소식 · 광고"
         )
         allow_remote = st.toggle("온라인 보조 검색", value=True)
         st.divider()
-        st.caption("Fullerton Villa Community Church")
+        st.caption("Worship PPT & PDF Generator")
+        if st.button("다른 PPT 자료 보관함 열기", use_container_width=True, key="sidebar_ppt_lib"):
+            ppt_library.open_folder(None)
+            st.toast("PPT 보관함 폴더를 열었습니다.")
+        if st.button("이번 주 사용할 PPT 열기", use_container_width=True, key="sidebar_ppt_week"):
+            ppt_library.open_folder("this_week")
+            st.toast("이번 주 사용할 PPT 폴더를 열었습니다.")
 
     # ===== TOP: Custom bulletin upload & auto-template parser =====
     st.markdown(
         '<div class="bulletin-banner">'
-        "<strong>주보 / 예배 순서 업로드</strong> — 다중 페이지 PDF · 여러 장의 사진 · 텍스트를 올리면 "
-        "페이지별로 분석하고, 인쇄 주보·PPT 섹션에 매핑합니다."
+        "<strong>1단계 · 예배 순서 템플릿 자동 생성 (다중 페이지)</strong> — "
+        "PDF·사진·텍스트를 올리면 페이지별로 분석하고, 입력칸·주보·PPT에 같은 내용으로 매핑합니다."
         "</div>",
         unsafe_allow_html=True,
     )
     st.subheader("예배 순서 템플릿 자동 생성 (다중 페이지)")
     st.caption(
-        "예배 순서 템플릿을 만들 수 있도록 현재의 주보나 예배 순서를 업로드해 주세요. "
-        "여러 파일을 올리면 순서대로 Page 1, 2… 로 처리됩니다."
+        "현재 주보나 예배 순서를 업로드하세요. 여러 파일이면 Page 1, 2… 로 처리되고, "
+        "찬송 장번호·교독문 번호·성경 구절이 보이면 본문까지 자동으로 채웁니다."
     )
 
     uploaded_files = st.file_uploader(
@@ -462,66 +839,37 @@ def main():
 
     # ===== Cover =====
     st.subheader("표지 · 기본 정보")
-    c1, c2 = st.columns(2)
-    with c1:
-        st.text_input("Church (EN)", key="church_en")
-        st.text_input("교회명 (KO)", key="church_ko")
-        st.text_input("예배 제목", key="service_title")
-    with c2:
-        service_date = st.date_input("날짜", value=date.today(), key="service_date")
-        st.text_input("예배 시간", key="service_time")
-        st.text_input("설교자", key="preacher")
-
-    # ===== PDF TOP (reads session state; syncs as fields below update) =====
-    st.markdown(
-        '<div class="bulletin-banner">'
-        "<strong>인쇄용 주일 주보 PDF</strong> — PPT와 분리된 "
-        "A4 인쇄용 주보입니다. 교회명·예배명·날짜·정돈된 예배 순서가 "
-        "한 흐름으로 배치되며, 슬라이드처럼 쪼개지거나 "
-        "<code>_x000B_</code> 줄바꿈 코드가 보이지 않습니다."
-        "</div>",
-        unsafe_allow_html=True,
+    st.caption("아래 항목은 왼쪽부터 한 줄씩 입력됩니다.")
+    st.text_input(
+        "Church (EN)",
+        value=CHURCH_NAME_EN,
+        disabled=True,
+        help="표지에는 항상 Fullerton Villa Community Church 가 표시됩니다.",
     )
-    st.subheader("인쇄용 주일 주보 PDF")
+    st.session_state["church_en"] = CHURCH_NAME_EN
+    st.text_input("교회명 (KO)", key="church_ko")
+    st.text_input("예배 제목", key="service_title")
+    service_date = st.date_input("날짜", value=date.today(), key="service_date")
+    st.text_input("예배 시간", key="service_time")
+    st.text_input("설교자", key="preacher")
+    st.text_input("예배 인도자", key="worship_leader", placeholder="엄영민 목사")
 
-    data = _build_worship_data(service_date, allow_remote=allow_remote, force_lyrics=True)
-
-    with st.expander("주보 내용 미리보기", expanded=True):
-        st.text(bulletin_preview_text(data))
-
-    pc1, pc2 = st.columns([2, 1])
-    with pc1:
-        make_pdf = st.button("주보 PDF 생성 / 새로고침", type="primary", use_container_width=True, key="make_pdf")
-    with pc2:
-        auto_pdf = st.toggle("자동 생성", value=True, key="auto_pdf")
-
-    if make_pdf or auto_pdf:
-        try:
-            st.session_state["pdf_file"] = generate_worship_pdf(data, allow_remote=allow_remote).getvalue()
-            st.session_state["pdf_name"] = f"bulletin_{service_date.strftime('%Y%m%d')}.pdf"
-            if make_pdf:
-                st.success("A4 인쇄용 주보 PDF 준비 완료.")
-        except Exception as exc:
-            st.error(f"PDF 오류: {exc}")
-
-    if "pdf_file" in st.session_state:
-        st.download_button(
-            "⬇ 인쇄용 주보 PDF 다운로드",
-            data=st.session_state["pdf_file"],
-            file_name=st.session_state.get("pdf_name", "bulletin.pdf"),
-            mime="application/pdf",
-            use_container_width=True,
-            key="dl_pdf",
-        )
-        try:
-            st.pdf(st.session_state["pdf_file"], height=520)
-        except Exception:
-            st.caption("다운로드한 PDF로 주보를 확인하세요.")
+    st.info(
+        "아래로 예배 순서를 입력하세요. **찬송 장번호 · 교독문 번호 · 성경 구절**만 넣어도 "
+        "제목·본문이 자동으로 채워지며, 같은 내용으로 주보 PDF · PPT · HTML이 함께 만들어집니다."
+    )
 
     st.markdown("---")
 
-    # ===== Order 1–10 =====
-    st.subheader("예배 순서 입력 (1–10)")
+    # ===== Order 1–9 =====
+    st.markdown(
+        '<div class="bulletin-banner">'
+        "<strong>2단계 · 예배 순서 입력 + 자동 불러오기</strong> — "
+        "번호를 바꾸면 찬송·교독문·성경 본문을 자동으로 가져옵니다."
+        "</div>",
+        unsafe_allow_html=True,
+    )
+    st.subheader("예배 순서 입력 (1–9)")
 
     _hymn_inputs("1. 찬양과 기도 (Praise & Prayer)", "praise_num", "praise_title", "fetch_praise", allow_remote)
 
@@ -529,7 +877,46 @@ def main():
     st.text_area("사도신경 전문", key="apostles_creed", height=150)
 
     st.markdown('<p class="order-step">3. 교독문</p>', unsafe_allow_html=True)
-    st.text_input("교독문 제목/번호", key="responsive_title")
+    st.session_state["_allow_remote"] = allow_remote
+
+    rc1, rc2, rc3 = st.columns([1.1, 2.6, 1.2])
+    with rc1:
+        st.text_input(
+            "번호",
+            key="responsive_num",
+            placeholder="예: 13",
+            on_change=_on_responsive_num_change,
+        )
+    with rc2:
+        st.text_input("제목", key="responsive_title", placeholder="번호 입력 시 자동")
+    with rc3:
+        st.write("")
+        st.write("")
+        if st.button("교독문 불러오기", use_container_width=True, key="fetch_responsive"):
+            raw = (st.session_state.get("responsive_num") or st.session_state.get("responsive_title") or "").strip()
+            result = lookup_responsive(raw, allow_remote=allow_remote)
+            st.session_state["resolved_responsive"] = {
+                "number": result.number,
+                "title": result.title,
+                "found": result.found,
+                "source": result.source,
+            }
+            if result.found:
+                st.session_state["responsive_num"] = str(result.number) if result.number else raw
+                st.session_state["responsive_title"] = format_responsive_label(
+                    result.number, result.title
+                )
+                st.session_state["responsive_body"] = normalize_breaks(result.body)
+            st.rerun()
+
+    resolved_r = st.session_state.get("resolved_responsive")
+    _want = parse_responsive_number(st.session_state.get("responsive_num") or "")
+    if resolved_r and resolved_r.get("found"):
+        st.success(
+            f"자동: **교독문 {resolved_r.get('number')}번 · {resolved_r.get('title')}** · `{resolved_r.get('source')}`"
+        )
+    elif _want and not (resolved_r and resolved_r.get("found")):
+        st.caption("번호를 입력(Enter)하면 교독문 본문이 자동으로 채워집니다.")
     st.text_area("교독문 본문 (`인도자:` / `회중:`)", key="responsive_body", height=140)
 
     _hymn_inputs("4. 찬송가 (Hymn)", "hymn_num", "hymn_title", "fetch_hymn", allow_remote)
@@ -542,146 +929,610 @@ def main():
         st.text_input("기도 인도", key="prayer_leader", placeholder="인도자")
 
     st.markdown('<p class="order-step">6. 오늘의 말씀</p>', unsafe_allow_html=True)
+    st.session_state["_allow_remote"] = allow_remote
+
     sc1, sc2 = st.columns([3, 1])
     with sc1:
-        st.text_input("성경 구절", key="scripture_reference_input", placeholder="예: 히브리서 4장 1-11절")
+        st.text_input(
+            "성경 구절",
+            key="scripture_reference_input",
+            placeholder="예: 히브리서 4:1-11 또는 히 4:1-11",
+            on_change=_on_scripture_ref_change,
+        )
     with sc2:
         st.write("")
         st.write("")
         if st.button("본문 불러오기", use_container_width=True, key="fetch_scripture"):
-            result = lookup_scripture(
-                st.session_state.get("scripture_reference_input", ""),
-                allow_remote=allow_remote,
-            )
-            st.session_state.resolved_scripture = {
-                "reference": result.reference,
-                "found": result.found,
-                "source": result.source,
-            }
-            if result.reference:
-                st.session_state["_pending_scripture_ref"] = result.reference
-            if result.verses:
-                st.session_state["_pending_scripture_body"] = normalize_breaks(verses_to_body(result.verses))
+            try:
+                from scripture_lookup import _load_common
+
+                _load_common.cache_clear()
+            except Exception:
+                pass
+            _on_scripture_ref_change()
             st.rerun()
     resolved = st.session_state.get("resolved_scripture")
     if resolved and resolved.get("found"):
-        st.success(f"불러옴: **{resolved['reference']}** · `{resolved['source']}`")
+        st.success(f"자동: **{resolved['reference']}** · `{resolved['source']}`")
+    elif resolved and resolved.get("message"):
+        st.warning(resolved["message"])
+    else:
+        st.caption("성경 구절을 입력(Enter)하면 교독문처럼 개역개정 본문이 자동으로 채워집니다. 예: 히브리서 4:1-11 또는 히 4:1-11")
     st.text_area("성경 본문", key="scripture_text_area", height=150)
 
-    _hymn_inputs("7. 찬양 (Hymn of Response)", "response_num", "response_title", "fetch_response", allow_remote)
-
-    st.markdown('<p class="order-step">8. 생명의 말씀</p>', unsafe_allow_html=True)
+    st.markdown('<p class="order-step">7. 생명의 말씀</p>', unsafe_allow_html=True)
     s1, s2 = st.columns(2)
     with s1:
         st.text_input("설교 제목", key="sermon_title", placeholder="생명의 말씀 제목")
     with s2:
         st.text_input("부제", key="sermon_subtitle")
 
-    _hymn_inputs("9. 감사와 봉헌 (Offering)", "offering_num", "offering_title", "fetch_offering", allow_remote)
+    _hymn_inputs("8. 감사와 봉헌 (Offering)", "offering_num", "offering_title", "fetch_offering", allow_remote)
 
-    st.markdown('<p class="order-step">10. 축도</p>', unsafe_allow_html=True)
-    b1, b2 = st.columns(2)
-    with b1:
-        st.text_input("축도", key="benediction")
-    with b2:
-        st.text_input("안내", key="closing_note")
-
-    st.markdown('<p class="order-step">소식 · 광고 (다중 페이지)</p>', unsafe_allow_html=True)
-    st.text_area(
-        "주보 2면 이후 소식/광고 본문",
-        key="announcements",
-        height=120,
-        placeholder="업로드한 광고·소식 페이지가 여기로 매핑됩니다.",
-    )
-
-    st.markdown("---")
-    st.subheader("예배 PPT — 마스터 템플릿 주입")
     st.markdown(
-        '<div class="bulletin-banner">'
-        "<strong>Step 1.</strong> Master Worship PPT (.pptx)를 업로드하세요 "
-        "(샘플: <code>templates/master_worship.pptx</code>). "
-        "슬라이드에 <code>{{HYMN_1}}</code>, <code>{{HYMN_1_LYRICS}}</code>, "
-        "<code>{{RESPONSIVE}}</code>, <code>{{BIBLE_TEXT}}</code>, "
-        "<code>{{SERMON_TITLE}}</code>, <code>{{HYMN_2}}</code> "
-        "같은 플레이스홀더를 넣어 두면 "
-        "<strong>Step 2</strong>에서 입력한 주간 내용만 그대로 치환됩니다. "
-        "레이아웃·글꼴·배경·순서는 절대 바꾸지 않습니다."
+        '<div class="bulletin-banner" style="margin-top:0.5rem;">'
+        "<strong>9–10 · 축도 · 안내 · 소식·광고</strong> — 주보·PPT·예배화면에 같이 들어갑니다."
         "</div>",
         unsafe_allow_html=True,
     )
+    st.markdown('<p class="order-step">9. 축도</p>', unsafe_allow_html=True)
+    b1, b2 = st.columns(2)
+    with b1:
+        st.text_input("축도", key="benediction", placeholder="예: 담임목사")
+    with b2:
+        st.text_input("안내", key="closing_note", placeholder="예: 다음에 또 만나요. 평안하세요.")
 
-    master_upload = st.file_uploader(
-        "Master Worship PPT 업로드 (.pptx)",
-        type=["pptx"],
-        key="master_pptx_uploader",
-        help="예: {{HYMN_1}}, {{HYMN_1_LYRICS}}, {{RESPONSIVE}}, {{BIBLE_TEXT}}, "
-        "{{SERMON_TITLE}}, {{HYMN_2}}. "
-        "악보 이미지는 도형 이름을 HYMN_1_SCORE_IMAGE 로 두고 data/hymn_scores/7.png 를 넣으면 주입됩니다.",
+    st.markdown('<p class="order-step">10. 소식 · 광고</p>', unsafe_allow_html=True)
+    st.text_area(
+        "소식 / 광고 본문 (한 줄에 하나씩)",
+        key="announcements",
+        height=140,
+        placeholder="예:\n예배 후 친교실에서 교제가 있습니다.\n차량 운행에 협조해 주세요.\n중보 기도 요청은 사무실로 연락해 주세요.",
+        help="주보 뒷면과 예배화면 광고 슬라이드에 동일하게 반영됩니다.",
     )
+
+    # ===== ONE shared WorshipData → bulletin PDF + PPT + HTML together =====
+    st.markdown("---")
+    st.markdown(
+        '<div class="bulletin-banner">'
+        "<strong>3단계 · 주보 PDF · PPT · 예배화면 일치 생성</strong> — "
+        "위 입력(또는 업로드 템플릿)이 <strong>같은 WorshipData</strong>로 주보·슬라이드·HTML에 반영됩니다."
+        "</div>",
+        unsafe_allow_html=True,
+    )
+    st.subheader("주보 PDF · 예배 PPT · 예배화면 HTML")
+    st.info(
+        "예배 PPT·HTML의 찬송은 **소개 슬라이드만** 나옵니다. "
+        "실제 가사는 미리 받아 둔 찬송가 PPT를 따로 재생하세요. "
+        "사도신경·교독문·성경 본문은 자동으로 채워집니다."
+    )
+    st.checkbox("주보 PDF에 찬송 가사 포함", key="include_lyrics_ppt")
+
+    st.caption(
+        f"주보 {_PDF_VERSION} · PPT {getattr(pptx_generator, '_INJECT_VERSION', 'dev')} · "
+        "Letter 11×8.5 접지 + 예배 PPT (찬송 소개만)"
+    )
+
+    data = _build_worship_data(
+        service_date,
+        allow_remote=allow_remote,
+        force_lyrics=bool(st.session_state.get("include_lyrics_ppt", False)),
+    )
+    # Apply queued widget updates on the next run (cannot mutate after widgets exist)
+    if any(
+        k in st.session_state
+        for k in (
+            "_pending_scripture_body",
+            "_pending_scripture_ref",
+            "_pending_responsive_body",
+            "_pending_responsive_title",
+            "_pending_responsive_num",
+        )
+    ):
+        st.rerun()
+    # PPT master has no lyric slides — always intro-only for worship deck
+    data.include_hymn_lyrics = False
+
+    # this_week PPT files are merged into the master at HYMN_1/2/3 after generation
+    try:
+        _week_fp = "|".join(
+            f"{p.name}:{p.stat().st_mtime_ns}:{p.stat().st_size}"
+            for p in ppt_library.list_this_week()
+        )
+    except Exception:
+        _week_fp = ""
+
+    content_fingerprint = (
+        f"{_PDF_VERSION}|{getattr(pptx_generator, '_INJECT_VERSION', '')}|"
+        f"{data.church_name_ko}|{data.worship_leader}|{data.sermon_title}|{data.sermon_subtitle}|"
+        f"{data.scripture_reference}|{(data.scripture_text or '')[:120]}|"
+        f"{data.responsive_reading_title}|{(data.responsive_reading or '')[:80]}|"
+        f"{data.preacher}|{(data.announcements or '')[:80]}|{data.praise_hymn.number}|"
+        f"{data.hymn.number}|{data.offering_hymn.number}|{data.benediction}|{data.date}|"
+        f"{(data.apostles_creed or '')[:40]}|{data.include_hymn_lyrics}|week:{_week_fp}"
+    )
+
+    templates_dir = Path(__file__).resolve().parent / "templates"
+    bundled_master = templates_dir / "master_worship.pptx"
+    design_ver = getattr(build_master_templates, "MASTER_DESIGN_VERSION", "dev")
+
+    current_design = str(st.session_state.get("master_design_version") or "")
+    is_manual_upload = current_design.startswith("upload:")
+    needs_bundled = (not st.session_state.get("master_pptx_bytes")) or (
+        not is_manual_upload and current_design != design_ver
+    )
+    if needs_bundled:
+        try:
+            build_master_templates.build_master_pptx(bundled_master)
+        except Exception as exc:
+            st.warning(f"마스터 재생성 중 문제: {exc}")
+        if bundled_master.exists():
+            st.session_state["master_pptx_bytes"] = bundled_master.read_bytes()
+            st.session_state["master_pptx_name"] = "master_worship.pptx"
+            st.session_state["master_design_version"] = design_ver
+            st.session_state.pop("pptx_file", None)
+            st.session_state.pop("pptx_name", None)
+            try:
+                st.session_state["master_pptx_placeholders"] = scan_placeholders(
+                    st.session_state["master_pptx_bytes"]
+                )
+            except Exception:
+                st.session_state["master_pptx_placeholders"] = []
+
+    mc1, mc2 = st.columns([2, 1])
+    with mc1:
+        master_upload = st.file_uploader(
+            "선택: Master PPT 직접 업로드 (.pptx)",
+            type=["pptx"],
+            key="master_pptx_uploader",
+            help="비워 두면 기본 시니어 마스터를 사용합니다.",
+        )
+    with mc2:
+        st.write("")
+        st.write("")
+        if st.button("최신 배경 마스터 다시 불러오기", use_container_width=True, key="reload_master"):
+            try:
+                build_master_templates.build_master_pptx(bundled_master)
+                st.session_state["master_pptx_bytes"] = bundled_master.read_bytes()
+                st.session_state["master_pptx_name"] = "master_worship.pptx"
+                st.session_state["master_design_version"] = design_ver
+                st.session_state.pop("pptx_file", None)
+                st.session_state.pop("content_fingerprint", None)
+                st.session_state["master_pptx_placeholders"] = scan_placeholders(
+                    st.session_state["master_pptx_bytes"]
+                )
+                st.success("마스터를 다시 불러왔습니다.")
+            except Exception as exc:
+                st.error(f"마스터 불러오기 실패: {exc}")
+
     if master_upload is not None:
         st.session_state["master_pptx_bytes"] = master_upload.getvalue()
         st.session_state["master_pptx_name"] = master_upload.name
+        st.session_state["master_design_version"] = f"upload:{master_upload.name}"
+        st.session_state.pop("pptx_file", None)
+        st.session_state.pop("content_fingerprint", None)
         try:
-            found = scan_placeholders(st.session_state["master_pptx_bytes"])
-            st.session_state["master_pptx_placeholders"] = found
+            st.session_state["master_pptx_placeholders"] = scan_placeholders(
+                st.session_state["master_pptx_bytes"]
+            )
         except Exception as exc:
             st.session_state["master_pptx_placeholders"] = []
             st.warning(f"마스터 파일을 읽는 중 문제가 있었습니다: {exc}")
 
-    if st.session_state.get("master_pptx_bytes"):
-        st.success(
-            f"마스터 준비됨: **{st.session_state.get('master_pptx_name', 'master.pptx')}** "
-            f"({len(st.session_state['master_pptx_bytes']) // 1024} KB)"
-        )
-        placeholders = st.session_state.get("master_pptx_placeholders") or []
-        if placeholders:
-            with st.expander("감지된 플레이스홀더", expanded=False):
-                st.code(", ".join("{{" + p + "}}" for p in placeholders))
-        else:
-            st.caption(
-                "플레이스홀더가 보이지 않습니다. PPT 텍스트 상자에 "
-                "`{{SERMON_TITLE}}` 형식으로 넣어 주세요."
-            )
-    else:
-        st.info("먼저 Master Worship PPT 파일을 업로드해 주세요.")
+    with st.expander("주보 내용 미리보기 (입력과 동일)", expanded=False):
+        st.text(bulletin_preview_text(data))
 
-    st.checkbox("가사 토큰도 채우기 ({{HYMN_1_LYRICS}} 등)", key="include_lyrics_ppt")
-    make_pptx = st.button(
-        "주간 내용 주입 → PPT 만들기",
-        type="primary",
-        use_container_width=True,
-        key="make_pptx",
-        disabled=not st.session_state.get("master_pptx_bytes"),
-    )
-    if make_pptx:
-        ppt_data = _build_worship_data(
-            service_date,
-            allow_remote=allow_remote,
-            force_lyrics=bool(st.session_state.get("include_lyrics_ppt", True)),
-        )
-        ppt_data.include_hymn_lyrics = bool(st.session_state.get("include_lyrics_ppt", True))
-        try:
-            out = generate_worship_pptx(
-                ppt_data,
-                master=st.session_state["master_pptx_bytes"],
-                allow_remote=allow_remote,
-            )
-            st.session_state["pptx_file"] = out.getvalue()
-            base = Path(st.session_state.get("master_pptx_name") or "worship").stem
-            st.session_state["pptx_name"] = f"{base}_{service_date.strftime('%Y%m%d')}.pptx"
-            st.success("마스터 파일에 주간 내용을 주입했습니다. 디자인·순서는 원본 그대로입니다.")
-        except Exception as exc:
-            st.error(f"PPT 주입 오류: {exc}")
-
-    if "pptx_file" in st.session_state:
-        st.download_button(
-            "⬇ 완성된 PowerPoint 다운로드 (.pptx)",
-            data=st.session_state["pptx_file"],
-            file_name=st.session_state.get("pptx_name", "worship.pptx"),
-            mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    gc1, gc2 = st.columns([2, 1])
+    with gc1:
+        make_both = st.button(
+            "주보 PDF + PPT + 예배화면 HTML 함께 만들기",
+            type="primary",
             use_container_width=True,
-            key="dl_pptx",
+            key="make_both",
         )
+    with gc2:
+        auto_both = st.toggle("자동 생성", value=True, key="auto_pdf")
+
+    engine_key = (
+        f"{_PDF_VERSION}|{design_ver}|{getattr(pptx_generator, '_INJECT_VERSION', '')}|"
+        f"{getattr(html_presentation, '_HTML_VERSION', 'html')}|hymn-intro"
+    )
+    engine_changed = st.session_state.get("output_engine") != engine_key
+    if engine_changed:
+        st.session_state.pop("pdf_file", None)
+        st.session_state.pop("pptx_file", None)
+        st.session_state.pop("html_file", None)
+        st.session_state.pop("content_fingerprint", None)
+        for _k in list(st.session_state.keys()):
+            if str(_k).startswith("lyrics_cache_"):
+                st.session_state.pop(_k, None)
+        st.session_state["output_engine"] = engine_key
+        st.info(f"주보 디자인 엔진이 갱신되었습니다 · {_PDF_VERSION}")
+
+    need_build = (
+        make_both
+        or engine_changed
+        or (auto_both and st.session_state.get("content_fingerprint") != content_fingerprint)
+    )
+    if need_build:
+        try:
+            st.session_state["pdf_file"] = generate_worship_pdf(data, allow_remote=allow_remote).getvalue()
+            st.session_state["pdf_name"] = f"bulletin_{service_date.strftime('%Y%m%d')}.pdf"
+        except Exception as exc:
+            st.error(f"PDF 오류: {exc}")
+
+        # Always rebuild bundled master so stale session PPT layouts cannot overflow
+        is_manual_upload = str(st.session_state.get("master_design_version") or "").startswith("upload:")
+        if not is_manual_upload:
+            try:
+                build_master_templates.build_master_pptx(bundled_master)
+                st.session_state["master_pptx_bytes"] = bundled_master.read_bytes()
+                st.session_state["master_pptx_name"] = "master_worship.pptx"
+                st.session_state["master_design_version"] = design_ver
+            except Exception as exc:
+                st.warning(f"마스터 갱신 중 문제: {exc}")
+
+        if st.session_state.get("master_pptx_bytes"):
+            try:
+                out = generate_worship_pptx(
+                    data,
+                    master=st.session_state["master_pptx_bytes"],
+                    allow_remote=allow_remote,
+                )
+                st.session_state["pptx_file"] = out.getvalue()
+                base = Path(st.session_state.get("master_pptx_name") or "worship").stem
+                st.session_state["pptx_name"] = f"{base}_{service_date.strftime('%Y%m%d')}.pptx"
+                notes = getattr(generate_worship_pptx, "last_insert_notes", None) or []
+                if notes:
+                    st.info("이번 주 찬송 PPT 삽입 · " + " · ".join(notes))
+            except Exception as exc:
+                import traceback
+
+                st.error(f"PPT 주입 오류: {exc}")
+                st.code(traceback.format_exc())
+        elif make_both:
+            st.warning("PPT 마스터가 없어 주보만 생성했습니다.")
+
+        try:
+            st.session_state["html_file"] = generate_worship_html(
+                data,
+                allow_remote=allow_remote,
+                pptx_bytes=st.session_state.get("pptx_file"),
+                pptx_name=st.session_state.get("pptx_name", "worship.pptx"),
+                pdf_bytes=st.session_state.get("pdf_file"),
+                pdf_name=st.session_state.get("pdf_name", "bulletin.pdf"),
+            )
+            st.session_state["html_name"] = f"worship_{service_date.strftime('%Y%m%d')}.html"
+            out_dir = Path(__file__).resolve().parent / "output"
+            out_dir.mkdir(parents=True, exist_ok=True)
+            live_path = out_dir / "worship_live.html"
+            live_path.write_bytes(st.session_state["html_file"])
+            st.session_state["html_live_path"] = str(live_path)
+        except Exception as exc:
+            import traceback
+
+            st.error(f"예배화면 HTML 오류: {exc}")
+            st.code(traceback.format_exc())
+
+        st.session_state["content_fingerprint"] = content_fingerprint
+        if make_both:
+            st.success("같은 입력으로 주보 PDF · PPT · 예배화면 HTML을 함께 만들었습니다.")
+
+    d1, d2, d3 = st.columns(3)
+    with d1:
+        if "pdf_file" in st.session_state:
+            st.download_button(
+                "⬇ 주보 PDF 다운로드",
+                data=st.session_state["pdf_file"],
+                file_name=st.session_state.get("pdf_name", "bulletin.pdf"),
+                mime="application/pdf",
+                use_container_width=True,
+                key="dl_pdf",
+            )
+        else:
+            st.caption("주보 PDF 대기 중")
+    with d2:
+        if "pptx_file" in st.session_state:
+            st.download_button(
+                "⬇ 예배 PPT 다운로드",
+                data=st.session_state["pptx_file"],
+                file_name=st.session_state.get("pptx_name", "worship.pptx"),
+                mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                use_container_width=True,
+                type="primary",
+                key="dl_pptx",
+            )
+        else:
+            make_ppt = st.button(
+                "⬇ 예배 PPT 다운로드",
+                use_container_width=True,
+                type="primary",
+                key="dl_pptx_make",
+                help="아직 PPT가 없으면 지금 생성한 뒤 다시 눌러 다운로드하세요.",
+            )
+            if make_ppt:
+                try:
+                    if not st.session_state.get("master_pptx_bytes"):
+                        build_master_templates.build_master_pptx(bundled_master)
+                        st.session_state["master_pptx_bytes"] = bundled_master.read_bytes()
+                        st.session_state["master_pptx_name"] = "master_worship.pptx"
+                    out = generate_worship_pptx(
+                        data,
+                        master=st.session_state["master_pptx_bytes"],
+                        allow_remote=allow_remote,
+                    )
+                    st.session_state["pptx_file"] = out.getvalue()
+                    base = Path(st.session_state.get("master_pptx_name") or "worship").stem
+                    st.session_state["pptx_name"] = f"{base}_{service_date.strftime('%Y%m%d')}.pptx"
+                    st.rerun()
+                except Exception as exc:
+                    st.error(f"PPT 생성 오류: {exc}")
+    with d3:
+        if "html_file" in st.session_state:
+            st.download_button(
+                "⬇ 예배화면 HTML",
+                data=st.session_state["html_file"],
+                file_name=st.session_state.get("html_name", "worship.html"),
+                mime="text/html",
+                use_container_width=True,
+                key="dl_html",
+            )
+            if st.button("브라우저에서 예배화면 열기", use_container_width=True, key="open_html"):
+                # Always refresh live HTML from the current template so new buttons appear
+                try:
+                    fresh = generate_worship_html(
+                        data,
+                        allow_remote=False,
+                        pptx_bytes=st.session_state.get("pptx_file"),
+                        pptx_name=st.session_state.get("pptx_name", "worship.pptx"),
+                        pdf_bytes=st.session_state.get("pdf_file"),
+                        pdf_name=st.session_state.get("pdf_name", "bulletin.pdf"),
+                    )
+                    st.session_state["html_file"] = fresh
+                    out_dir = Path(__file__).resolve().parent / "output"
+                    out_dir.mkdir(parents=True, exist_ok=True)
+                    live_path = out_dir / "worship_live.html"
+                    live_path.write_bytes(fresh)
+                    st.session_state["html_live_path"] = str(live_path)
+                except Exception as exc:
+                    st.warning(f"HTML 갱신 중 문제: {exc}")
+                live = st.session_state.get("html_live_path") or ""
+                if live and Path(live).is_file():
+                    import os
+                    import subprocess
+                    import sys
+
+                    if sys.platform.startswith("win"):
+                        os.startfile(live)  # type: ignore[attr-defined]
+                    elif sys.platform == "darwin":
+                        subprocess.run(["open", live], check=False)
+                    else:
+                        subprocess.run(["xdg-open", live], check=False)
+                    st.toast("최신 예배화면을 브라우저에서 열었습니다.")
+                else:
+                    st.warning("먼저 출력을 생성해 주세요.")
+        else:
+            st.caption("예배화면 HTML 대기 중")
+
+    # —— PPT library: directly under download / open buttons ——
+    ppt_library.ensure_dirs()
+    st.markdown("---")
+    lib_open, lib_toggle = st.columns([1, 2])
+    with lib_open:
+        if st.button("📂 다른 PPT 자료 보관함 열기", use_container_width=True, key="ppt_lib_open_below"):
+            ppt_library.open_folder(None)
+            st.toast("PPT 보관함 폴더를 열었습니다.")
+    with lib_toggle:
+        st.caption("찬송가·기타 PPT를 `library/ppt`에 보관 · 예배 마스터 PPT와 별도")
+
+    with st.expander("다른 PPT 자료 보관 (찬송가 · 기타)", expanded=True):
+        st.caption(
+            "외부에서 가져온 찬송가 PPT·기타 PPT를 "
+            f"`{ppt_library.LIBRARY_ROOT.relative_to(Path(__file__).resolve().parent)}` "
+            "폴더에 모아 둡니다."
+        )
+        cat_label = st.radio(
+            "보관 위치",
+            options=["hymns", "other"],
+            format_func=lambda k: ppt_library.CATEGORIES[k][0],
+            horizontal=True,
+            key="ppt_lib_category",
+        )
+        lib_uploads = st.file_uploader(
+            "PPT 파일 선택 (.pptx, 여러 개 가능)",
+            type=["pptx"],
+            accept_multiple_files=True,
+            key="ppt_lib_uploader",
+        )
+        b_save, b_open, b_open_all = st.columns(3)
+        with b_save:
+            do_save = st.button(
+                "자료 보관하기",
+                type="primary",
+                use_container_width=True,
+                key="ppt_lib_save",
+                disabled=not lib_uploads,
+            )
+        with b_open:
+            if st.button("이 폴더 열기", use_container_width=True, key="ppt_lib_open_cat"):
+                ppt_library.open_folder(cat_label)
+                st.toast(f"{ppt_library.CATEGORIES[cat_label][0]} 폴더를 열었습니다.")
+        with b_open_all:
+            if st.button("보관함 전체 열기", use_container_width=True, key="ppt_lib_open_root"):
+                ppt_library.open_folder(None)
+                st.toast("PPT 보관함 폴더를 열었습니다.")
+
+        if do_save and lib_uploads:
+            saved = []
+            for f in lib_uploads:
+                path = ppt_library.save_upload(cat_label, f.name, f.getvalue())
+                saved.append(path.name)
+            st.success(f"{len(saved)}개 보관: " + ", ".join(saved))
+            st.rerun()
+
+        stored = ppt_library.list_files()
+        if not stored:
+            st.caption("아직 보관된 PPT가 없습니다. 위에서 파일을 올려 「자료 보관하기」를 누르세요.")
+        else:
+            st.markdown(f"**보관 목록** · {len(stored)}개")
+            for cat_key, path in stored:
+                label = ppt_library.CATEGORIES[cat_key][0]
+                c1, c2, c3 = st.columns([5, 2, 1])
+                with c1:
+                    st.markdown(f"`{label}` · **{path.name}**")
+                    st.caption(f"{path.stat().st_size // 1024} KB")
+                with c2:
+                    st.download_button(
+                        "받기",
+                        data=path.read_bytes(),
+                        file_name=path.name,
+                        mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                        use_container_width=True,
+                        key=f"ppt_lib_dl_{cat_key}_{path.name}",
+                    )
+                with c3:
+                    if st.button("삭제", use_container_width=True, key=f"ppt_lib_del_{cat_key}_{path.name}"):
+                        if ppt_library.delete_file(path):
+                            st.toast(f"삭제: {path.name}")
+                            st.rerun()
+
+    with st.expander("이번 주 사용할 PPT (순서대로)", expanded=True):
+        st.caption(
+            "그 주에 쓸 찬송 PPT만 골라 **순서**로 모아 둡니다. "
+            "예배 마스터 PPT 생성 시 **손대지 않고 그대로** 삽입됩니다 "
+            "(1번째→찬양/기도, 2번째→찬송가, 3번째→감사/봉헌). "
+            f"폴더: `{ppt_library.THIS_WEEK_DIR.relative_to(Path(__file__).resolve().parent)}`"
+        )
+        week_uploads = st.file_uploader(
+            "이번 주 PPT 추가 (.pptx, 선택 순서대로 맨 뒤에 붙음)",
+            type=["pptx"],
+            accept_multiple_files=True,
+            key="ppt_week_uploader",
+        )
+        w1, w2, w3 = st.columns(3)
+        with w1:
+            do_week = st.button(
+                "순서에 추가",
+                type="primary",
+                use_container_width=True,
+                key="ppt_week_add",
+                disabled=not week_uploads,
+            )
+        with w2:
+            if st.button("이번 주 폴더 열기", use_container_width=True, key="ppt_week_open"):
+                ppt_library.open_folder("this_week")
+                st.toast("이번 주 사용할 PPT 폴더를 열었습니다.")
+        with w3:
+            if st.button("이번 주 목록 비우기", use_container_width=True, key="ppt_week_clear"):
+                n = ppt_library.clear_this_week()
+                st.toast(f"{n}개 삭제했습니다.")
+                st.rerun()
+
+        if do_week and week_uploads:
+            added = []
+            for f in week_uploads:
+                path = ppt_library.add_to_this_week(f.name, f.getvalue())
+                added.append(ppt_library.this_week_label(path))
+            st.success("추가됨: " + " → ".join(added))
+            st.rerun()
+
+        # Optional: pick from library into this week
+        lib_for_week = ppt_library.list_files()
+        if lib_for_week:
+            pick_opts = {
+                f"{ppt_library.CATEGORIES[k][0]} · {p.name}": str(p)
+                for k, p in lib_for_week
+            }
+            picked = st.multiselect(
+                "보관함에서 이번 주로 가져오기",
+                options=list(pick_opts.keys()),
+                key="ppt_week_from_lib",
+            )
+            if st.button("선택한 보관 자료를 이번 주 순서에 추가", use_container_width=True, key="ppt_week_from_lib_go"):
+                for label in picked:
+                    ppt_library.add_library_file_to_this_week(Path(pick_opts[label]))
+                st.success(f"{len(picked)}개 추가")
+                st.rerun()
+
+        week_list = ppt_library.list_this_week()
+        if not week_list:
+            st.caption("아직 이번 주 목록이 비어 있습니다. PPT를 올려 「순서에 추가」하세요.")
+        else:
+            st.markdown(f"**이번 주 재생 순서** · {len(week_list)}개")
+            for path in week_list:
+                c1, c2, c3, c4, c5 = st.columns([5, 1, 1, 1, 1])
+                with c1:
+                    st.markdown(f"**{ppt_library.this_week_label(path)}**")
+                    st.caption(f"{path.stat().st_size // 1024} KB")
+                with c2:
+                    if st.button("↑", use_container_width=True, key=f"ppt_week_up_{path.name}"):
+                        ppt_library.move_this_week(path, -1)
+                        st.rerun()
+                with c3:
+                    if st.button("↓", use_container_width=True, key=f"ppt_week_dn_{path.name}"):
+                        ppt_library.move_this_week(path, 1)
+                        st.rerun()
+                with c4:
+                    st.download_button(
+                        "받기",
+                        data=path.read_bytes(),
+                        file_name=path.name,
+                        mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                        use_container_width=True,
+                        key=f"ppt_week_dl_{path.name}",
+                    )
+                with c5:
+                    if st.button("삭제", use_container_width=True, key=f"ppt_week_del_{path.name}"):
+                        ppt_library.remove_this_week(path)
+                        st.rerun()
+
+    tab_pdf, tab_pptx, tab_html = st.tabs(
+        ["주보 PDF 미리보기", "예배 PPT 미리보기", "예배화면 HTML"]
+    )
+    with tab_pdf:
+        if "pdf_file" in st.session_state:
+            try:
+                st.pdf(st.session_state["pdf_file"], height=520)
+            except Exception:
+                st.caption("다운로드한 PDF로 주보를 확인하세요.")
+        else:
+            st.caption("주보 PDF가 아직 없습니다. 위 버튼으로 생성해 주세요.")
+    with tab_pptx:
+        if "pptx_file" in st.session_state:
+            try:
+                slides = pptx_slide_previews(st.session_state["pptx_file"])
+                st.caption(f"총 {len(slides)}장 · 찬송은 인트로만 (가사 슬라이드 없음)")
+                for i, text in enumerate(slides, 1):
+                    with st.expander(f"슬라이드 {i}", expanded=(i <= 3)):
+                        st.text(text)
+            except Exception as exc:
+                st.caption(f"PPT 미리보기를 만들 수 없습니다: {exc}")
+        else:
+            st.caption("예배 PPT가 아직 없습니다. 위 버튼으로 생성해 주세요.")
+    with tab_html:
+        if "html_file" in st.session_state:
+            try:
+                from html_presentation import build_presentation_slides
+
+                html_slides = build_presentation_slides(data, allow_remote=False)
+                st.caption(
+                    f"총 {len(html_slides)}장 · Streamlit 입력과 동일 · 찬송 인트로만 · "
+                    "전체화면은 브라우저에서 열어 사용"
+                )
+                for i, slide in enumerate(html_slides, 1):
+                    title = slide.get("title") or slide.get("header") or slide.get("type")
+                    sub = slide.get("subtitle") or ""
+                    with st.expander(f"화면 {i} · {title}", expanded=(i <= 3)):
+                        st.write(f"**유형:** {slide.get('type', '')}")
+                        if sub:
+                            st.write(sub)
+            except Exception as exc:
+                st.caption(f"HTML 미리보기를 만들 수 없습니다: {exc}")
+            live = st.session_state.get("html_live_path")
+            if live:
+                st.caption(f"로컬 파일: `{live}`")
+        else:
+            st.caption("예배화면 HTML이 아직 없습니다. 위 버튼으로 생성해 주세요.")
 
 
 if __name__ == "__main__":

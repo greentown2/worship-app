@@ -18,11 +18,12 @@ class HymnEntry:
 class WorshipData:
     # Cover / basic info
     church_name_en: str = "Fullerton Villa Community Church"
-    church_name_ko: str = "플로튼 빌라 교회"
+    church_name_ko: str = "플러톤 빌라 교회"
     service_title: str = "주일 예배"
     date: str = ""
     service_time: str = "오전 11:00"
     preacher: str = ""
+    worship_leader: str = "엄영민 목사"
 
     # 1. 찬양과 기도
     praise_hymn: HymnEntry = field(default_factory=HymnEntry)
@@ -71,7 +72,8 @@ class WorshipData:
     source_pages: List[dict] = field(default_factory=list)
 
     # Output options
-    include_hymn_lyrics: bool = True
+    # PPT uses hymn intro slides only; lyrics come from separate hymn PPTs
+    include_hymn_lyrics: bool = False
 
     # --- Compatibility helpers for older call sites ---
     @property

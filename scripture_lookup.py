@@ -12,7 +12,6 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Optional
 from urllib.error import URLError, HTTPError
-from urllib.parse import quote
 from urllib.request import Request, urlopen
 
 from text_normalize import normalize_breaks, normalize_line_list
@@ -21,7 +20,90 @@ DATA_DIR = Path(__file__).resolve().parent / "data"
 SCRIPTURE_PATH = DATA_DIR / "scripture_common.json"
 SCRIPTURE_CACHE_PATH = DATA_DIR / "scripture_cache.json"
 
-BIBLE_API_URL = "https://bible-api.com/{ref}?translation=web"
+# Use 개역개정 (GAE). Do not use 새번역 / English WEB.
+TRANSLATION_LABEL = "개역개정"
+# BSK reader expects book slug + chap (numeric bookcode is ignored / defaults to Genesis)
+BSKOREA_URL = (
+    "https://www.bskorea.or.kr/bible/korbibReadpage.php"
+    "?version=GAE&book={book}&chap={chapter}"
+)
+
+# bskorea book slugs (Protestant canon)
+_BOOK_SLUGS: dict[str, str] = {
+    "Genesis": "gen",
+    "Exodus": "exo",
+    "Leviticus": "lev",
+    "Numbers": "num",
+    "Deuteronomy": "deu",
+    "Joshua": "jos",
+    "Judges": "jdg",
+    "Ruth": "rut",
+    "1 Samuel": "1sa",
+    "2 Samuel": "2sa",
+    "1 Kings": "1ki",
+    "2 Kings": "2ki",
+    "1 Chronicles": "1ch",
+    "2 Chronicles": "2ch",
+    "Ezra": "ezr",
+    "Nehemiah": "neh",
+    "Esther": "est",
+    "Job": "job",
+    "Psalms": "psa",
+    "Proverbs": "pro",
+    "Ecclesiastes": "ecc",
+    "Song of Solomon": "sng",
+    "Isaiah": "isa",
+    "Jeremiah": "jer",
+    "Lamentations": "lam",
+    "Ezekiel": "ezk",
+    "Daniel": "dan",
+    "Hosea": "hos",
+    "Joel": "jol",
+    "Amos": "amo",
+    "Obadiah": "oba",
+    "Jonah": "jon",
+    "Micah": "mic",
+    "Nahum": "nam",
+    "Habakkuk": "hab",
+    "Zephaniah": "zep",
+    "Haggai": "hag",
+    "Zechariah": "zec",
+    "Malachi": "mal",
+    "Matthew": "mat",
+    "Mark": "mrk",
+    "Luke": "luk",
+    "John": "jhn",
+    "Acts": "act",
+    "Romans": "rom",
+    "1 Corinthians": "1co",
+    "2 Corinthians": "2co",
+    "Galatians": "gal",
+    "Ephesians": "eph",
+    "Philippians": "php",
+    "Colossians": "col",
+    "1 Thessalonians": "1th",
+    "2 Thessalonians": "2th",
+    "1 Timothy": "1ti",
+    "2 Timothy": "2ti",
+    "Titus": "tit",
+    "Philemon": "phm",
+    "Hebrews": "heb",
+    "James": "jas",
+    "1 Peter": "1pe",
+    "2 Peter": "2pe",
+    "1 John": "1jn",
+    "2 John": "2jn",
+    "3 John": "3jn",
+    "Jude": "jud",
+    "Revelation": "rev",
+}
+
+# Opening phrases unique enough to catch cross-book cache/scrape mixups
+_BOOK_FINGERPRINTS: dict[str, tuple[str, ...]] = {
+    "Genesis": ("태초에 하나님이 천지를",),
+    "John": ("태초에 말씀이 계시니라", "태초에 말씀이"),
+    "Psalms": ("복 있는 사람은", "여호와는 나의 목자시니"),
+}
 
 _BAD_MARKERS = (
     "로컬 자료에 없어",
@@ -191,13 +273,33 @@ class ScriptureResult:
     verses: list[str]
     source: str  # local | cache | remote | generated
     found: bool
+    message: str = ""
 
 
 def _normalize_ref_text(text: str) -> str:
     text = text.strip()
     text = text.replace("–", "-").replace("—", "-").replace("~", "-")
-    text = re.sub(r"\s+", " ", text)
+    # Strip translation labels so "히브리서 4:1-11 (개역개정)" still parses
+    text = re.sub(
+        r"\s*[\(\[]\s*(개역개정|새번역|개역한글|공동번역|NIV|ESV|KJV|GAE|RNKSV)\s*[\)\]]\s*$",
+        "",
+        text,
+        flags=re.I,
+    )
+    text = re.sub(r"\s+", " ", text).strip()
     return text
+
+
+def clean_verse_text(text: str) -> str:
+    """Remove BSK scrape noise (footnote chips like '5)') — keep biblical (셀라)."""
+    t = normalize_breaks(text or "").strip()
+    if not t:
+        return ""
+    # Footnote markers inserted mid-verse: "세상을 5) 심판하려"
+    t = re.sub(r"\s*\d{1,2}\)\s*", " ", t)
+    t = re.sub(r"[ \t]+", " ", t)
+    t = re.sub(r"\s+([,.;:?!…])", r"\1", t)
+    return t.strip()
 
 
 def _expected_verse_count(parsed: ParsedReference) -> int:
@@ -227,15 +329,33 @@ def _is_complete_range(parsed: ParsedReference, verses: list[str]) -> bool:
     return all(n in nums for n in range(parsed.verse_start or 1, (parsed.verse_end or parsed.verse_start or 1) + 1))
 
 
+def _is_stub_verse_line(line: str) -> bool:
+    """Detect fake lines like '16 요 3:16' (ref repeated, no real text)."""
+    s = normalize_breaks(line or "").strip()
+    if not s:
+        return False
+    if re.match(r"^\d+\s+\S+\s+\d+:\d+\s*$", s):
+        return True
+    if re.match(r"^\d+\s+[가-힣A-Za-z]+\s+\d+\s*:\s*\d+\s*$", s):
+        return True
+    return False
+
+
 def _is_bad_verses(verses: list[str]) -> bool:
-    blob = " ".join(normalize_line_list(verses)).lower()
-    return any(m.lower() in blob for m in _BAD_MARKERS)
+    lines = normalize_line_list(verses)
+    blob = " ".join(lines).lower()
+    if any(m.lower() in blob for m in _BAD_MARKERS):
+        return True
+    content = [ln for ln in lines if ln.strip() and ln.strip() not in {"아멘", "Amen"}]
+    if content and sum(1 for ln in content if _is_stub_verse_line(ln)) >= max(1, len(content) // 2):
+        return True
+    return False
 
 
 def _normalize_verses(verses: list[str]) -> list[str]:
     out: list[str] = []
     for v in normalize_line_list(verses):
-        t = normalize_breaks(v).strip()
+        t = clean_verse_text(v)
         if t:
             out.append(t)
     return out
@@ -310,12 +430,44 @@ def parse_scripture_reference(raw: str) -> Optional[ParsedReference]:
     )
 
 
+def _looks_like_rnksv(verses: list[str] | str) -> bool:
+    """Detect 새번역 phrasing — used only to avoid mixing it in when we want 개역개정."""
+    if isinstance(verses, str):
+        blob = verses
+    else:
+        blob = " ".join(verses or [])
+    blob = normalize_breaks(blob)
+    hits = 0
+    for marker in (
+        "외아들",
+        "사랑하셔서",
+        "주님은 나의 목자시니",
+        "부족함이 없습니다",
+        "하려는 것이다",
+        "구원하시려는 것이다",
+    ):
+        if marker in blob:
+            hits += 1
+    return hits >= 2
+
+
 @lru_cache(maxsize=1)
 def _load_common() -> dict[str, dict]:
+    """Load 개역개정 local stubs (scripture_common.json)."""
     if not SCRIPTURE_PATH.exists():
         return {}
-    with SCRIPTURE_PATH.open(encoding="utf-8") as f:
-        return json.load(f)
+    try:
+        with SCRIPTURE_PATH.open(encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    return {
+        k: v
+        for k, v in data.items()
+        if not str(k).startswith("_") and isinstance(v, dict)
+    }
 
 
 def _load_cache() -> dict[str, dict]:
@@ -341,8 +493,53 @@ def _save_cache(key: str, reference: str, verses: list[str]) -> None:
         pass
 
 
+def _verse_map_for_chapter(db: dict, parsed: ParsedReference) -> dict[int, str]:
+    """Merge all local/cache lines for this book+chapter into {verse_num: line}."""
+    by_num: dict[int, str] = {}
+    for key, entry in db.items():
+        p = parse_scripture_reference(entry.get("reference") or key)
+        if not p:
+            continue
+        if p.book_en.lower() != parsed.book_en.lower() or p.chapter != parsed.chapter:
+            continue
+        for line in entry.get("verses") or []:
+            line = normalize_breaks(str(line)).strip()
+            if not line or _is_stub_verse_line(line):
+                continue
+            vm = re.match(r"^(\d+)\s+(.*)$", line)
+            if not vm:
+                continue
+            n = int(vm.group(1))
+            body = vm.group(2).strip()
+            # Prefer real prose over short stubs
+            prev = by_num.get(n, "")
+            if n not in by_num or len(body) > len(re.sub(r"^\d+\s+", "", prev)):
+                by_num[n] = line
+    return by_num
+
+
 def _local_lookup(raw: str, parsed: ParsedReference) -> Optional[ScriptureResult]:
-    db = {**_load_common(), **_load_cache()}
+    common = _load_common()
+    # Prefer 개역개정 cache — skip leftover 새번역 / cross-book polluted entries
+    cache_raw = _load_cache()
+    cache = {}
+    for k, v in cache_raw.items():
+        if not isinstance(v, dict):
+            continue
+        verses = list(v.get("verses") or [])
+        if _looks_like_rnksv(verses):
+            continue
+        # Drop cache rows whose stored text belongs to a different book
+        p_key = parse_scripture_reference(v.get("reference") or k)
+        if p_key and not _verses_match_book(p_key, verses):
+            continue
+        if not _verses_match_book(parsed, verses) and (
+            (v.get("reference") or k).startswith(parsed.book_ko)
+            or parsed.display in (v.get("reference") or k)
+        ):
+            continue
+        cache[k] = v
+    db = {**common, **cache}
     candidates = [
         raw.strip(),
         _normalize_ref_text(raw),
@@ -352,8 +549,15 @@ def _local_lookup(raw: str, parsed: ParsedReference) -> Optional[ScriptureResult
         candidates.append(
             f"{parsed.book_ko} {parsed.chapter}:{parsed.verse_start}-{parsed.verse_end}"
         )
+        # Full book name form (요 → 요한복음)
+        if parsed.book_ko != "요한복음" and parsed.book_en.lower() == "john":
+            candidates.append(
+                f"요한복음 {parsed.chapter}:{parsed.verse_start}-{parsed.verse_end}"
+            )
     elif parsed.verse_start:
         candidates.append(f"{parsed.book_ko} {parsed.chapter}:{parsed.verse_start}")
+        if parsed.book_en.lower() == "john":
+            candidates.append(f"요한복음 {parsed.chapter}:{parsed.verse_start}")
     else:
         candidates.append(f"{parsed.book_ko} {parsed.chapter}편")
         candidates.append(f"{parsed.book_ko} {parsed.chapter}장")
@@ -362,13 +566,30 @@ def _local_lookup(raw: str, parsed: ParsedReference) -> Optional[ScriptureResult
         if key in db:
             entry = db[key]
             verses = _normalize_verses(list(entry.get("verses") or []))
-            if verses and not _is_bad_verses(verses):
+            if verses and not _is_bad_verses(verses) and not _looks_like_rnksv(verses):
+                ref = entry.get("reference") or parsed.display
+                if TRANSLATION_LABEL not in ref:
+                    ref = f"{ref} ({TRANSLATION_LABEL})"
                 return ScriptureResult(
-                    reference=entry.get("reference") or parsed.display,
+                    reference=ref,
                     verses=verses,
-                    source="local" if key in _load_common() else "cache",
+                    source="local" if key in common else "cache",
                     found=True,
                 )
+
+    # Assemble a contiguous range by merging every local entry for this chapter
+    if parsed.verse_start is not None:
+        by_num = _verse_map_for_chapter(db, parsed)
+        q_end = parsed.verse_end or parsed.verse_start
+        verses = [by_num[n] for n in range(parsed.verse_start, q_end + 1) if n in by_num]
+        verses = _normalize_verses(verses)
+        if verses and not _is_bad_verses(verses) and not _looks_like_rnksv(verses):
+            return ScriptureResult(
+                reference=f"{parsed.display} ({TRANSLATION_LABEL})",
+                verses=verses,
+                source="local",
+                found=True,
+            )
 
     for key, entry in db.items():
         p = parse_scripture_reference(entry.get("reference") or key)
@@ -396,7 +617,7 @@ def _local_lookup(raw: str, parsed: ParsedReference) -> Optional[ScriptureResult
                 line = normalize_breaks(line).strip()
                 vm = re.match(r"^(\d+)\s+(.*)$", line)
                 if not vm:
-                    if line:
+                    if line and not _is_stub_verse_line(line):
                         verses.append(line)
                     continue
                 n = int(vm.group(1))
@@ -413,45 +634,96 @@ def _local_lookup(raw: str, parsed: ParsedReference) -> Optional[ScriptureResult
     return None
 
 
-def _fetch_remote(parsed: ParsedReference) -> Optional[ScriptureResult]:
-    if parsed.verse_start and parsed.verse_end and parsed.verse_start != parsed.verse_end:
-        api_ref = f"{parsed.book_en} {parsed.chapter}:{parsed.verse_start}-{parsed.verse_end}"
-    elif parsed.verse_start:
-        api_ref = f"{parsed.book_en} {parsed.chapter}:{parsed.verse_start}"
-    else:
-        api_ref = f"{parsed.book_en} {parsed.chapter}"
+def _verses_match_book(parsed: ParsedReference, verses: list[str]) -> bool:
+    """Reject obvious cross-book mixups (e.g. Genesis text cached under Psalms)."""
+    blob = " ".join(verses or [])
+    if not blob.strip():
+        return False
+    if "태초에 하나님이 천지를" in blob and parsed.book_en.lower() != "genesis":
+        return False
+    if "태초에 말씀이" in blob and parsed.book_en.lower() != "john":
+        return False
+    return True
 
-    url = BIBLE_API_URL.format(ref=quote(api_ref))
+
+def _fetch_remote(parsed: ParsedReference) -> Optional[ScriptureResult]:
+    """Fetch 개역개정 (GAE) from Korean Bible Society reader — never English WEB."""
+    book = _BOOK_SLUGS.get(parsed.book_en)
+    if not book:
+        return None
+    url = BSKOREA_URL.format(book=book, chapter=parsed.chapter)
     req = Request(
         url,
         headers={
             "User-Agent": "GraceWorshipPPT/1.0 (church worship projection)",
-            "Accept": "application/json",
+            "Accept": "text/html,application/xhtml+xml",
         },
     )
     try:
-        with urlopen(req, timeout=10) as resp:
-            payload = json.loads(resp.read().decode("utf-8"))
-    except (URLError, HTTPError, TimeoutError, OSError, json.JSONDecodeError):
+        with urlopen(req, timeout=12) as resp:
+            html = resp.read().decode("utf-8", errors="replace")
+    except (URLError, HTTPError, TimeoutError, OSError):
         return None
 
-    verses: list[str] = []
-    for item in payload.get("verses") or []:
-        num = item.get("verse")
-        text = (item.get("text") or "").strip()
-        text = normalize_breaks(text).replace("\n", " ").strip()
-        if not text:
+    html_probe = re.sub(r"<[^>]+>", " ", html)
+    # Wrong default page guard (old bookcode URL always returned Genesis 1)
+    if parsed.book_en.lower() != "genesis" and "창세기 제 1 장" in html_probe:
+        if "시편" not in html_probe and parsed.book_ko not in html_probe:
+            return None
+
+    text = re.sub(r"<script[\s\S]*?</script>", " ", html, flags=re.I)
+    text = re.sub(r"<style[\s\S]*?</style>", " ", text, flags=re.I)
+    text = re.sub(r"<br\s*/?>", "\n", text, flags=re.I)
+    text = re.sub(r"</p>|</div>|</li>", "\n", text, flags=re.I)
+    text = re.sub(r"<[^>]+>", " ", text)
+    text = (
+        text.replace("&nbsp;", " ")
+        .replace("&amp;", "&")
+        .replace("&#39;", "'")
+        .replace("&quot;", '"')
+        .replace("\xa0", " ")
+    )
+    text = normalize_breaks(text)
+    text = re.sub(r"[ \t]+", " ", text)
+
+    found: dict[int, str] = {}
+    for m in re.finditer(
+        r"(?:(?<=\n)|(?<=\s)|^)(\d{1,3})\s+([가-힣A-Za-z][^\n]{4,})",
+        text,
+    ):
+        n = int(m.group(1))
+        body = clean_verse_text(m.group(2).replace("\n", " "))
+        body = re.split(r"\s+\d{1,3}\s+[가-힣]", body, maxsplit=1)[0].strip()
+        body = clean_verse_text(body)
+        if n < 1 or n > 200:
             continue
-        verses.append(f"{num} {text}" if num is not None else text)
+        if any(
+            x in body
+            for x in ("이전", "다음", "성경", "검색", "대한성서공회", "copyright", "개역개정")
+        ):
+            continue
+        if len(body) < 6:
+            continue
+        if n not in found or len(body) > len(found[n]):
+            found[n] = body
 
-    if not verses and payload.get("text"):
-        verses = _normalize_verses([payload["text"]])
+    if not found:
+        return None
 
-    if not verses or _is_bad_verses(verses):
+    vs = parsed.verse_start or min(found)
+    ve = parsed.verse_end or parsed.verse_start or max(found)
+    verses: list[str] = []
+    for n in range(vs, ve + 1):
+        if n in found:
+            verses.append(f"{n} {found[n]}")
+
+    if not verses or _is_bad_verses(verses) or _looks_like_rnksv(verses):
+        return None
+    if not _verses_match_book(parsed, verses):
         return None
 
     return ScriptureResult(
-        reference=parsed.display,
+        reference=f"{parsed.display} ({TRANSLATION_LABEL})",
         verses=verses,
         source="remote",
         found=True,
@@ -459,18 +731,13 @@ def _fetch_remote(parsed: ParsedReference) -> Optional[ScriptureResult]:
 
 
 def _generated_reading(parsed: ParsedReference) -> ScriptureResult:
-    """Last-resort readable lines — never an error/missing notice on slides."""
-    vs = parsed.verse_start or 1
-    ve = parsed.verse_end or vs
-    lines = [parsed.display, ""]
-    for n in range(vs, min(ve, vs + 11) + 1):
-        lines.append(f"{n} {parsed.book_ko} {parsed.chapter}:{n}")
-    lines += ["", "아멘"]
+    """Last resort when local/remote fail — do NOT invent fake verse stubs."""
     return ScriptureResult(
         reference=parsed.display,
-        verses=lines,
+        verses=[],
         source="generated",
-        found=True,
+        found=False,
+        message="개역개정 본문을 찾지 못했습니다. 구절을 확인하거나 본문을 직접 붙여 넣어 주세요.",
     )
 
 
@@ -479,53 +746,68 @@ def lookup_scripture(
     *,
     allow_remote: bool = True,
 ) -> ScriptureResult:
-    """Resolve a scripture reference to the full verse range for slides/PDF."""
+    """Resolve a scripture reference to the full verse range (개역개정)."""
     cleaned = normalize_breaks(raw or "").strip()
     if not cleaned:
         return ScriptureResult(
             reference="",
-            verses=["말씀을 함께 읽습니다.", "아멘"],
+            verses=[],
             source="generated",
-            found=True,
+            found=False,
+            message="성경 구절을 입력해 주세요.",
         )
 
     parsed = parse_scripture_reference(cleaned)
     if parsed:
         local = _local_lookup(cleaned, parsed)
-        if local and _is_complete_range(parsed, local.verses):
-            local.verses = _normalize_verses(local.verses)
-            return local
+        if local and local.verses and _looks_like_rnksv(local.verses):
+            local = None
 
-        # Prefer remote when local missing or incomplete for the requested range
-        if allow_remote:
-            remote = _fetch_remote(parsed)
-            if remote and _is_complete_range(parsed, remote.verses):
-                remote.reference = parsed.display
-                remote.verses = _normalize_verses(remote.verses)
-                _save_cache(parsed.display, remote.reference, remote.verses)
-                return remote
-
-        # Incomplete local is still better than generated stubs
-        if local and local.verses and not _is_bad_verses(local.verses):
+        # Prefer complete 개역개정 local, else remote 개역개정
+        if (
+            local
+            and _is_complete_range(parsed, local.verses)
+            and _verses_match_book(parsed, local.verses)
+        ):
             local.verses = _normalize_verses(local.verses)
+            if TRANSLATION_LABEL not in (local.reference or ""):
+                local.reference = f"{parsed.display} ({TRANSLATION_LABEL})"
             return local
 
         if allow_remote:
             remote = _fetch_remote(parsed)
-            if remote and remote.verses and not _is_bad_verses(remote.verses):
-                remote.reference = parsed.display
+            if (
+                remote
+                and remote.verses
+                and not _is_bad_verses(remote.verses)
+                and not _looks_like_rnksv(remote.verses)
+                and _verses_match_book(parsed, remote.verses)
+            ):
                 remote.verses = _normalize_verses(remote.verses)
+                remote.reference = f"{parsed.display} ({TRANSLATION_LABEL})"
                 _save_cache(parsed.display, remote.reference, remote.verses)
                 return remote
+
+        if (
+            local
+            and local.verses
+            and not _is_bad_verses(local.verses)
+            and _verses_match_book(parsed, local.verses)
+        ):
+            local.verses = _normalize_verses(local.verses)
+            if TRANSLATION_LABEL not in (local.reference or ""):
+                local.reference = f"{parsed.display} ({TRANSLATION_LABEL})"
+            return local
 
         return _generated_reading(parsed)
 
-    # Free-text heading — still give readable projection lines
+    # Unparseable reference — do NOT invent stub slides (they wipe real text in the UI)
     return ScriptureResult(
         reference=cleaned,
-        verses=[cleaned, "", "오늘의 말씀을 함께 읽습니다.", "아멘"],
+        verses=[],
         source="generated",
-        found=True,
+        found=False,
+        message="성경 구절을 인식하지 못했습니다. 예: 요한복음 3:16-17",
     )
 
 

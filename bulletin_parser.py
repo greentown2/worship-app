@@ -8,6 +8,11 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from hymn_lookup import lookup_hymn
+from responsive_lookup import (
+    format_responsive_label,
+    lookup_responsive,
+    parse_responsive_number,
+)
 from scripture_lookup import lookup_scripture, verses_to_body
 from text_normalize import normalize_breaks
 
@@ -160,6 +165,7 @@ class ParsedBulletin:
     preacher: str = ""
     praise_num: str = ""
     praise_title: str = ""
+    responsive_num: str = ""
     responsive_title: str = ""
     responsive_body: str = ""
     hymn_num: str = ""
@@ -420,7 +426,12 @@ def parse_bulletin_text(text: str, *, method: str = "") -> ParsedBulletin:
             # Keep responsive body if it has leader/congregation markers or length
             if "인도" in body or "회중" in body or len(body) > 40:
                 result.responsive_body = body
-            result.notes.append(f"3. 교독문 ← {result.responsive_title}")
+            resp_n = parse_responsive_number(combo) or parse_responsive_number(head)
+            if resp_n:
+                result.responsive_num = str(resp_n)
+            result.notes.append(
+                f"3. 교독문 ← {result.responsive_num or ''} {result.responsive_title}".strip()
+            )
         elif kind == "hymn" and not hymn_slots_used["hymn"]:
             num, title = _first_hymn(combo)
             result.hymn_num, result.hymn_title = num, title
@@ -442,26 +453,24 @@ def parse_bulletin_text(text: str, *, method: str = "") -> ParsedBulletin:
             if re.search(r"^\d+\s+\S+", body, re.M) or len(body) > 60:
                 result.scripture_text = body
             result.notes.append(f"6. 오늘의 말씀 ← {result.scripture_reference or '(구절 미확인)'}")
-        elif kind == "response" and not hymn_slots_used["response"]:
-            num, title = _first_hymn(combo)
-            result.response_num, result.response_title = num, title
-            hymn_slots_used["response"] = True
-            result.notes.append(f"7. 찬양 ← {num} {title}".strip())
+        elif kind == "response":
+            # 9-step order has no response hymn
+            result.notes.append("응답 찬양 감지 (현재 9단계 순서에서는 사용하지 않음)")
         elif kind == "sermon":
             # Title often after colon or on same line
             title = re.sub(r"^(생명의 말씀|설교)\s*[:：-]?\s*", "", head).strip()
             if not title or title in ("생명의 말씀", "설교"):
                 title = body.split("\n")[0].strip() if body else ""
             result.sermon_title = title[:80]
-            result.notes.append(f"8. 생명의 말씀 ← {result.sermon_title or '(제목 미확인)'}")
+            result.notes.append(f"7. 생명의 말씀 ← {result.sermon_title or '(제목 미확인)'}")
         elif kind == "offering" and not hymn_slots_used["offering"]:
             num, title = _first_hymn(combo)
             result.offering_num, result.offering_title = num, title
             hymn_slots_used["offering"] = True
-            result.notes.append(f"9. 감사와 봉헌 ← {num} {title}".strip())
+            result.notes.append(f"8. 감사와 봉헌 ← {num} {title}".strip())
         elif kind == "benediction":
             result.benediction = body.split("\n")[0][:60] if body else result.benediction
-            result.notes.append("10. 축도 감지")
+            result.notes.append("9. 축도 감지")
 
     # Fallback: collect hymns only from lines that mention 장 with worship context
     all_hymns = []
@@ -487,7 +496,6 @@ def parse_bulletin_text(text: str, *, method: str = "") -> ParsedBulletin:
     slots = [
         ("praise_num", "praise_title"),
         ("hymn_num", "hymn_title"),
-        ("response_num", "response_title"),
         ("offering_num", "offering_title"),
     ]
     ui = 0
@@ -504,15 +512,75 @@ def parse_bulletin_text(text: str, *, method: str = "") -> ParsedBulletin:
             result.scripture_reference = ref
             result.notes.append(f"성경 구절 자동 감지 ← {ref}")
 
-    # Auto-fetch scripture body when reference found but no body
-    if result.scripture_reference and not result.scripture_text:
-        sc = lookup_scripture(result.scripture_reference, allow_remote=False)
-        if sc.found and sc.verses:
-            result.scripture_text = normalize_breaks(verses_to_body(sc.verses))
-            result.scripture_reference = sc.reference or result.scripture_reference
+    _enrich_parsed_lookups(result)
 
     result.field_map = result_to_session_updates(result)
     return result
+
+
+def _enrich_parsed_lookups(result: ParsedBulletin) -> None:
+    """Fill titles/bodies from local hymn · 교독문 · scripture indexes by number/ref."""
+    for num_attr, title_attr in (
+        ("praise_num", "praise_title"),
+        ("hymn_num", "hymn_title"),
+        ("offering_num", "offering_title"),
+    ):
+        num = (getattr(result, num_attr) or "").strip()
+        title = (getattr(result, title_attr) or "").strip()
+        if not num:
+            continue
+        hit = lookup_hymn(num, title, allow_remote=False)
+        if hit:
+            if hit.number:
+                setattr(result, num_attr, str(hit.number))
+            if hit.title and (not title or title == num):
+                setattr(result, title_attr, hit.title)
+                result.notes.append(f"찬송 자동 제목 ← {hit.number}장 {hit.title}")
+
+    resp_key = (result.responsive_num or result.responsive_title or "").strip()
+    if not resp_key and result.responsive_body:
+        resp_key = result.responsive_title
+    if resp_key or (result.responsive_title or "").strip():
+        key = resp_key or result.responsive_title
+        hit = lookup_responsive(key, allow_remote=False)
+        body = (result.responsive_body or "").strip()
+        incomplete = (not body) or not ("인도자" in body and "회중" in body)
+        if hit.found and hit.body and (incomplete or not result.responsive_title):
+            result.responsive_num = str(hit.number) if hit.number else result.responsive_num
+            result.responsive_title = format_responsive_label(hit.number, hit.title)
+            if incomplete:
+                result.responsive_body = normalize_breaks(hit.body)
+            result.notes.append(
+                f"교독문 자동 불러옴 ← {result.responsive_num}번 · {hit.title}"
+            )
+
+    if result.scripture_reference and not (result.scripture_text or "").strip():
+        sc = lookup_scripture(result.scripture_reference, allow_remote=False)
+        if sc.found and sc.verses:
+            result.scripture_text = normalize_breaks(verses_to_body(sc.verses))
+            # Keep parseable ref in the form (no translation label suffix)
+            from scripture_lookup import parse_scripture_reference
+
+            parsed = parse_scripture_reference(result.scripture_reference)
+            result.scripture_reference = (
+                parsed.display if parsed else re.sub(
+                    r"\s*\(개역개정\)\s*$", "", sc.reference or result.scripture_reference
+                ).strip()
+            )
+            result.notes.append(f"성경 본문 자동 불러옴 ← {result.scripture_reference}")
+    elif result.scripture_reference:
+        # Prefer clean local 개역개정 when OCR body is thin
+        body = (result.scripture_text or "").strip()
+        if body and len(body) < 40:
+            sc = lookup_scripture(result.scripture_reference, allow_remote=False)
+            if sc.found and sc.verses:
+                result.scripture_text = normalize_breaks(verses_to_body(sc.verses))
+                from scripture_lookup import parse_scripture_reference
+
+                parsed = parse_scripture_reference(result.scripture_reference)
+                if parsed:
+                    result.scripture_reference = parsed.display
+                result.notes.append(f"성경 본문 보강 ← {result.scripture_reference}")
 
 
 def result_to_session_updates(p: ParsedBulletin) -> dict[str, str]:
@@ -525,6 +593,7 @@ def result_to_session_updates(p: ParsedBulletin) -> dict[str, str]:
         "preacher": p.preacher,
         "praise_num": p.praise_num,
         "praise_title": p.praise_title,
+        "responsive_num": p.responsive_num,
         "responsive_title": p.responsive_title,
         "responsive_body": p.responsive_body,
         "hymn_num": p.hymn_num,
@@ -777,6 +846,7 @@ def _merge_parsed(base: ParsedBulletin, extra: ParsedBulletin, *, role: str) -> 
         "preacher",
         "praise_num",
         "praise_title",
+        "responsive_num",
         "responsive_title",
         "responsive_body",
         "hymn_num",
@@ -803,6 +873,7 @@ def _merge_parsed(base: ParsedBulletin, extra: ParsedBulletin, *, role: str) -> 
             "scripture_text",
             "responsive_body",
             "responsive_title",
+            "responsive_num",
             "prayer_text",
         ) and new:
             # Prefer readings-page content for these
@@ -871,6 +942,7 @@ def parse_multipage_bulletin(
         f"--- Page {p.index} ({role_map.get(p.index)}) ---\n{p.text}" for p in pages
     )
     merged.method = ",".join(sorted({p.method for p in pages if p.method})) or "multipage"
+    _enrich_parsed_lookups(merged)
     merged.field_map = result_to_session_updates(merged)
     if announcements_parts:
         merged.field_map["announcements"] = "\n\n".join(announcements_parts)

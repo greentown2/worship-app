@@ -81,10 +81,19 @@ def _tokenize_keep_all(text: str) -> list[str]:
             continue
 
         if _is_cjk(ch) or ch in _BREAK_AFTER or ch in _BREAK_BEFORE:
-            # Each CJK / punctuation is its own break opportunity
-            flush()
-            tokens.append(ch)
-            mode = None
+            # Punctuation = hard break opportunity; Hangul = 2-syllable soft units
+            # so compounds like "사랑하사" prefer staying together longer.
+            if ch in _BREAK_AFTER or ch in _BREAK_BEFORE or not _is_cjk(ch):
+                flush()
+                tokens.append(ch)
+                mode = None
+                continue
+            if mode != "cjk":
+                flush()
+                mode = "cjk"
+            buf.append(ch)
+            if len(buf) >= 2:
+                flush()
             continue
 
         # Latin / digit / other — keep contiguous runs together

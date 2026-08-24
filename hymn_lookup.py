@@ -1,4 +1,4 @@
-"""Lookup Korean hymnal (새찬송가) titles and lyrics — always returns slide-ready lines."""
+"""Lookup Korean hymnal (찬송가) titles and lyrics — always returns slide-ready lines."""
 
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ BIBLETOPPT_URL = "https://bibletoppt.com/hymn/lyrics/{num:03d}"
 
 _CACHE_LOCK = threading.Lock()
 
-# Phrases that must never appear on senior projection slides
+# Phrases that must never appear on projection slides
 _BAD_SLIDE_MARKERS = (
     "로컬 캐시",
     "안내 슬라이드",
@@ -33,6 +33,7 @@ _BAD_SLIDE_MARKERS = (
     "not found",
     "자료에 없어",
     "직접 입력",
+    "불러오지 못했",
 )
 
 
@@ -46,7 +47,7 @@ class HymnResult:
 
 
 def parse_hymn_number(raw: str) -> Optional[int]:
-    """Extract hymn number from inputs like '310', '310장', '새찬송가 310장'."""
+    """Extract hymn number from inputs like '310', '310장', '찬송가 310장'."""
     if not raw:
         return None
     text = raw.strip()
@@ -119,10 +120,120 @@ def _clean_lyric_lines(lines: list[str]) -> list[str]:
             continue
         if "신학적" in t or "연관 성구" in t:
             continue
+        # Drop edition branding lines that are not lyrics
+        if re.fullmatch(r"(새)?찬송가\s*\d+\s*장", t):
+            continue
         cleaned.append(t)
     while cleaned and cleaned[-1] == "":
         cleaned.pop()
     return cleaned
+
+
+_VERSE_START_RE = re.compile(r"^\s*\d+\s*[\.．、)]\s*")
+_REFRAIN_START_RE = re.compile(r"^(후렴|합창|코러스|Refrain|Chorus)\s*[:：]?\s*", re.I)
+_AMEN_TAIL_RE = re.compile(r"\s*아멘\.?\s*$", re.I)
+
+
+def _split_verse_groups(lines: list[str]) -> list[list[str]]:
+    """Split lyric lines into verse/block groups."""
+    groups: list[list[str]] = []
+    buf: list[str] = []
+    for ln in lines:
+        if not str(ln).strip():
+            if buf:
+                groups.append(buf)
+                buf = []
+            continue
+        text = str(ln).rstrip()
+        if _VERSE_START_RE.match(text) and buf:
+            groups.append(buf)
+            buf = [text]
+        else:
+            buf.append(text)
+    if buf:
+        groups.append(buf)
+    return groups
+
+
+def _expand_refrain(lyrics: list[str]) -> list[str]:
+    """
+    If a hymn prints 후렴 only once (usually after verse 1), repeat it after
+    every numbered verse for projection/singing.
+
+    Idempotent: strips every 후렴 block first, then re-attaches once per verse
+    so cached/already-expanded lyrics are not doubled.
+    """
+    lines = [str(ln).rstrip() for ln in (lyrics or [])]
+    while lines and not lines[0].strip():
+        lines.pop(0)
+    while lines and not lines[-1].strip():
+        lines.pop()
+    if not lines:
+        return []
+
+    groups = _split_verse_groups(lines)
+    if len(groups) < 2:
+        return lines
+
+    refrain: list[str] | None = None
+    for group in groups:
+        for li, ln in enumerate(group):
+            if not _REFRAIN_START_RE.match(ln):
+                continue
+            refrain = [x for x in group[li:] if str(x).strip()]
+            break
+        if refrain is not None:
+            break
+
+    if not refrain:
+        return lines
+
+    # 아멘 is often only on the final printed refrain — keep it at the very end
+    has_amen = bool(lines and _AMEN_TAIL_RE.search(lines[-1].strip()))
+    refrain_core: list[str] = []
+    for ln in refrain:
+        cleaned = _AMEN_TAIL_RE.sub("", ln).rstrip()
+        if cleaned:
+            refrain_core.append(cleaned)
+    if not refrain_core:
+        return lines
+
+    # Strip every refrain occurrence so re-attach is safe to run repeatedly
+    cleaned_groups: list[list[str]] = []
+    for group in groups:
+        cut = len(group)
+        for li, ln in enumerate(group):
+            if _REFRAIN_START_RE.match(ln):
+                cut = li
+                break
+        head = [x for x in group[:cut] if str(x).strip()]
+        if head:
+            cleaned_groups.append(head)
+
+    verse_groups = [g for g in cleaned_groups if _VERSE_START_RE.match(g[0])]
+    if len(verse_groups) < 2:
+        return lines
+
+    out: list[str] = []
+    for group in cleaned_groups:
+        if out:
+            out.append("")
+        out.extend(group)
+        if not _VERSE_START_RE.match(group[0]):
+            continue
+        out.append("")
+        out.extend(refrain_core)
+
+    if has_amen and out:
+        if not _AMEN_TAIL_RE.search(out[-1]):
+            out[-1] = (out[-1] + " 아멘").strip()
+    return out
+
+
+def _finalize_lyrics(lyrics: list[str]) -> list[str]:
+    """Clean + expand refrain for projection-ready lyric lines."""
+    cleaned = _clean_lyric_lines(list(lyrics or []))
+    return normalize_line_list(_expand_refrain(cleaned))
 
 
 def _lyrics_richness(lyrics: list[str]) -> int:
@@ -131,65 +242,80 @@ def _lyrics_richness(lyrics: list[str]) -> int:
     if not lines:
         return 0
     blob = "\n".join(lines)
-    verses = len(re.findall(r"(?m)^\s*\d+\.\s*", blob))
-    return len(lines) * 10 + len(blob) + verses * 40
+    verses = len(re.findall(r"(?m)^\s*\d+\s*[\.．、)]\s*", blob))
+    hangul = len(re.findall(r"[가-힣]", blob))
+    if verses == 0 and len(lines) < 6:
+        return len(lines) * 3 + hangul
+    return len(lines) * 10 + hangul + verses * 40
+
+
+def _looks_like_incomplete_stub(lyrics: list[str]) -> bool:
+    """True when lyrics look truncated / stubby and should be replaced by a fuller source."""
+    lines = [ln.strip() for ln in (lyrics or []) if (ln or "").strip()]
+    if not lines:
+        return True
+    blob = "\n".join(lines)
+    hangul = len(re.findall(r"[가-힣]", blob))
+    verses = len(re.findall(r"(?m)^\s*\d+\s*[\.．、)]\s*", blob))
+    # Tiny fragments only
+    if hangul < 40:
+        return True
+    if len(lines) < 5 and hangul < 80:
+        return True
+    # Short doxology-style (no verse numbers) with enough text → complete
+    if verses == 0 and len(lines) >= 6 and hangul >= 35:
+        return False
+    # Numbered verses but thin body → stub
+    if verses >= 2 and hangul / max(verses, 1) < 30:
+        return True
+    if verses >= 2 and len(lines) < verses * 3:
+        return True
+    return False
+
+
+def _looks_like_real_hymn(lyrics: list[str]) -> bool:
+    """Reject title-filler and scrape junk; require real hymn structure."""
+    lines = [ln.strip() for ln in (lyrics or []) if (ln or "").strip()]
+    if len(lines) < 4:
+        return False
+    if _looks_like_error_lyrics(lines):
+        return False
+    blob = "\n".join(lines)
+    verses = len(re.findall(r"(?m)^\s*\d+\s*[\.．、)]\s*", blob))
+    hangul = len(re.findall(r"[가-힣]", blob))
+    if hangul < 20:
+        return False
+    if _looks_like_incomplete_stub(lines) and hangul < 100:
+        # Still accept as "real enough" for candidate list, but ranking will prefer fuller text
+        pass
+    if verses >= 2 and hangul >= 60:
+        return True
+    if len(lines) >= 8 and hangul >= 40:
+        return True
+    if verses >= 1 and len(lines) >= 6 and hangul >= 50:
+        return True
+    # Single-verse hymns (e.g. doxology) with solid hangul density
+    if verses == 0 and len(lines) >= 4 and hangul >= 30:
+        return True
+    return False
 
 
 def _projection_lyrics(number: int, title: str) -> list[str]:
-    """
-    Always-usable line-by-line projection text when exact cache/remote lyrics
-    are unavailable. Built from the hymn title (usually the opening line) so
-    seniors still see singable verse structure — never an error notice.
-    """
+    """Placeholder only — never invent fake hymn verses for projection."""
     title = (title or "").strip() or f"{number}장"
-    # Split long titles into natural breath groups for large-print slides
-    parts = [p.strip() for p in re.split(r"\s+", title) if p.strip()]
-    if len(parts) >= 4:
-        mid = len(parts) // 2
-        line_a = " ".join(parts[:mid])
-        line_b = " ".join(parts[mid:])
-    elif len(parts) >= 2:
-        line_a = " ".join(parts[:-1]) if len(parts) > 2 else parts[0]
-        line_b = parts[-1] if len(parts) > 2 else " ".join(parts[1:])
-        if line_a == title:
-            line_a, line_b = title, "주님을 찬양합니다"
-    else:
-        line_a, line_b = title, "주님을 찬양합니다"
-
-    # Theme-aware congregational lines (readable, no "missing" language)
-    praise = any(k in title for k in ("찬송", "찬양", "영광", "거룩", "할렐루야", "성부", "성령"))
-    cross = any(k in title for k in ("십자가", "보혈", "갈보리", "대속", "구주"))
-    comfort = any(k in title for k in ("평안", "위로", "은혜", "사랑", "목자", "안식"))
-
-    if cross:
-        v2_a, v2_b = "십자가 사랑 감사하며", "구원하신 주님 찬양해"
-        v3_a, v3_b = "주님 보혈 의지하여", "새 생명 얻어 살리라"
-    elif comfort:
-        v2_a, v2_b = "주의 은혜 감사하며", "평안함으로 찬양해"
-        v3_a, v3_b = "날마다 주만 바라보며", "주님 사랑 전하리라"
-    elif praise:
-        v2_a, v2_b = "높으신 이름 찬양하며", "영광 돌려 드리세"
-        v3_a, v3_b = "성부와 성자와 성령께", "영원히 찬송하리라"
-    else:
-        v2_a, v2_b = "믿음으로 주를 따르며", "감사 찬송 부르세"
-        v3_a, v3_b = "주님이 함께 하시니", "늘 찬양하며 살리라"
-
     return [
-        f"1. {line_a}",
-        line_b,
+        f"찬송가 {number}장" if number else "찬송가",
+        title,
         "",
-        f"2. {v2_a}",
-        v2_b,
-        "",
-        f"3. {v3_a}",
-        v3_b,
-        "",
-        "아멘",
+        "(찬송가 가사를 불러오지 못했습니다.",
+        "번호 확인 후 다시 불러오거나 가사를 직접 입력해 주세요.)",
     ]
 
 
 def _fetch_remote_lyrics(number: int) -> Optional[list[str]]:
     """Best-effort fetch from public hymn lyric pages (runtime only)."""
+    import html as html_lib
+
     url = BIBLETOPPT_URL.format(num=number)
     req = Request(
         url,
@@ -199,22 +325,49 @@ def _fetch_remote_lyrics(number: int) -> Optional[list[str]]:
         },
     )
     try:
-        with urlopen(req, timeout=10) as resp:
-            html = resp.read().decode("utf-8", errors="replace")
+        with urlopen(req, timeout=12) as resp:
+            raw_html = resp.read().decode("utf-8", errors="replace")
     except (URLError, HTTPError, TimeoutError, OSError):
         return None
 
-    text = html.replace("\\n", "\n").replace("&nbsp;", " ").replace("&amp;", "&")
+    text = raw_html.replace("&nbsp;", " ").replace("&amp;", "&")
 
-    # 1) Markdown / heading section
+    # 1) bibletoppt structured verses: "1절" + whitespace-pre-line body
+    structured = re.findall(
+        r"<p[^>]*font-medium[^>]*>\s*(\d+)\s*(?:<!--\s*-->)?\s*절\s*</p>\s*"
+        r"<p[^>]*whitespace-pre-line[^>]*>(.*?)</p>",
+        text,
+        flags=re.DOTALL | re.I,
+    )
+    if structured:
+        assembled: list[str] = []
+        for verse_no, body in structured:
+            chunk = re.sub(r"<[^>]+>", "\n", body)
+            chunk = html_lib.unescape(chunk)
+            lines = _clean_lyric_lines(chunk.splitlines())
+            if not lines:
+                continue
+            if assembled and assembled[-1] != "":
+                assembled.append("")
+            first = lines[0]
+            if not re.match(rf"^\s*{re.escape(verse_no)}\s*[\.．、)]", first):
+                lines[0] = f"{verse_no}. {first}"
+            assembled.extend(lines)
+        if assembled and (
+            _looks_like_real_hymn(assembled) or len([ln for ln in assembled if ln.strip()]) >= 6
+        ):
+            return assembled[:240]
+
+    # 2) Markdown / heading section
     m = re.search(r"##\s*[^\n]*가사\s*(.*?)(?:\n##|\Z)", text, flags=re.DOTALL)
     if m:
         chunk = re.sub(r"<[^>]+>", "\n", m.group(1))
+        chunk = html_lib.unescape(chunk)
         lines = _clean_lyric_lines([ln for ln in chunk.splitlines()])
-        if len(lines) >= 3:
-            return lines[:200]
+        if len(lines) >= 3 and not _looks_like_incomplete_stub(lines):
+            return lines[:240]
 
-    # 2) Multi-line Korean verse blocks (RSC / embedded copy)
+    # 3) Multi-line Korean verse blocks
     blocks: list[list[str]] = []
     for m in re.finditer(
         r"([가-힣][가-힣\s,\.]{6,}(?:\n[가-힣][가-힣\s,\.]{4,}){2,8})",
@@ -228,28 +381,27 @@ def _fetch_remote_lyrics(number: int) -> Optional[list[str]]:
             blocks.append(lines)
 
     if blocks:
-        # Prefer the longest plausible verse block
-        best = max(blocks, key=lambda b: sum(len(x) for x in b))
-        if sum(len(x) for x in best) >= 24:
-            return best[:200]
+        ranked = sorted(blocks, key=lambda b: _lyrics_richness(b), reverse=True)
+        for best in ranked:
+            if _looks_like_real_hymn(best) and not _looks_like_incomplete_stub(best):
+                return best[:240]
 
-    # 3) Consecutive hangul lines near hymn title meta
-    hangul_runs = re.findall(r"(?:^|\n)([가-힣][가-힣\s,]{8,40})(?=\n|$)", text)
-    filtered = [
-        ln.strip()
-        for ln in hangul_runs
-        if not any(x in ln for x in ("다운로드", "검색", "파워포인트", "신학", "성구", "미리보기"))
-    ]
-    # Deduplicate while preserving order
-    uniq: list[str] = []
-    seen = set()
-    for ln in filtered:
-        if ln in seen:
-            continue
-        seen.add(ln)
-        uniq.append(ln)
-    if len(uniq) >= 4:
-        return uniq[:40]
+    # 4) Numbered verse extracts
+    numbered = re.findall(
+        r"((?:^|\n)\s*\d+\s*[\.．]\s*[가-힣][^\n]*(?:\n(?!\s*\d+\s*[\.．])[^\n]+){0,8})",
+        text,
+    )
+    if numbered:
+        assembled = []
+        for chunk in numbered:
+            lines = _clean_lyric_lines(chunk.splitlines())
+            if not lines:
+                continue
+            if assembled and assembled[-1] != "":
+                assembled.append("")
+            assembled.extend(lines)
+        if _looks_like_real_hymn(assembled) and not _looks_like_incomplete_stub(assembled):
+            return assembled[:240]
 
     return None
 
@@ -261,10 +413,10 @@ def lookup_hymn(
     allow_remote: bool = True,
 ) -> Optional[HymnResult]:
     """
-    Resolve hymn number to title + lyrics.
+    Resolve hymn number to title + full lyrics.
 
-    Guarantees: if a hymn number (1–645) is requested, lyrics is never empty
-    and never contains 'missing cache' style messages.
+    Prefers the richest complete lyric text (remote full song over short local stubs).
+    Labels use 「찬송가」 (not 「새찬송가」).
     """
     number = parse_hymn_number(raw_number)
     if number is None and not title_override.strip():
@@ -286,71 +438,93 @@ def lookup_hymn(
     cache = _load_runtime_cache()
     key = str(number)
 
-    title = (title_override or "").strip() or index.get(key, f"{number}장")
+    # Catalog title wins for numbered hymns. title_override only fills gaps
+    # (never keep a previous hymn's title when the number changed).
+    index_title = (index.get(key) or "").strip()
+    override = (title_override or "").strip()
+    title = index_title or override or f"{number}장"
 
     candidates: list[HymnResult] = []
 
     # 1) Bundled local lyrics
     if key in lyrics_db:
         entry = lyrics_db[key]
-        t = title_override.strip() or entry.get("title") or title
+        t = index_title or entry.get("title") or override or title
         lyrics = _clean_lyric_lines(list(entry.get("lyrics") or []))
-        if lyrics and not _looks_like_error_lyrics(lyrics):
+        if lyrics and not _looks_like_error_lyrics(lyrics) and len(lyrics) >= 4:
             candidates.append(
                 HymnResult(number=number, title=t, lyrics=lyrics, source="local_lyrics", found_lyrics=True)
             )
 
-    # 2) Runtime cache from prior successful fetches
+    # 2) Runtime cache
     if key in cache:
         entry = cache[key]
-        t = title_override.strip() or entry.get("title") or title
+        t = index_title or entry.get("title") or override or title
         lyrics = _clean_lyric_lines(list(entry.get("lyrics") or []))
-        if lyrics and not _looks_like_error_lyrics(lyrics):
+        if lyrics and _looks_like_real_hymn(lyrics):
             candidates.append(
                 HymnResult(number=number, title=t, lyrics=lyrics, source="cache", found_lyrics=True)
             )
 
-    # 3) Remote fetch — always try when local/cache looks like a short stub
-    best_local = max(candidates, key=lambda r: _lyrics_richness(r.lyrics), default=None)
+    # 3) Remote full lyrics whenever local/cache looks incomplete
+    best_so_far = max(candidates, key=lambda r: _lyrics_richness(r.lyrics), default=None)
     need_remote = allow_remote and (
-        best_local is None or _lyrics_richness(best_local.lyrics) < 120
+        best_so_far is None
+        or _looks_like_incomplete_stub(best_so_far.lyrics)
+        or _lyrics_richness(best_so_far.lyrics) < 280
+        or len([ln for ln in (best_so_far.lyrics or []) if ln.strip()]) < 8
     )
     if need_remote:
         remote = _fetch_remote_lyrics(number)
         if remote:
             remote = _clean_lyric_lines(remote)
-            if remote and not _looks_like_error_lyrics(remote):
-                t = title_override.strip() or title
-                _save_runtime_cache(number, t, remote)
+            if remote and (
+                _looks_like_real_hymn(remote) or len([ln for ln in remote if ln.strip()]) >= 6
+            ):
+                t = index_title or override or title
+                expanded = _finalize_lyrics(remote)
+                _save_runtime_cache(number, t, expanded)
                 candidates.append(
-                    HymnResult(number=number, title=t, lyrics=remote, source="remote", found_lyrics=True)
+                    HymnResult(number=number, title=t, lyrics=expanded, source="remote", found_lyrics=True)
                 )
 
     if candidates:
-        best = max(candidates, key=lambda r: _lyrics_richness(r.lyrics))
-        best.title = title_override.strip() or best.title or title
-        best.lyrics = normalize_line_list(best.lyrics)
+        # Prefer fullest complete lyrics — never keep a stub over a full song
+        def _rank(r: HymnResult) -> tuple:
+            body = [ln for ln in (r.lyrics or []) if (ln or "").strip()]
+            hangul = len(re.findall(r"[가-힣]", "\n".join(body)))
+            stub = 1 if _looks_like_incomplete_stub(r.lyrics) else 0
+            return (
+                -stub,
+                hangul,
+                len(body),
+                _lyrics_richness(r.lyrics),
+                1 if r.source == "remote" else 0,
+            )
+
+        best = max(candidates, key=_rank)
+        best.title = index_title or best.title or override or title
+        best.lyrics = _finalize_lyrics(best.lyrics)
         return best
 
-    # 4) Generative projection lyrics — always usable, never an error notice
-    lyrics = normalize_line_list(_projection_lyrics(number, title))
+    lyrics = _finalize_lyrics(_projection_lyrics(number, title))
     return HymnResult(
         number=number,
         title=title,
         lyrics=lyrics,
         source="generated",
-        found_lyrics=True,
+        found_lyrics=False,
     )
 
 
 def format_hymn_label(result: HymnResult) -> str:
     if result.number:
-        return f"{result.number}장  ·  {result.title}"
+        return f"찬송가 {result.number}장  ·  {result.title}"
     return result.title
 
 
 def is_usable_lyrics(lyrics: list[str]) -> bool:
-    """True when lyrics are suitable for senior projection slides."""
+    """True when lyrics are suitable for projection slides."""
     cleaned = _clean_lyric_lines(list(lyrics or []))
     if len(cleaned) < 2:
         return False

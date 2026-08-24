@@ -10,3 +10,15 @@ venv/
 ~$*
 *.tmp
 .pytest_cache/
+
+# Keep PPT library folders, ignore stored decks (often large)
+library/ppt/**/*.pptx
+!library/ppt/**/.gitkeep
+library/*.pptx
+
+# Local debug / generated / source hymn binaries
+_debug*.pptx
+_t.pptx
+_test_*.pptx
+output/
+예배 찬송가/

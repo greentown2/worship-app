@@ -1,10 +1,25 @@
 """Default texts and branding for Fullerton Villa Community Church worship order."""
 
 CHURCH_NAME_EN = "Fullerton Villa Community Church"
-CHURCH_NAME_KO = "플로튼 빌라 교회"
+CHURCH_NAME_KO = "플러톤 빌라 교회"
+
+# Legacy / wrong spellings → always normalize to CHURCH_NAME_KO
+CHURCH_NAME_KO_ALIASES = (
+    "플로튼 빌라 교회",
+    "플로톤 빌라 교회",
+    "플러튼 빌라 교회",
+    "플로튼 장로교회",
+    "플로튼 장로 교회",
+    "플러튼 장로교회",
+    "플러톤 장로교회",
+    "플러톤빌라교회",
+    "플러톤 빌라교회",
+)
 DEFAULT_SERVICE_TITLE = "주일 예배"
 DEFAULT_SERVICE_TIME = "오전 11:00"
+DEFAULT_WORSHIP_LEADER = "엄영민 목사"
 
+# No blank lines — PPT shows exactly 4 dense lines per slide
 DEFAULT_APOSTLES_CREED = """전능하사 천지를 만드신 하나님 아버지를 내가 믿사오며,
 그 외아들 우리 주 예수 그리스도를 믿사오니,
 이는 성령으로 잉태하사 동정녀 마리아에게 나시고,
@@ -29,7 +44,7 @@ DEFAULT_WORSHIP_PRAYER = """살아계신 하나님 아버지,
 
 DEFAULT_BENEDICTION = "담임목사"
 
-# Traditional order labels (exact bulletin sequence)
+# Traditional order labels (9 steps — no response hymn)
 ORDER_LABELS = [
     ("1", "찬양과 기도", "Praise & Prayer"),
     ("2", "사도신경", "The Apostles' Creed"),
@@ -37,8 +52,7 @@ ORDER_LABELS = [
     ("4", "찬송가", "Hymn"),
     ("5", "예배의 기도", "Pastoral Prayer"),
     ("6", "오늘의 말씀", "Scripture Reading"),
-    ("7", "찬양", "Hymn of Response"),
-    ("8", "생명의 말씀", "The Word of Life"),
-    ("9", "감사와 봉헌", "Offering"),
-    ("10", "축도", "Benediction"),
+    ("7", "생명의 말씀", "The Word of Life"),
+    ("8", "감사와 봉헌", "Offering"),
+    ("9", "축도", "Benediction"),
 ]

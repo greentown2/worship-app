@@ -103,7 +103,7 @@
       "size": 10,
       "align": "left",
       "bold": true,
-      "prefix": "8. ",
+      "prefix": "7. ",
       "multiline": true
     },
     {
@@ -116,7 +116,7 @@
       "size": 10,
       "align": "left",
       "bold": true,
-      "prefix": "9. "
+      "prefix": "8. "
     },
     {
       "page": 1,
@@ -128,7 +128,7 @@
       "size": 10,
       "align": "left",
       "bold": false,
-      "prefix": "10. ",
+      "prefix": "9. ",
       "multiline": true
     },
     {
