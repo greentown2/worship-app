@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-_PDF_VERSION = "2026-08-10-bulletin-refine-v2"
+_PDF_VERSION = "2026-08-24-cover-refine-v6"
 
 from io import BytesIO
 from pathlib import Path
@@ -21,6 +21,8 @@ from reportlab.platypus import (
     Frame,
     FrameBreak,
     HRFlowable,
+    Image as RLImage,
+    KeepInFrame,
     NextPageTemplate,
     PageBreak,
     PageTemplate,
@@ -29,6 +31,7 @@ from reportlab.platypus import (
     Table,
     TableStyle,
 )
+from reportlab.lib.utils import ImageReader
 
 from data_enrich import enrich_worship_data, hymn_label
 from models import HymnEntry, WorshipData
@@ -138,15 +141,17 @@ class _OrnamentRule(Flowable):
         self.height = 10
         self.spaceBefore = space_before
         self.spaceAfter = space_after
+        self.hAlign = "CENTER"
 
     def wrap(self, availWidth, availHeight):
-        self.width = min(self._w, availWidth)
+        # Keep intrinsic width; hAlign=CENTER places the diamond on the panel midline.
+        self.width = min(self._w, max(availWidth, 1))
         return self.width, self.height
 
     def draw(self) -> None:
         c = self.canv
         y = self.height / 2
-        mid = self.width / 2
+        mid = self.width / 2.0
         # Dual hairlines
         c.setStrokeColor(GOLD)
         c.setLineWidth(0.7)
@@ -220,6 +225,52 @@ def _church_logo(size: float = 42) -> _ChurchCrossLogo:
     return _ChurchCrossLogo(size=size)
 
 
+def _cover_crucifix(max_width: float = 1.85 * inch, max_height: float = 2.55 * inch) -> Flowable | None:
+    """Refined crucifix art centered on the bulletin front cover."""
+    path = Path(__file__).resolve().parent / "assets" / "crucifix_cover.png"
+    if not path.is_file():
+        return None
+    try:
+        raw = path.read_bytes()
+        # Probe pixel size without relying on filesystem path (OneDrive/Unicode-safe)
+        from PIL import Image as PILImage
+
+        with PILImage.open(BytesIO(raw)) as pil:
+            iw, ih = pil.size
+        if iw <= 0 or ih <= 0:
+            return None
+        scale = min(max_width / float(iw), max_height / float(ih))
+        draw_w = float(iw) * scale
+        draw_h = float(ih) * scale
+    except Exception:
+        return None
+
+    class _CrucifixImage(Flowable):
+        def __init__(self, data: bytes, width: float, height: float):
+            Flowable.__init__(self)
+            self._data = data
+            self.drawWidth = width
+            self.drawHeight = height
+            self.hAlign = "CENTER"
+
+        def wrap(self, availWidth, availHeight):
+            return self.drawWidth, self.drawHeight
+
+        def draw(self):
+            ir = ImageReader(BytesIO(self._data))
+            self.canv.drawImage(
+                ir,
+                0,
+                0,
+                width=self.drawWidth,
+                height=self.drawHeight,
+                preserveAspectRatio=True,
+                mask="auto",
+            )
+
+    return _CrucifixImage(raw, draw_w, draw_h)
+
+
 def _styles() -> dict[str, ParagraphStyle]:
     _ensure_fonts()
     return {
@@ -235,29 +286,29 @@ def _styles() -> dict[str, ParagraphStyle]:
         "church_en": ParagraphStyle(
             "ChurchEn",
             fontName=FONT_EN,
-            fontSize=9,
-            leading=12,
+            fontSize=14.25,
+            leading=18,
             alignment=1,
             textColor=MUTED,
-            spaceAfter=1,
+            spaceAfter=2,
         ),
         "church_ko": ParagraphStyle(
             "ChurchKo",
             fontName=FONT_DISPLAY,
-            fontSize=19,
-            leading=24,
+            fontSize=14.25,
+            leading=18,
             alignment=1,
             textColor=ACCENT,
-            spaceAfter=2,
+            spaceAfter=0,
         ),
         "cover_leader": ParagraphStyle(
             "CoverLeader",
-            fontName=FONT_DISPLAY,
+            fontName=FONT_BOLD,
             fontSize=17,
             leading=22,
             alignment=1,
             textColor=INK,
-            spaceBefore=0,
+            spaceBefore=2,
             spaceAfter=0,
         ),
         "order_heading": ParagraphStyle(
@@ -293,20 +344,21 @@ def _styles() -> dict[str, ParagraphStyle]:
         "service": ParagraphStyle(
             "ServiceTitle",
             fontName=FONT_BOLD,
-            fontSize=12.5,
-            leading=16,
+            fontSize=28.5,
+            leading=34,
             alignment=1,
-            textColor=INK,
+            textColor=ACCENT,
+            spaceBefore=0,
             spaceAfter=2,
         ),
         "meta": ParagraphStyle(
             "Meta",
-            fontName=FONT,
-            fontSize=8.5,
+            fontName=FONT_BOLD,
+            fontSize=9.5,
             leading=12,
             alignment=1,
             textColor=MUTED,
-            spaceAfter=3,
+            spaceAfter=2,
         ),
         "cover_note": ParagraphStyle(
             "CoverNote",
@@ -450,17 +502,12 @@ def _order_table(data: WorshipData, styles: dict) -> Table:
 
 
 def _flow_cover(data: WorshipData, styles: dict) -> list:
-    """Front cover: brand/meta up top, worship leader dead-center, welcome below."""
+    """Front cover: balanced vertical rhythm — title, art, leader, church names."""
     story: list = [
         _para("COVER", styles["face_tag"]),
-        Spacer(1, 6 * mm),
+        Spacer(1, 5 * mm),
+        _para(data.service_title or "주일 예배", styles["service"]),
     ]
-    if _clean(data.church_name_en):
-        story.append(_para(data.church_name_en, styles["church_en"]))
-    story.append(Spacer(1, 2))
-    story.append(_para(data.church_name_ko or "플러톤 빌라 교회", styles["church_ko"]))
-    story.append(_ornament(118))
-    story.append(_para(data.service_title or "주일 예배", styles["service"]))
     meta_bits = [
         b
         for b in (
@@ -471,20 +518,42 @@ def _flow_cover(data: WorshipData, styles: dict) -> list:
         if b
     ]
     if meta_bits:
+        story.append(Spacer(1, 1.5 * mm))
         story.append(_para("  ·  ".join(meta_bits), styles["meta"]))
 
-    story.append(Spacer(1, 20 * mm))
+    story.append(Spacer(1, 4 * mm))
+    story.append(_ornament(96))
+    story.append(Spacer(1, 5 * mm))
+
+    crucifix = _cover_crucifix(max_width=1.7 * inch, max_height=2.35 * inch)
+    if crucifix is not None:
+        story.append(
+            KeepInFrame(
+                PANEL_W - 8,
+                2.4 * inch,
+                [crucifix],
+                mode="shrink",
+                hAlign="CENTER",
+            )
+        )
+    else:
+        logo = _church_logo(44)
+        logo.hAlign = "CENTER"
+        story.append(logo)
+
     leader = _clean(getattr(data, "worship_leader", "") or "")
     if leader:
         label = leader if leader.startswith("인도자") else f"인도자 {leader}"
+        story.append(Spacer(1, 4 * mm))
         story.append(_para(label, styles["cover_leader"]))
-    story.append(Spacer(1, 7 * mm))
-    logo = _church_logo(44)
-    logo.hAlign = "CENTER"
-    story.append(logo)
-    story.append(Spacer(1, 12 * mm))
-    story.append(_ornament(90))
-    story.append(_para("Welcome  ·  주님의 집에 오신 것을 환영합니다", styles["cover_note"]))
+
+    # Bottom brand block — quieter weight, more air above
+    story.append(Spacer(1, 11 * mm))
+    story.append(_ornament(72))
+    story.append(Spacer(1, 3.5 * mm))
+    if _clean(data.church_name_en):
+        story.append(_para(data.church_name_en, styles["church_en"]))
+    story.append(_para(data.church_name_ko or "플러톤 빌라 교회", styles["church_ko"]))
     return story
 
 
@@ -547,8 +616,9 @@ def _section_rule() -> HRFlowable:
     return HRFlowable(width="100%", thickness=0.55, color=GOLD, spaceBefore=1, spaceAfter=4)
 
 
-def _flow_scripture_hymns(data: WorshipData, styles: dict, *, lyric_lines: int) -> list:
-    """Inside right panel — scripture & hymns."""
+def _flow_scripture_hymns(data: WorshipData, styles: dict, *, lyric_lines: int = 0) -> list:
+    """Inside right panel — scripture, hymn titles, responsive reading, creed."""
+    del lyric_lines  # lyrics no longer printed on this face
     story: list = [
         _para("WORD & HYMN", styles["face_tag"]),
     ]
@@ -560,40 +630,43 @@ def _flow_scripture_hymns(data: WorshipData, styles: dict, *, lyric_lines: int) 
         if ref:
             story.append(_para(ref, styles["body_bold"]))
         if body:
-            lines = body.splitlines()
-            if len(lines) > 14:
-                body = "\n".join(lines[:14]) + "\n…"
             story.append(_para(body, styles["body_sm"]))
 
-    story.append(_para("생명의 말씀", styles["section"]))
-    story.append(_section_rule())
-    if _clean(data.sermon_title):
-        story.append(_para(data.sermon_title, styles["body_bold"]))
-    else:
-        story.append(_para("(설교 제목을 입력해 주세요)", styles["empty_hint"]))
-    if _clean(data.sermon_subtitle):
-        story.append(_para(data.sermon_subtitle, styles["body_sm"]))
+    if _clean(data.sermon_title) or _clean(data.sermon_subtitle):
+        story.append(_para("생명의 말씀", styles["section"]))
+        story.append(_section_rule())
+        if _clean(data.sermon_title):
+            story.append(_para(data.sermon_title, styles["body_bold"]))
+        if _clean(data.sermon_subtitle):
+            story.append(_para(data.sermon_subtitle, styles["body_sm"]))
 
     hymn_slots = (
         ("1. 찬양과 기도", data.praise_hymn),
         ("4. 찬송가", data.hymn),
         ("8. 감사와 봉헌", data.offering_hymn),
     )
-    any_lyrics = False
-    for label, h in hymn_slots:
-        chunk = _lyrics_block(h, max_lines=lyric_lines)
-        if not chunk:
-            continue
-        if not any_lyrics:
-            story.append(_para("찬송가 가사", styles["section"]))
-            story.append(_section_rule())
-            any_lyrics = True
-        story.append(_para(label, styles["body_bold"]))
-        story.append(_para(chunk, styles["body_sm"]))
-        story.append(Spacer(1, 2))
+    hymn_rows = [(label, _hymn_line(h)) for label, h in hymn_slots if _hymn_line(h)]
+    if hymn_rows:
+        story.append(_para("찬송가", styles["section"]))
+        story.append(_section_rule())
+        for label, title in hymn_rows:
+            story.append(_para(f"{label}  ·  {title}", styles["body_bold"]))
+
+    resp_title = _clean(data.responsive_reading_title) or "교독문"
+    resp_body = _clean(data.responsive_reading)
+    if resp_body:
+        story.append(_para(f"교독문 · {resp_title}" if resp_title != "교독문" else "교독문", styles["section"]))
+        story.append(_section_rule())
+        story.append(_para(resp_body, styles["body_sm"]))
+
+    creed = _clean(data.apostles_creed)
+    if creed:
+        story.append(_para("사도신경", styles["section"]))
+        story.append(_section_rule())
+        story.append(_para(creed, styles["body_sm"]))
 
     if len(story) <= 1:
-        story.append(_para("성경 본문과 찬송 가사를 입력하면 이 면에 표시됩니다.", styles["empty_hint"]))
+        story.append(_para("성경 본문 · 교독문 · 사도신경을 입력하면 이 면에 표시됩니다.", styles["empty_hint"]))
     return story
 
 
@@ -677,67 +750,74 @@ def _make_frames() -> tuple[Frame, Frame]:
     return left, right
 
 
-def _build_story(data: WorshipData, styles: dict, *, lyric_lines: int) -> list:
+def _build_story(data: WorshipData, styles: dict, *, lyric_lines: int = 0) -> list:
     """
     Booklet imposition on one Letter landscape sheet (duplex):
       Sheet 1 (outside):  [광고 | 커버]
-      Sheet 2 (inside):   [예배순서 | 성경·찬송]
+      Sheet 2 (inside):   [예배순서 | 성경·교독·사도신경]
     Fold center → cover front, ads back; open → order left, scripture right.
     """
+    del lyric_lines
     story: list = []
-    # Outside left → announcements (back cover)
-    story.extend(_flow_announcements(data, styles))
+    # Outside left → announcements (back cover) — must not spill into cover frame
+    ads = _flow_announcements(data, styles)
+    story.append(
+        KeepInFrame(PANEL_W - 4, PANEL_H - 4, ads, mode="shrink", hAlign="CENTER")
+    )
     story.append(FrameBreak())
-    # Outside right → cover (front)
-    story.extend(_flow_cover(data, styles))
+    # Outside right → cover (front) — keep crucifix visible
+    cover = _flow_cover(data, styles)
+    story.append(
+        KeepInFrame(PANEL_W - 4, PANEL_H - 4, cover, mode="shrink", hAlign="CENTER")
+    )
     story.append(NextPageTemplate("inside"))
     story.append(PageBreak())
     # Inside left → order
-    story.extend(_flow_order(data, styles))
+    story.append(
+        KeepInFrame(
+            PANEL_W - 4,
+            PANEL_H - 4,
+            _flow_order(data, styles),
+            mode="shrink",
+            hAlign="CENTER",
+        )
+    )
     story.append(FrameBreak())
-    # Inside right → scripture / hymns
-    story.extend(_flow_scripture_hymns(data, styles, lyric_lines=lyric_lines))
+    # Inside right → scripture / hymn titles / responsive / creed (no truncation)
+    story.append(
+        KeepInFrame(
+            PANEL_W - 4,
+            PANEL_H - 4,
+            _flow_scripture_hymns(data, styles),
+            mode="shrink",
+            hAlign="LEFT",
+        )
+    )
     return story
 
 
 def draw_bulletin(data: WorshipData) -> BytesIO:
     """
     Folded Letter (11×8.5) bulletin — 2 PDF pages for duplex print:
-      outside [광고 | 커버], inside [예배순서 | 성경·찬송].
+      outside [광고 | 커버], inside [예배순서 | 성경·교독·사도신경].
     """
     data = enrich_worship_data(data, allow_remote=True, force_hymn_lyrics=True)
     styles = _styles()
 
-    lyric_lines = 6
     buf = BytesIO()
-    while True:
-        buf = BytesIO()
-        doc = BaseDocTemplate(
-            buf,
-            pagesize=(PAGE_W, PAGE_H),
-            title=_clean(data.service_title) or "주일 예배 주보",
-        )
-        left, right = _make_frames()
-        doc.addPageTemplates(
-            [
-                PageTemplate(id="outside", frames=[left, right], onPage=_on_outside),
-                PageTemplate(id="inside", frames=[left, right], onPage=_on_inside),
-            ]
-        )
-        doc.build(_build_story(data, styles, lyric_lines=lyric_lines))
-        buf.seek(0)
-        try:
-            from pypdf import PdfReader
-
-            n = len(PdfReader(buf).pages)
-        except Exception:
-            n = 2
-            break
-        # Must stay 2 sheets; shrink lyrics if overflow created extra pages
-        if n <= 2 or lyric_lines <= 2:
-            break
-        lyric_lines -= 1
-
+    doc = BaseDocTemplate(
+        buf,
+        pagesize=(PAGE_W, PAGE_H),
+        title=_clean(data.service_title) or "주일 예배 주보",
+    )
+    left, right = _make_frames()
+    doc.addPageTemplates(
+        [
+            PageTemplate(id="outside", frames=[left, right], onPage=_on_outside),
+            PageTemplate(id="inside", frames=[left, right], onPage=_on_inside),
+        ]
+    )
+    doc.build(_build_story(data, styles))
     buf.seek(0)
     raw = buf.getvalue()
     if b"_x000B_" in raw or b"_x000b_" in raw:
@@ -781,24 +861,30 @@ def bulletin_preview_text(data: WorshipData) -> str:
             row += f"  —  {detail}"
         lines.append(row)
 
-    lines += ["", "[오른쪽] 성경본문 · 찬송"]
+    lines += ["", "[오른쪽] 오늘의 말씀 · 찬송 제목 · 교독 · 사도신경"]
     ref = _clean(data.scripture_reference)
     body = _clean(data.scripture_text)
     if ref:
         lines.append(ref)
     if body:
-        lines.extend(body.splitlines()[:6])
-        if len(body.splitlines()) > 6:
-            lines.append("…")
+        lines.extend(body.splitlines())
     lines += ["", f"생명의 말씀  ·  {_clean(data.sermon_title) or '(제목 미입력)'}"]
+    lines.append("")
+    lines.append("찬송가")
     for label, h in (
-        ("찬양과 기도", data.praise_hymn),
-        ("찬송가", data.hymn),
-        ("감사와 봉헌", data.offering_hymn),
+        ("1. 찬양과 기도", data.praise_hymn),
+        ("4. 찬송가", data.hymn),
+        ("8. 감사와 봉헌", data.offering_hymn),
     ):
-        chunk = _lyrics_block(h, max_lines=4)
-        if chunk and len(chunk.splitlines()) >= 2:
-            lines += ["", f"[{label}]", *chunk.splitlines()[:4], "…"]
+        title = _hymn_line(h)
+        if title:
+            lines.append(f"{label}  ·  {title}")
+    resp = _clean(data.responsive_reading)
+    if resp:
+        lines += ["", f"교독문 · {_clean(data.responsive_reading_title) or '교독문'}", *resp.splitlines()]
+    creed = _clean(data.apostles_creed)
+    if creed:
+        lines += ["", "사도신경", *creed.splitlines()]
 
     lines += ["", "※ 양면 인쇄 후 가운데를 접으면 커버가 앞, 광고가 뒤, 안쪽에 순서·성경이 나옵니다."]
     return clean_text("\n".join(lines))

@@ -19,12 +19,26 @@ from template_tokens import _creed_pages, _hymn_pages, _responsive_pages, _text_
 
 ROOT = Path(__file__).resolve().parent
 TEMPLATE_PATH = ROOT / "worship_presentation.html"
+COVER_IMAGE_PATH = ROOT / "assets" / "crucifix_cover.png"
 
-_HTML_VERSION = "2026-08-23-hymn-refrain-expand"
+_HTML_VERSION = "2026-08-24-cover-refine-v6"
 
 
 def _esc(text: str) -> str:
     return html.escape(normalize_breaks(text or "").strip(), quote=True)
+
+
+def _cover_image_data_uri() -> str:
+    """Embed bulletin cover crucifix as a data URI for HTML print preview."""
+    if not COVER_IMAGE_PATH.is_file():
+        return ""
+    try:
+        raw = COVER_IMAGE_PATH.read_bytes()
+    except OSError:
+        return ""
+    if not raw:
+        return ""
+    return "data:image/png;base64," + base64.b64encode(raw).decode("ascii")
 
 
 def _hymn_label(h: HymnEntry) -> str:
@@ -96,30 +110,39 @@ def _append_hymn_lyric_slides(
     header: str,
     label: str,
     hymn: HymnEntry,
+    allow_remote: bool = True,
 ) -> None:
     """Append fullscreen lyric pages after a hymn intro section."""
-    from hymn_lookup import _looks_like_error_lyrics, lookup_hymn
+    from hymn_lookup import (
+        _looks_like_error_lyrics,
+        _looks_like_incomplete_stub,
+        _lyrics_richness,
+        is_usable_lyrics,
+        resolve_hymn_lyrics,
+    )
 
     raw_lyrics = list(hymn.lyrics or [])
-    # If enrich left this slot empty, fetch full lyrics now (online if needed)
-    usable = [
-        str(ln).rstrip()
-        for ln in raw_lyrics
-        if str(ln).strip() and not any(
-            m in str(ln) for m in ("불러오지 못했", "가사가 없", "직접 입력", "로컬 캐시")
-        )
-    ]
-    if len(usable) < 4 or _looks_like_error_lyrics(raw_lyrics):
-        num = parse_hymn_number(hymn.number or "") or parse_hymn_number(label)
-        if num:
-            hit = lookup_hymn(str(num), hymn.title or "", allow_remote=True)
-            if hit and hit.lyrics and not _looks_like_error_lyrics(hit.lyrics):
-                raw_lyrics = list(hit.lyrics)
-                if hit.title and (not label or label == "—"):
-                    label = f"{hit.number}장  ·  {hit.title}"
+    num = parse_hymn_number(hymn.number or "") or parse_hymn_number(label)
+    if num:
+        hit = resolve_hymn_lyrics(str(num), hymn.title or "", allow_remote=allow_remote)
+        options: list[list[str]] = []
+        if raw_lyrics and is_usable_lyrics(raw_lyrics):
+            options.append(raw_lyrics)
+        if hit and hit.lyrics and is_usable_lyrics(hit.lyrics):
+            options.append(list(hit.lyrics))
+            if hit.title and (not label or label == "—" or str(num) in label):
+                label = f"{hit.number}장  ·  {hit.title}"
+        if options:
+            raw_lyrics = max(
+                options,
+                key=lambda lines: (
+                    0 if _looks_like_incomplete_stub(lines) else 1,
+                    _lyrics_richness(lines),
+                    len([ln for ln in lines if str(ln).strip()]),
+                ),
+            )
 
     pages = [p for p in _hymn_pages(raw_lyrics, lines_per_page=4) if (p or "").strip()]
-    # Drop placeholder-only pages
     pages = [
         p
         for p in pages
@@ -128,6 +151,17 @@ def _append_hymn_lyric_slides(
         and "가사를 직접 입력" not in p
     ]
     if not pages:
+        slides.append(
+            {
+                "type": "lyric",
+                "header": header,
+                "title": label or (f"{num}장" if num else "찬송가"),
+                "content": _lyric_html(
+                    f"(찬송가 {num or ''}장 가사를 찾지 못했습니다.\n"
+                    "Streamlit에서 「온라인 보조 검색」을 켠 뒤 HTML을 다시 생성해 주세요.)"
+                ),
+            }
+        )
         return
     total = len(pages)
     for i, page in enumerate(pages, start=1):
@@ -142,32 +176,58 @@ def _append_hymn_lyric_slides(
         )
 
 
-def _ensure_service_hymn_lyrics(bundle: dict, data: WorshipData) -> dict:
+def _ensure_service_hymn_lyrics(bundle: dict, data: WorshipData, *, allow_remote: bool = True) -> dict:
     """Make sure this week's hymn numbers have full lyrics in the HTML lookup bundle."""
-    from hymn_lookup import _looks_like_error_lyrics, lookup_hymn
+    from hymn_lookup import (
+        _looks_like_error_lyrics,
+        _looks_like_incomplete_stub,
+        _lyrics_richness,
+        is_usable_lyrics,
+        resolve_hymn_lyrics,
+    )
 
     lyrics_map = dict(bundle.get("hymnLyrics") or {})
+
+    def _put(num: int, title: str, lines: list[str]) -> None:
+        if not lines or _looks_like_error_lyrics(lines):
+            return
+        lyrics_map[str(num)] = {
+            "title": title or "",
+            "lyrics": "\n".join(str(ln).rstrip() for ln in lines),
+        }
+
     for hymn in (data.praise_hymn, data.hymn, data.offering_hymn, data.response_hymn):
         num = parse_hymn_number(getattr(hymn, "number", "") or "")
         if not num:
             continue
-        key = str(num)
-        existing = lyrics_map.get(key) or {}
-        body = ""
-        if isinstance(existing, dict):
-            body = str(existing.get("lyrics") or "")
-        elif isinstance(existing, str):
-            body = existing
-        # Refresh when missing or too short for a real hymn
-        if body.count("\n") >= 5 and len(re.findall(r"[가-힣]", body)) >= 80:
+        title = (getattr(hymn, "title", "") or "").strip()
+        # Always resolve with remote compare for this week's hymns
+        hit = resolve_hymn_lyrics(str(num), title, allow_remote=allow_remote)
+        candidates: list[list[str]] = []
+        slot = list(getattr(hymn, "lyrics", None) or [])
+        if slot and is_usable_lyrics(slot):
+            candidates.append(slot)
+        existing = lyrics_map.get(str(num)) or {}
+        if isinstance(existing, dict) and existing.get("lyrics"):
+            candidates.append(str(existing.get("lyrics") or "").splitlines())
+        elif isinstance(existing, str) and existing.strip():
+            candidates.append(existing.splitlines())
+        if hit and hit.lyrics and is_usable_lyrics(hit.lyrics):
+            candidates.append(list(hit.lyrics))
+            title = hit.title or title
+
+        if not candidates:
             continue
-        hit = lookup_hymn(key, getattr(hymn, "title", "") or "", allow_remote=True)
-        if not hit or not hit.lyrics or _looks_like_error_lyrics(hit.lyrics):
-            continue
-        lyrics_map[key] = {
-            "title": hit.title or (existing.get("title") if isinstance(existing, dict) else "") or "",
-            "lyrics": "\n".join(str(ln).rstrip() for ln in hit.lyrics),
-        }
+        best = max(
+            candidates,
+            key=lambda lines: (
+                0 if _looks_like_incomplete_stub(lines) else 1,
+                _lyrics_richness(lines),
+                len([ln for ln in lines if str(ln).strip()]),
+            ),
+        )
+        _put(num, title, best)
+
     bundle = dict(bundle)
     bundle["hymnLyrics"] = lyrics_map
     return bundle
@@ -178,8 +238,8 @@ def build_presentation_slides(data: WorshipData, *, allow_remote: bool = True) -
     Slide list matching Streamlit / PPT worship order (9 steps).
     Hymn slots include intro + full lyric pages for fullscreen HTML projection.
     """
-    # Prefer online full lyrics when local stubs are incomplete
-    data = enrich_worship_data(data, allow_remote=True, force_hymn_lyrics=True)
+    # Prefer complete lyrics: honor allow_remote (HTML generator usually passes True)
+    data = enrich_worship_data(data, allow_remote=allow_remote, force_hymn_lyrics=True)
     data.include_hymn_lyrics = True
 
     church = (data.church_name_en or data.church_name_ko or "").strip()
@@ -259,6 +319,7 @@ def build_presentation_slides(data: WorshipData, *, allow_remote: bool = True) -
         header="1. 찬양과 기도",
         label=praise,
         hymn=data.praise_hymn,
+        allow_remote=allow_remote,
     )
 
     # 2. 사도신경
@@ -300,6 +361,7 @@ def build_presentation_slides(data: WorshipData, *, allow_remote: bool = True) -
         header="4. 찬송가",
         label=hymn,
         hymn=data.hymn,
+        allow_remote=allow_remote,
     )
 
     # 5. 예배의 기도
@@ -358,6 +420,7 @@ def build_presentation_slides(data: WorshipData, *, allow_remote: bool = True) -
         header="8. 감사와 봉헌",
         label=offering,
         hymn=data.offering_hymn,
+        allow_remote=allow_remote,
     )
 
     # 9. 축도
@@ -406,6 +469,8 @@ def build_form_prefetch(data: WorshipData) -> dict:
     resp_n = parse_responsive_number(data.responsive_reading_title or "")
     return {
         "churchName": data.church_name_en or data.church_name_ko or "",
+        "churchNameKo": data.church_name_ko or "플러톤 빌라 교회",
+        "churchNameEn": data.church_name_en or "",
         "worshipDate": "  ·  ".join(x for x in [data.date, data.service_time] if x),
         "hymn1Num": _num(data.praise_hymn),
         "hymn1Title": _hymn_label(data.praise_hymn),
@@ -438,9 +503,34 @@ def generate_worship_html(
     pptx_name: str = "worship.pptx",
     pdf_bytes: bytes | None = None,
     pdf_name: str = "bulletin.pdf",
+    content_id: str = "",
 ) -> bytes:
     """Return a standalone HTML presentation filled from WorshipData."""
-    slides = build_presentation_slides(data, allow_remote=allow_remote)
+    # Warm this week's hymns into local DB first (remote only fills gaps)
+    from hymn_lookup import parse_hymn_number, warm_hymn_numbers
+
+    nums = []
+    for h in (data.praise_hymn, data.hymn, data.offering_hymn, data.response_hymn):
+        n = parse_hymn_number(getattr(h, "number", "") or "")
+        if n:
+            nums.append(n)
+    if nums:
+        warmed = warm_hymn_numbers(nums, allow_remote=bool(allow_remote))
+        # Push warmed lyrics onto slots so slides never see stubs
+        for slot_name in ("praise_hymn", "hymn", "offering_hymn", "response_hymn"):
+            slot = getattr(data, slot_name)
+            n = parse_hymn_number(getattr(slot, "number", "") or "")
+            hit = warmed.get(str(n)) if n else None
+            if not hit or not hit.lyrics or not hit.found_lyrics:
+                continue
+            from hymn_lookup import is_usable_lyrics
+
+            if is_usable_lyrics(hit.lyrics):
+                slot.lyrics = list(hit.lyrics)
+                if hit.title:
+                    slot.title = hit.title
+
+    slides = build_presentation_slides(data, allow_remote=bool(allow_remote))
     prefetch = build_form_prefetch(data)
     artifacts: dict = {}
     if pptx_bytes:
@@ -448,20 +538,27 @@ def generate_worship_html(
             "name": pptx_name,
             "base64": base64.b64encode(pptx_bytes).decode("ascii"),
             "mime": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            "contentId": content_id or "",
         }
     if pdf_bytes:
         artifacts["pdf"] = {
             "name": pdf_name,
             "base64": base64.b64encode(pdf_bytes).decode("ascii"),
             "mime": "application/pdf",
+            "contentId": content_id or "",
         }
+    cover_image = _cover_image_data_uri()
     payload = {
         "version": _HTML_VERSION,
+        "contentId": content_id or "",
         "slides": slides,
         "form": prefetch,
         "source": "streamlit",
         "artifacts": artifacts,
-        "lookup": _ensure_service_hymn_lyrics(build_lookup_bundle(), data),
+        "coverImage": cover_image,
+        "lookup": _ensure_service_hymn_lyrics(
+            build_lookup_bundle(), data, allow_remote=bool(allow_remote)
+        ),
     }
     template = TEMPLATE_PATH.read_text(encoding="utf-8")
     injection = (

@@ -85,6 +85,7 @@ from defaults import (
 from models import HymnEntry, WorshipData
 from hymn_lookup import lookup_hymn, parse_hymn_number
 from html_presentation import generate_worship_html
+import html_share
 from pdf_generator import bulletin_preview_text, generate_worship_pdf
 from pptx_generator import generate_worship_pptx, pptx_slide_previews, scan_placeholders
 from responsive_lookup import format_responsive_label, lookup_responsive, parse_responsive_number
@@ -404,9 +405,20 @@ def _hymn_from_keys(num_key: str, title_key: str, *, allow_remote: bool) -> Hymn
         allow_remote=allow_remote,
     )
     if result:
-        lyrics = normalize_line_list(result.lyrics or seed or [])
-        # Prefer editable textarea / fuller cache over thin lookup stubs
-        if seed and _lyrics_line_score(seed) >= _lyrics_line_score(lyrics):
+        lyrics = normalize_line_list(result.lyrics or [])
+        # Prefer editable textarea / session seed only when it is fuller and not a stub
+        from hymn_lookup import _looks_like_error_lyrics, _looks_like_incomplete_stub, is_usable_lyrics
+
+        seed_ok = (
+            seed
+            and is_usable_lyrics(seed)
+            and not _looks_like_incomplete_stub(seed)
+            and not _looks_like_error_lyrics(seed)
+        )
+        lookup_ok = lyrics and is_usable_lyrics(lyrics) and not _looks_like_error_lyrics(lyrics)
+        if seed_ok and (not lookup_ok or _lyrics_line_score(seed) > _lyrics_line_score(lyrics)):
+            lyrics = seed
+        elif not lookup_ok and seed:
             lyrics = seed
         catalog_title = result.title or title
         entry = HymnEntry(
@@ -526,6 +538,68 @@ def _build_worship_data(service_date, *, allow_remote: bool, force_lyrics: bool 
                 for i, p in enumerate(pages)
             ]
     return enrich_worship_data(data, allow_remote=allow_remote, force_hymn_lyrics=force_lyrics)
+
+
+def _publish_html_for_devices(html_bytes: bytes) -> dict:
+    """Write live HTML and start LAN share for iPad / iPhone."""
+    live = html_share.ensure_live_file(html_bytes)
+    st.session_state["html_live_path"] = str(live)
+    info = html_share.start_share_server(live.parent)
+    st.session_state["html_share"] = info
+    return info
+
+
+def _rebuild_pptx_for_data(data: WorshipData, *, allow_remote: bool, service_date) -> bytes | None:
+    """Build worship PPT from the same WorshipData used for HTML."""
+    master = st.session_state.get("master_pptx_bytes")
+    if not master:
+        return None
+    out = generate_worship_pptx(data, master=master, allow_remote=allow_remote)
+    pptx_bytes = out.getvalue()
+    base = Path(st.session_state.get("master_pptx_name") or "worship").stem
+    st.session_state["pptx_file"] = pptx_bytes
+    st.session_state["pptx_name"] = f"{base}_{service_date.strftime('%Y%m%d')}.pptx"
+    return pptx_bytes
+
+
+def _render_device_share_panel() -> None:
+    """Show LAN URL + QR so iPad/iPhone can open the worship HTML."""
+    info = st.session_state.get("html_share") or {}
+    live = st.session_state.get("html_live_path") or ""
+    if not live or not Path(live).is_file():
+        return
+
+    st.markdown("##### iPad · iPhone으로 자동 공유")
+    c1, c2 = st.columns([2, 1])
+    with c1:
+        if st.button("📱 iPad / iPhone 공유 시작", use_container_width=True, key="start_ios_share"):
+            info = html_share.start_share_server(Path(live).parent)
+            st.session_state["html_share"] = info
+            if info.get("ok"):
+                st.toast("공유가 시작되었습니다. QR 또는 주소로 여세요.")
+            else:
+                st.warning(info.get("message") or "공유를 시작할 수 없습니다.")
+        url = (info or {}).get("url") or ""
+        if info.get("ok") and url:
+            st.success(info.get("message") or "공유 중")
+            st.code(url, language=None)
+            st.caption(
+                "PC와 **같은 Wi‑Fi**에 연결한 뒤 Safari에서 주소를 열거나 QR을 스캔하세요. "
+                "파일이 OneDrive 폴더에 있으면 OneDrive 앱에서도 동기화됩니다."
+            )
+            st.caption(f"로컬 파일: `{live}`")
+        elif info and not info.get("ok"):
+            st.warning(info.get("message") or "공유 서버가 꺼져 있습니다.")
+        else:
+            st.caption("버튼을 누르면 같은 Wi‑Fi의 iPad/iPhone에서 바로 열 수 있습니다.")
+    with c2:
+        url = (info or {}).get("url") or ""
+        if info.get("ok") and url:
+            png = html_share.qr_png_bytes(url)
+            if png:
+                st.image(png, caption="QR 스캔", width=180)
+            else:
+                st.caption("QR 표시를 위해 `pip install qrcode` 후 다시 시도하세요.")
 
 
 def _on_hymn_num_change(num_key: str, title_key: str) -> None:
@@ -699,6 +773,37 @@ def main():
             "8. 감사와 봉헌  \n9. 축도 · 안내  \n10. 소식 · 광고"
         )
         allow_remote = st.toggle("온라인 보조 검색", value=True)
+        st.caption("예배 직전에는 로컬 찬송 DB를 쓰는 것이 가장 안정적입니다.")
+        try:
+            import json as _json
+            from pathlib import Path as _Path
+
+            _lyrics_path = _Path(__file__).resolve().parent / "data" / "hymns_lyrics.json"
+            _idx_path = _Path(__file__).resolve().parent / "data" / "hymn_index.json"
+            _n_lyrics = len(_json.loads(_lyrics_path.read_text(encoding="utf-8"))) if _lyrics_path.exists() else 0
+            _n_index = len(_json.loads(_idx_path.read_text(encoding="utf-8"))) if _idx_path.exists() else 645
+            st.metric("로컬 찬송 가사", f"{_n_lyrics} / {_n_index}")
+        except Exception:
+            pass
+        if st.button("찬송 가사 DB 전체 업데이트", use_container_width=True, key="backfill_hymns"):
+            with st.spinner("찬송가 전곡 가사를 로컬 DB에 받는 중… (수 분 소요)"):
+                try:
+                    from backfill_hymn_lyrics import backfill
+
+                    stats = backfill(start=1, end=645, only_missing=True, sleep_s=0.25, save_every=5)
+                    # Refresh cached loaders
+                    try:
+                        from hymn_lookup import _load_lyrics
+
+                        _load_lyrics.cache_clear()
+                    except Exception:
+                        pass
+                    st.success(
+                        f"완료 · 신규 {stats['ok']} · 개선 {stats['improved']} · "
+                        f"유지 {stats['skip']} · 실패 {stats['fail']} · 총 {stats['total']}곡"
+                    )
+                except Exception as exc:
+                    st.error(f"DB 업데이트 실패: {exc}")
         st.divider()
         st.caption("Worship PPT & PDF Generator")
         if st.button("다른 PPT 자료 보관함 열기", use_container_width=True, key="sidebar_ppt_lib"):
@@ -1182,32 +1287,51 @@ def main():
                 st.session_state["pptx_file"] = out.getvalue()
                 base = Path(st.session_state.get("master_pptx_name") or "worship").stem
                 st.session_state["pptx_name"] = f"{base}_{service_date.strftime('%Y%m%d')}.pptx"
+                st.session_state["pptx_fingerprint"] = content_fingerprint
                 notes = getattr(generate_worship_pptx, "last_insert_notes", None) or []
                 if notes:
                     st.info("이번 주 찬송 PPT 삽입 · " + " · ".join(notes))
             except Exception as exc:
                 import traceback
 
+                st.session_state.pop("pptx_file", None)
+                st.session_state.pop("pptx_fingerprint", None)
                 st.error(f"PPT 주입 오류: {exc}")
                 st.code(traceback.format_exc())
         elif make_both:
             st.warning("PPT 마스터가 없어 주보만 생성했습니다.")
 
+        # Only embed PPT/PDF that match this exact worship content
+        pptx_for_html = None
+        pptx_name_for_html = st.session_state.get("pptx_name", "worship.pptx")
+        if (
+            st.session_state.get("pptx_file")
+            and st.session_state.get("pptx_fingerprint") == content_fingerprint
+        ):
+            pptx_for_html = st.session_state["pptx_file"]
+        pdf_for_html = st.session_state.get("pdf_file")
+
         try:
             st.session_state["html_file"] = generate_worship_html(
                 data,
                 allow_remote=allow_remote,
-                pptx_bytes=st.session_state.get("pptx_file"),
-                pptx_name=st.session_state.get("pptx_name", "worship.pptx"),
-                pdf_bytes=st.session_state.get("pdf_file"),
+                pptx_bytes=pptx_for_html,
+                pptx_name=pptx_name_for_html,
+                pdf_bytes=pdf_for_html,
                 pdf_name=st.session_state.get("pdf_name", "bulletin.pdf"),
+                content_id=content_fingerprint,
             )
             st.session_state["html_name"] = f"worship_{service_date.strftime('%Y%m%d')}.html"
-            out_dir = Path(__file__).resolve().parent / "output"
-            out_dir.mkdir(parents=True, exist_ok=True)
-            live_path = out_dir / "worship_live.html"
-            live_path.write_bytes(st.session_state["html_file"])
-            st.session_state["html_live_path"] = str(live_path)
+            st.session_state["html_fingerprint"] = content_fingerprint
+            share = _publish_html_for_devices(st.session_state["html_file"])
+            if share.get("ok"):
+                st.info(f"iPad/iPhone 공유 주소 · {share.get('url')}")
+            else:
+                out_dir = Path(__file__).resolve().parent / "output"
+                out_dir.mkdir(parents=True, exist_ok=True)
+                live_path = out_dir / "worship_live.html"
+                live_path.write_bytes(st.session_state["html_file"])
+                st.session_state["html_live_path"] = str(live_path)
         except Exception as exc:
             import traceback
 
@@ -1264,6 +1388,7 @@ def main():
                     st.session_state["pptx_file"] = out.getvalue()
                     base = Path(st.session_state.get("master_pptx_name") or "worship").stem
                     st.session_state["pptx_name"] = f"{base}_{service_date.strftime('%Y%m%d')}.pptx"
+                    st.session_state["pptx_fingerprint"] = content_fingerprint
                     st.rerun()
                 except Exception as exc:
                     st.error(f"PPT 생성 오류: {exc}")
@@ -1278,22 +1403,25 @@ def main():
                 key="dl_html",
             )
             if st.button("브라우저에서 예배화면 열기", use_container_width=True, key="open_html"):
-                # Always refresh live HTML from the current template so new buttons appear
+                # Rebuild PPT + HTML from the same current data so downloads match the screen
                 try:
+                    pptx_bytes = _rebuild_pptx_for_data(
+                        data, allow_remote=True, service_date=service_date
+                    )
+                    if pptx_bytes is not None:
+                        st.session_state["pptx_fingerprint"] = content_fingerprint
                     fresh = generate_worship_html(
                         data,
-                        allow_remote=False,
-                        pptx_bytes=st.session_state.get("pptx_file"),
+                        allow_remote=True,
+                        pptx_bytes=pptx_bytes or st.session_state.get("pptx_file"),
                         pptx_name=st.session_state.get("pptx_name", "worship.pptx"),
                         pdf_bytes=st.session_state.get("pdf_file"),
                         pdf_name=st.session_state.get("pdf_name", "bulletin.pdf"),
+                        content_id=content_fingerprint,
                     )
                     st.session_state["html_file"] = fresh
-                    out_dir = Path(__file__).resolve().parent / "output"
-                    out_dir.mkdir(parents=True, exist_ok=True)
-                    live_path = out_dir / "worship_live.html"
-                    live_path.write_bytes(fresh)
-                    st.session_state["html_live_path"] = str(live_path)
+                    st.session_state["html_fingerprint"] = content_fingerprint
+                    _publish_html_for_devices(fresh)
                 except Exception as exc:
                     st.warning(f"HTML 갱신 중 문제: {exc}")
                 live = st.session_state.get("html_live_path") or ""
@@ -1308,9 +1436,10 @@ def main():
                         subprocess.run(["open", live], check=False)
                     else:
                         subprocess.run(["xdg-open", live], check=False)
-                    st.toast("최신 예배화면을 브라우저에서 열었습니다.")
+                    st.toast("최신 예배화면을 브라우저에서 열었습니다. (PPT도 같은 내용으로 갱신)")
                 else:
                     st.warning("먼저 출력을 생성해 주세요.")
+            _render_device_share_panel()
         else:
             st.caption("예배화면 HTML 대기 중")
 
@@ -1531,6 +1660,7 @@ def main():
             live = st.session_state.get("html_live_path")
             if live:
                 st.caption(f"로컬 파일: `{live}`")
+            _render_device_share_panel()
         else:
             st.caption("예배화면 HTML이 아직 없습니다. 위 버튼으로 생성해 주세요.")
 

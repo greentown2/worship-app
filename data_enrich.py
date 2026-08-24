@@ -31,7 +31,7 @@ def enrich_hymn(h: HymnEntry, *, allow_remote: bool = True) -> HymnEntry:
             number = f"{result.number}장"
         title = (result.title or title) if has_num else (title or result.title)
         new_lyrics = normalize_line_list(result.lyrics or [])
-        if new_lyrics and (
+        if new_lyrics and is_usable_lyrics(new_lyrics) and (
             not is_usable_lyrics(lyrics)
             or _lyrics_richness(new_lyrics) >= _lyrics_richness(lyrics)
         ):

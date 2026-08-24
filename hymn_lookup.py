@@ -22,6 +22,8 @@ HYMN_CACHE_PATH = DATA_DIR / "hymns_lyrics_cache.json"
 BIBLETOPPT_URL = "https://bibletoppt.com/hymn/lyrics/{num:03d}"
 
 _CACHE_LOCK = threading.Lock()
+_REMOTE_MEMO: dict[int, list[str]] = {}
+_REMOTE_MEMO_LOCK = threading.Lock()
 
 # Phrases that must never appear on projection slides
 _BAD_SLIDE_MARKERS = (
@@ -90,6 +92,8 @@ def _save_runtime_cache(number: int, title: str, lyrics: list[str]) -> None:
     """Persist successfully fetched lyrics for offline reuse."""
     if not lyrics or _looks_like_error_lyrics(lyrics):
         return
+    if _looks_like_incomplete_stub(lyrics):
+        return
     with _CACHE_LOCK:
         cache = _load_runtime_cache()
         cache[str(number)] = {"title": title, "lyrics": list(lyrics)}
@@ -99,6 +103,59 @@ def _save_runtime_cache(number: int, title: str, lyrics: list[str]) -> None:
                 json.dump(cache, f, ensure_ascii=False, indent=2)
         except OSError:
             pass
+
+
+def _merge_into_local_lyrics(number: int, title: str, lyrics: list[str]) -> None:
+    """Promote complete lyrics into the permanent offline hymns_lyrics.json."""
+    if not lyrics or _looks_like_error_lyrics(lyrics) or _looks_like_incomplete_stub(lyrics):
+        return
+    body = [str(ln).rstrip() for ln in lyrics]
+    hangul = len(re.findall(r"[가-힣]", "\n".join(body)))
+    if hangul < 60:
+        return
+    with _CACHE_LOCK:
+        db = {}
+        if HYMN_LYRICS_PATH.exists():
+            try:
+                db = json.loads(HYMN_LYRICS_PATH.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                db = {}
+        key = str(number)
+        prev = db.get(key) if isinstance(db.get(key), dict) else None
+        prev_lines = list((prev or {}).get("lyrics") or [])
+        prev_ok = (
+            prev_lines
+            and not _looks_like_incomplete_stub(prev_lines)
+            and not _looks_like_error_lyrics(prev_lines)
+        )
+        if prev_ok and _lyrics_richness(prev_lines) >= _lyrics_richness(body):
+            return
+        db[key] = {"title": (title or "").strip() or (prev or {}).get("title") or "", "lyrics": body}
+        try:
+            DATA_DIR.mkdir(parents=True, exist_ok=True)
+            payload = json.dumps(db, ensure_ascii=False, indent=2) + "\n"
+            tmp = HYMN_LYRICS_PATH.with_suffix(".json.tmp")
+            tmp.write_text(payload, encoding="utf-8")
+            tmp.replace(HYMN_LYRICS_PATH)
+            _load_lyrics.cache_clear()
+        except OSError:
+            try:
+                HYMN_LYRICS_PATH.write_text(
+                    json.dumps(db, ensure_ascii=False, indent=2) + "\n",
+                    encoding="utf-8",
+                )
+                _load_lyrics.cache_clear()
+            except OSError:
+                pass
+
+
+def _persist_good_lyrics(number: int, title: str, lyrics: list[str]) -> None:
+    """Save complete lyrics to cache + permanent local DB."""
+    finalized = _finalize_lyrics(list(lyrics or []))
+    if not finalized or _looks_like_error_lyrics(finalized) or _looks_like_incomplete_stub(finalized):
+        return
+    _save_runtime_cache(number, title, finalized)
+    _merge_into_local_lyrics(number, title, finalized)
 
 
 def _looks_like_error_lyrics(lyrics: list[str]) -> bool:
@@ -257,19 +314,52 @@ def _looks_like_incomplete_stub(lyrics: list[str]) -> bool:
     blob = "\n".join(lines)
     hangul = len(re.findall(r"[가-힣]", blob))
     verses = len(re.findall(r"(?m)^\s*\d+\s*[\.．、)]\s*", blob))
-    # Tiny fragments only
-    if hangul < 40:
-        return True
-    if len(lines) < 5 and hangul < 80:
-        return True
-    # Short doxology-style (no verse numbers) with enough text → complete
-    if verses == 0 and len(lines) >= 6 and hangul >= 35:
+    # Short doxologies (no verse numbers) are complete
+    if verses == 0 and len(lines) >= 4 and hangul >= 25:
         return False
-    # Numbered verses but thin body → stub
-    if verses >= 2 and hangul / max(verses, 1) < 30:
+    if hangul < 30:
         return True
-    if verses >= 2 and len(lines) < verses * 3:
+    if len(lines) <= 3 and hangul < 90:
         return True
+    # Numbered verse groups that are almost empty (e.g. "1. 이 몸의" alone)
+    for group in _split_verse_groups(list(lyrics or [])):
+        if not group or not _VERSE_START_RE.match(group[0]):
+            continue
+        m = re.match(r"^\s*\d+\s*[\.．、)]\s*(.*)$", group[0])
+        head_h = len(re.findall(r"[가-힣]", (m.group(1) if m else "")))
+        body_h = len(re.findall(r"[가-힣]", "\n".join(group[1:])))
+        if head_h < 8 and body_h < 25:
+            return True
+    if verses == 1 and len(lines) <= 6:
+        return True
+    if verses >= 2 and hangul / max(verses, 1) < 22:
+        return True
+    if verses >= 2 and len(lines) < verses * 2:
+        return True
+    return False
+
+
+def _should_try_remote(lyrics: list[str] | None) -> bool:
+    """Whether a fuller remote copy is worth attempting."""
+    if not lyrics:
+        return True
+    if _looks_like_error_lyrics(lyrics) or _looks_like_incomplete_stub(lyrics):
+        return True
+    lines = [ln.strip() for ln in lyrics if (ln or "").strip()]
+    hangul = len(re.findall(r"[가-힣]", "\n".join(lines)))
+    verses = len(re.findall(r"(?m)^\s*\d+\s*[\.．、)]\s*", "\n".join(lines)))
+    # Title-only / one-liner placeholders
+    if len(lines) <= 2 and hangul < 40:
+        return True
+    # Numbered but clearly first-verse-only
+    if verses == 1 and hangul < 120:
+        return True
+    # Unnumbered short body — often verse1+chorus of a longer hymn (e.g. 288장)
+    # Keep true short doxologies (very little text) offline-stable
+    if verses == 0 and len(lines) >= 6 and hangul < 160:
+        return True
+    if verses == 0 and 3 <= len(lines) <= 5 and hangul < 55:
+        return False
     return False
 
 
@@ -312,8 +402,8 @@ def _projection_lyrics(number: int, title: str) -> list[str]:
     ]
 
 
-def _fetch_remote_lyrics(number: int) -> Optional[list[str]]:
-    """Best-effort fetch from public hymn lyric pages (runtime only)."""
+def _fetch_remote_lyrics_once(number: int) -> Optional[list[str]]:
+    """Single attempt to scrape public hymn lyric pages."""
     import html as html_lib
 
     url = BIBLETOPPT_URL.format(num=number)
@@ -325,7 +415,7 @@ def _fetch_remote_lyrics(number: int) -> Optional[list[str]]:
         },
     )
     try:
-        with urlopen(req, timeout=12) as resp:
+        with urlopen(req, timeout=15) as resp:
             raw_html = resp.read().decode("utf-8", errors="replace")
     except (URLError, HTTPError, TimeoutError, OSError):
         return None
@@ -354,7 +444,33 @@ def _fetch_remote_lyrics(number: int) -> Optional[list[str]]:
                 lines[0] = f"{verse_no}. {first}"
             assembled.extend(lines)
         if assembled and (
-            _looks_like_real_hymn(assembled) or len([ln for ln in assembled if ln.strip()]) >= 6
+            _looks_like_real_hymn(assembled) or len([ln for ln in assembled if ln.strip()]) >= 4
+        ):
+            return assembled[:240]
+
+    # 1b) Doxology / short hymns: lone whitespace-pre-line blocks (no "N절" headers)
+    pre_blocks = re.findall(
+        r"<p[^>]*whitespace-pre-line[^>]*>(.*?)</p>",
+        text,
+        flags=re.DOTALL | re.I,
+    )
+    if pre_blocks:
+        assembled = []
+        for body in pre_blocks:
+            chunk = re.sub(r"<[^>]+>", "\n", body)
+            chunk = html_lib.unescape(chunk)
+            lines = _clean_lyric_lines(chunk.splitlines())
+            if not lines:
+                continue
+            # Skip UI chrome that sneaks into pre-line
+            blob = "\n".join(lines)
+            if any(x in blob for x in ("다운로드", "파워포인트", "신학적", "연관 성구")):
+                continue
+            if assembled and assembled[-1] != "":
+                assembled.append("")
+            assembled.extend(lines)
+        if assembled and (
+            _looks_like_real_hymn(assembled) or len([ln for ln in assembled if ln.strip()]) >= 4
         ):
             return assembled[:240]
 
@@ -406,17 +522,54 @@ def _fetch_remote_lyrics(number: int) -> Optional[list[str]]:
     return None
 
 
+def _fetch_remote_lyrics(number: int, *, retries: int = 3) -> Optional[list[str]]:
+    """Best-effort fetch with retries — network flakes should not drop Sunday lyrics."""
+    import time
+
+    memo: Optional[list[str]] = None
+    with _REMOTE_MEMO_LOCK:
+        memo = _REMOTE_MEMO.get(number)
+        if memo and not _should_try_remote(memo):
+            return list(memo)
+
+    best: Optional[list[str]] = list(memo) if memo else None
+    for attempt in range(max(1, retries)):
+        got = _fetch_remote_lyrics_once(number)
+        if got:
+            if best is None or _lyrics_richness(got) > _lyrics_richness(best):
+                best = got
+            # Only stop early when the copy looks complete enough
+            if (
+                _looks_like_real_hymn(got)
+                and not _looks_like_incomplete_stub(got)
+                and not _should_try_remote(got)
+            ):
+                with _REMOTE_MEMO_LOCK:
+                    _REMOTE_MEMO[number] = list(got)
+                return got
+        if attempt + 1 < retries:
+            time.sleep(0.6 * (attempt + 1))
+    if best:
+        with _REMOTE_MEMO_LOCK:
+            prev = _REMOTE_MEMO.get(number)
+            if prev is None or _lyrics_richness(best) >= _lyrics_richness(prev):
+                _REMOTE_MEMO[number] = list(best)
+    return best
+
+
 def lookup_hymn(
     raw_number: str,
     title_override: str = "",
     *,
     allow_remote: bool = True,
+    force_remote: bool = False,
 ) -> Optional[HymnResult]:
     """
     Resolve hymn number to title + full lyrics.
 
     Prefers the richest complete lyric text (remote full song over short local stubs).
     Labels use 「찬송가」 (not 「새찬송가」).
+    When force_remote=True, always compare against a remote fetch (HTML / Sunday path).
     """
     number = parse_hymn_number(raw_number)
     if number is None and not title_override.strip():
@@ -466,13 +619,12 @@ def lookup_hymn(
                 HymnResult(number=number, title=t, lyrics=lyrics, source="cache", found_lyrics=True)
             )
 
-    # 3) Remote full lyrics whenever local/cache looks incomplete
+    # 3) Remote — always when forced, or when local/cache looks thin/incomplete
     best_so_far = max(candidates, key=lambda r: _lyrics_richness(r.lyrics), default=None)
     need_remote = allow_remote and (
-        best_so_far is None
-        or _looks_like_incomplete_stub(best_so_far.lyrics)
-        or _lyrics_richness(best_so_far.lyrics) < 280
-        or len([ln for ln in (best_so_far.lyrics or []) if ln.strip()]) < 8
+        force_remote
+        or best_so_far is None
+        or _should_try_remote(best_so_far.lyrics)
     )
     if need_remote:
         remote = _fetch_remote_lyrics(number)
@@ -483,7 +635,6 @@ def lookup_hymn(
             ):
                 t = index_title or override or title
                 expanded = _finalize_lyrics(remote)
-                _save_runtime_cache(number, t, expanded)
                 candidates.append(
                     HymnResult(number=number, title=t, lyrics=expanded, source="remote", found_lyrics=True)
                 )
@@ -494,8 +645,14 @@ def lookup_hymn(
             body = [ln for ln in (r.lyrics or []) if (ln or "").strip()]
             hangul = len(re.findall(r"[가-힣]", "\n".join(body)))
             stub = 1 if _looks_like_incomplete_stub(r.lyrics) else 0
+            thin = 1 if _should_try_remote(r.lyrics) else 0
+            err = 1 if _looks_like_error_lyrics(r.lyrics) else 0
+            verses = len(re.findall(r"(?m)^\s*\d+\s*[\.．、)]\s*", "\n".join(body)))
             return (
+                -err,
                 -stub,
+                -thin,
+                verses,
                 hangul,
                 len(body),
                 _lyrics_richness(r.lyrics),
@@ -505,6 +662,10 @@ def lookup_hymn(
         best = max(candidates, key=_rank)
         best.title = index_title or best.title or override or title
         best.lyrics = _finalize_lyrics(best.lyrics)
+        if best.found_lyrics and not _looks_like_error_lyrics(best.lyrics) and not _looks_like_incomplete_stub(
+            best.lyrics
+        ):
+            _persist_good_lyrics(number, best.title, best.lyrics)
         return best
 
     lyrics = _finalize_lyrics(_projection_lyrics(number, title))
@@ -531,3 +692,44 @@ def is_usable_lyrics(lyrics: list[str]) -> bool:
     if _looks_like_error_lyrics(cleaned):
         return False
     return True
+
+
+def resolve_hymn_lyrics(
+    raw_number: str,
+    title_override: str = "",
+    *,
+    allow_remote: bool = True,
+) -> HymnResult:
+    """
+    Projection-safe resolve. Prefers permanent local DB.
+    Remote is only used when local/cache is missing or clearly truncated.
+    """
+    hit = lookup_hymn(
+        raw_number,
+        title_override,
+        allow_remote=allow_remote,
+        force_remote=False,
+    )
+    if hit is None:
+        num = parse_hymn_number(raw_number) or 0
+        title = (title_override or "").strip() or (f"{num}장" if num else "찬송가")
+        return HymnResult(
+            number=num,
+            title=title,
+            lyrics=_finalize_lyrics(_projection_lyrics(num, title)),
+            source="generated",
+            found_lyrics=False,
+        )
+    return hit
+
+
+def warm_hymn_numbers(numbers: list[int] | list[str], *, allow_remote: bool = True) -> dict[str, HymnResult]:
+    """Ensure given hymn numbers are resolved and persisted locally."""
+    out: dict[str, HymnResult] = {}
+    for raw in numbers:
+        num = parse_hymn_number(str(raw))
+        if not num:
+            continue
+        hit = resolve_hymn_lyrics(str(num), allow_remote=allow_remote)
+        out[str(num)] = hit
+    return out
