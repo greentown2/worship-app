@@ -21,7 +21,7 @@ ROOT = Path(__file__).resolve().parent
 TEMPLATE_PATH = ROOT / "worship_presentation.html"
 COVER_IMAGE_PATH = ROOT / "assets" / "crucifix_cover.png"
 
-_HTML_VERSION = "2026-08-24-iphone-chrome-hide-v8"
+_HTML_VERSION = "2026-08-24-order-align-v10"
 
 
 def _esc(text: str) -> str:
@@ -304,7 +304,7 @@ def build_presentation_slides(data: WorshipData, *, allow_remote: bool = True) -
             "title": "예배 순서",
             "subtitle": "Order of Worship",
             "content": (
-                '<div class="order-list grid grid-cols-1 gap-y-4 text-center w-full max-w-4xl mx-auto mt-8 '
+                '<div class="order-list grid grid-cols-1 gap-y-4 text-left w-max max-w-full mt-2 '
                 'text-2xl text-slate-200">'
                 + "".join(order_rows)
                 + "</div>"

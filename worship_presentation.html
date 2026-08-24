@@ -289,9 +289,32 @@
             line-height: 1.35;
         }
         body.touch-worship.is-presenting .order-list {
-            text-align: center !important;
-            margin-left: auto;
-            margin-right: auto;
+            text-align: left !important;
+            margin-left: 0;
+            margin-right: 0;
+        }
+        .slide-body.order-slide-body {
+            align-items: center;
+            text-align: left;
+        }
+        .order-stack {
+            display: inline-flex;
+            flex-direction: column;
+            align-items: flex-start;
+            text-align: left;
+            max-width: min(56rem, 92%);
+        }
+        .order-stack > h2,
+        .order-stack > p {
+            text-align: left;
+            width: 100%;
+        }
+        .order-list {
+            text-align: left;
+            width: max-content;
+            max-width: 100%;
+            margin-left: 0;
+            margin-right: 0;
         }
         .present-exit-btn {
             display: none;
@@ -1882,7 +1905,7 @@ window.WORSHIP_LOOKUP = {"hymns":{"1":"만복의 근원 하나님","2":"찬양 �
                 type: 'title',
                 title: '예배 순서',
                 subtitle: 'Order of Worship',
-                content: `<div class="order-list grid grid-cols-1 gap-y-4 text-center w-full max-w-4xl mx-auto mt-8 text-2xl text-slate-200">${orderRows}</div>`,
+                content: `<div class="order-list grid grid-cols-1 gap-y-4 text-left w-max max-w-full mt-2 text-2xl text-slate-200">${orderRows}</div>`,
             });
 
             // 1 hymn intro + lyrics
@@ -2097,6 +2120,17 @@ window.WORSHIP_LOOKUP = {"hymns":{"1":"만복의 근원 하나님","2":"찬양 �
                     </div>
                     <div class="absolute bottom-10 w-full text-center text-xl text-slate-400 font-serif tracking-widest uppercase">
                         ${slide.footer || ''}
+                    </div>
+                `;
+            }
+            else if (slide.title === '예배 순서' || (slide.content || '').includes('order-list')) {
+                html = `
+                    <div class="slide-body order-slide-body">
+                        <div class="order-stack">
+                            <h2 class="font-serif text-title font-bold text-yellow-500 mb-2">${slide.title}</h2>
+                            <p class="text-2xl text-slate-400 mb-8 tracking-widest uppercase">${slide.subtitle || ''}</p>
+                            ${slide.content || ''}
+                        </div>
                     </div>
                 `;
             }
