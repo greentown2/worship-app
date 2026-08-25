@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-_PDF_VERSION = "2026-08-24-inside-bold-v10"
+_PDF_VERSION = "2026-08-24-ads-bold-v11"
 
 from io import BytesIO
 from pathlib import Path
@@ -328,7 +328,7 @@ def _styles() -> dict[str, ParagraphStyle]:
         ),
         "ads_heading": ParagraphStyle(
             "AdsHeading",
-            fontName=FONT_DISPLAY,
+            fontName=FONT_BOLD,
             fontSize=17,
             leading=22,
             alignment=1,
@@ -338,7 +338,7 @@ def _styles() -> dict[str, ParagraphStyle]:
         ),
         "ads_body": ParagraphStyle(
             "AdsBody",
-            fontName=FONT,
+            fontName=FONT_BOLD,
             fontSize=11.5,
             leading=17,
             textColor=INK,
@@ -440,7 +440,7 @@ def _styles() -> dict[str, ParagraphStyle]:
         ),
         "footer": ParagraphStyle(
             "Footer",
-            fontName=FONT,
+            fontName=FONT_BOLD,
             fontSize=8,
             leading=11,
             alignment=1,
@@ -449,7 +449,7 @@ def _styles() -> dict[str, ParagraphStyle]:
         ),
         "empty_hint": ParagraphStyle(
             "EmptyHint",
-            fontName=FONT,
+            fontName=FONT_BOLD,
             fontSize=8,
             leading=11,
             alignment=1,
