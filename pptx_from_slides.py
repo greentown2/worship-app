@@ -260,7 +260,7 @@ def _render_section(slide, spec: dict) -> None:
 def _render_sermon(slide, spec: dict) -> None:
     _bg(slide, "sermon")
     _pair_ornaments(slide, "sermon")
-    _add_header(slide, spec.get("header") or "7. 생명의 말씀")
+    _add_header(slide, spec.get("header") or "8. 생명의 말씀")
     title = (spec.get("title") or "").strip()
     subtitle = (spec.get("subtitle") or "").strip()
     footer = (spec.get("footer") or "").strip()

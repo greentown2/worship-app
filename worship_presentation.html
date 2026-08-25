@@ -455,11 +455,24 @@ window.WORSHIP_LOOKUP = {"hymns":{"1":"만복의 근원 하나님","2":"찬양 �
                 </div>
                 <!-- 예배 순서 세부 입력 -->
                 <div class="bg-slate-900/80 p-4 rounded-xl border border-slate-700/50 space-y-3">
-                    <h3 class="text-blue-400 font-semibold text-xs uppercase tracking-wider mb-2">예배 순서 1–8 · 10–11 (번호 → 자동 불러오기)</h3>
+                    <h3 class="text-blue-400 font-semibold text-xs uppercase tracking-wider mb-2">예배 순서 1–11 (번호 → 자동 불러오기)</h3>
                     <p class="text-[11px] text-slate-500 -mt-1 mb-2">장번호·교독문 번호·성경 구절을 입력한 뒤 <b>적용하기</b>를 누르면 미리보기에 반영됩니다.</p>
 
                     <div>
-                        <label class="block text-slate-400 mb-1">1. 찬양과 기도</label>
+                        <label class="block text-slate-400 mb-1">1. 예배 준비의 시간</label>
+                        <div class="flex gap-2 mb-1">
+                            <input type="text" id="prepHymn1Num" placeholder="1곡 장번호" class="w-24 bg-slate-800 border border-slate-600 rounded p-2 text-white" onchange="lookupHymn('prepHymn1')" onkeydown="if(event.key==='Enter'){event.preventDefault();lookupHymn('prepHymn1');}">
+                            <input type="text" id="prepHymn1Title" placeholder="제목 (자동)" class="flex-1 bg-slate-800 border border-slate-600 rounded p-2 text-white">
+                        </div>
+                        <p id="prepHymn1Hint" class="text-[11px] text-slate-500">첫 번째 찬송 · 장번호 입력 시 제목만 자동</p>
+                        <div class="flex gap-2 mb-1 mt-2">
+                            <input type="text" id="prepHymn2Num" placeholder="2곡 장번호" class="w-24 bg-slate-800 border border-slate-600 rounded p-2 text-white" onchange="lookupHymn('prepHymn2')" onkeydown="if(event.key==='Enter'){event.preventDefault();lookupHymn('prepHymn2');}">
+                            <input type="text" id="prepHymn2Title" placeholder="제목 (자동)" class="flex-1 bg-slate-800 border border-slate-600 rounded p-2 text-white">
+                        </div>
+                        <p id="prepHymn2Hint" class="text-[11px] text-slate-500">두 번째 찬송 · 장번호 입력 시 제목만 자동</p>
+                    </div>
+                    <div>
+                        <label class="block text-slate-400 mb-1">2. 찬양과 기도</label>
                         <div class="flex gap-2 mb-1">
                             <input type="text" id="hymn1Num" placeholder="장번호" class="w-24 bg-slate-800 border border-slate-600 rounded p-2 text-white" onchange="lookupHymn('hymn1')" onkeydown="if(event.key==='Enter'){event.preventDefault();lookupHymn('hymn1');}">
                             <input type="text" id="hymn1Title" placeholder="제목 (자동)" class="flex-1 bg-slate-800 border border-slate-600 rounded p-2 text-white">
@@ -467,11 +480,11 @@ window.WORSHIP_LOOKUP = {"hymns":{"1":"만복의 근원 하나님","2":"찬양 �
                         <p id="hymn1Hint" class="text-[11px] text-slate-500">장번호 입력 시 제목만 자동</p>
                     </div>
                     <div>
-                        <label class="block text-slate-400 mb-1">2. 사도신경</label>
+                        <label class="block text-slate-400 mb-1">3. 사도신경</label>
                         <textarea id="apostlesCreed" rows="3" class="w-full bg-slate-800 border border-slate-600 rounded p-2 text-slate-300 text-xs"></textarea>
                     </div>
                     <div>
-                        <label class="block text-slate-400 mb-1">3. 교독문</label>
+                        <label class="block text-slate-400 mb-1">4. 교독문</label>
                         <div class="flex gap-2 mb-1">
                             <input type="text" id="responsiveNum" placeholder="번호" class="w-24 bg-slate-800 border border-slate-600 rounded p-2 text-white" onchange="lookupResponsive()">
                             <input type="text" id="responsiveTitle" placeholder="제목 (자동)" class="flex-1 bg-slate-800 border border-slate-600 rounded p-2 text-white">
@@ -480,7 +493,7 @@ window.WORSHIP_LOOKUP = {"hymns":{"1":"만복의 근원 하나님","2":"찬양 �
                         <p id="responsiveHint" class="text-[11px] text-slate-500"></p>
                     </div>
                     <div>
-                        <label class="block text-slate-400 mb-1">4. 찬송가</label>
+                        <label class="block text-slate-400 mb-1">5. 찬송가</label>
                         <div class="flex gap-2 mb-1">
                             <input type="text" id="hymn2Num" placeholder="장번호" class="w-24 bg-slate-800 border border-slate-600 rounded p-2 text-white" onchange="lookupHymn('hymn2')" onkeydown="if(event.key==='Enter'){event.preventDefault();lookupHymn('hymn2');}">
                             <input type="text" id="hymn2Title" placeholder="제목 (자동)" class="flex-1 bg-slate-800 border border-slate-600 rounded p-2 text-white">
@@ -488,12 +501,12 @@ window.WORSHIP_LOOKUP = {"hymns":{"1":"만복의 근원 하나님","2":"찬양 �
                         <p id="hymn2Hint" class="text-[11px] text-slate-500">장번호 입력 시 제목만 자동</p>
                     </div>
                     <div>
-                        <label class="block text-slate-400 mb-1">5. 예배의 기도</label>
+                        <label class="block text-slate-400 mb-1">6. 예배의 기도</label>
                         <input type="text" id="prayerLeader" value="" class="w-full bg-slate-800 border border-slate-600 rounded p-2 text-white mb-1" placeholder="기도 인도자">
                         <textarea id="prayerText" rows="2" class="w-full bg-slate-800 border border-slate-600 rounded p-2 text-slate-300 text-xs"></textarea>
                     </div>
                     <div>
-                        <label class="block text-slate-400 mb-1">6. 오늘의 말씀</label>
+                        <label class="block text-slate-400 mb-1">7. 오늘의 말씀</label>
                         <div class="flex gap-2 mb-1">
                             <input type="text" id="bibleRef" value="" class="flex-1 bg-slate-800 border border-slate-600 rounded p-2 text-white" placeholder="예: 히브리서 4:1-11 또는 히 4:1-11" onchange="lookupScripture()" onkeydown="if(event.key==='Enter'){event.preventDefault();lookupScripture();}">
                             <button type="button" onclick="lookupScripture()" class="shrink-0 bg-slate-700 hover:bg-slate-600 border border-slate-500 text-slate-100 px-3 rounded text-xs font-semibold">본문 불러오기</button>
@@ -502,11 +515,11 @@ window.WORSHIP_LOOKUP = {"hymns":{"1":"만복의 근원 하나님","2":"찬양 �
                         <p id="bibleHint" class="text-[11px] text-slate-500">교독문처럼 장·절을 넣으면 개역 본문을 자동으로 채웁니다.</p>
                     </div>
                     <div>
-                        <label class="block text-slate-400 mb-1">7. 생명의 말씀 (설교 제목)</label>
+                        <label class="block text-slate-400 mb-1">8. 생명의 말씀 (설교 제목)</label>
                         <input type="text" id="sermonTitle" value="" class="w-full bg-slate-800 border border-slate-600 rounded p-2 text-white font-bold text-yellow-400">
                     </div>
                     <div>
-                        <label class="block text-slate-400 mb-1">8. 감사와 봉헌</label>
+                        <label class="block text-slate-400 mb-1">9. 감사와 봉헌</label>
                         <div class="flex gap-2 mb-1">
                             <input type="text" id="hymn4Num" placeholder="장번호" class="w-24 bg-slate-800 border border-slate-600 rounded p-2 text-white" onchange="lookupHymn('hymn4')" onkeydown="if(event.key==='Enter'){event.preventDefault();lookupHymn('hymn4');}">
                             <input type="text" id="hymn4Title" placeholder="제목 (자동)" class="flex-1 bg-slate-800 border border-slate-600 rounded p-2 text-white">
@@ -786,6 +799,12 @@ window.WORSHIP_LOOKUP = {"hymns":{"1":"만복의 근원 하나님","2":"찬양 �
                 return `${num}장 · ${title}`;
             }
             return title || (num ? `${num}장` : '—');
+        }
+
+        function hymnPairLabel(aNum, aTitle, bNum, bTitle) {
+            return [hymnLabelFrom(aNum, aTitle), hymnLabelFrom(bNum, bTitle)]
+                .filter(t => t && t !== '—')
+                .join('  /  ') || '—';
         }
 
         function htmlToPlain(html) {
@@ -1219,6 +1238,8 @@ window.WORSHIP_LOOKUP = {"hymns":{"1":"만복의 근원 하나님","2":"찬양 �
         }
 
         async function autoFillAll() {
+            lookupHymn('prepHymn1');
+            lookupHymn('prepHymn2');
             lookupHymn('hymn1');
             lookupHymn('hymn2');
             lookupHymn('hymn4');
@@ -1261,6 +1282,10 @@ window.WORSHIP_LOOKUP = {"hymns":{"1":"만복의 근원 하나님","2":"찬양 �
             const map = {
                 churchName: 'churchName',
                 worshipDate: 'worshipDate',
+                prepHymn1Num: 'prepHymn1Num',
+                prepHymn1Title: 'prepHymn1Title',
+                prepHymn2Num: 'prepHymn2Num',
+                prepHymn2Title: 'prepHymn2Title',
                 hymn1Num: 'hymn1Num',
                 hymn1Title: 'hymn1Title',
                                 responsiveNum: 'responsiveNum',
@@ -1544,23 +1569,25 @@ window.WORSHIP_LOOKUP = {"hymns":{"1":"만복의 근원 하나님","2":"찬양 �
             const note = val('closingNote');
             const ads = val('announcements').split(/\n+/).map(s => s.trim()).filter(Boolean);
             const hymnRows = [
-                ['1. 찬양과 기도', hymnLabelFrom('hymn1Num', 'hymn1Title')],
-                ['4. 찬송가', hymnLabelFrom('hymn2Num', 'hymn2Title')],
-                ['8. 감사와 봉헌', hymnLabelFrom('hymn4Num', 'hymn4Title')],
+                ['1. 예배 준비의 시간', hymnPairLabel('prepHymn1Num', 'prepHymn1Title', 'prepHymn2Num', 'prepHymn2Title')],
+                ['2. 찬양과 기도', hymnLabelFrom('hymn1Num', 'hymn1Title')],
+                ['5. 찬송가', hymnLabelFrom('hymn2Num', 'hymn2Title')],
+                ['9. 감사와 봉헌', hymnLabelFrom('hymn4Num', 'hymn4Title')],
             ].filter(([, t]) => t && t !== '—');
             const hymnHtml = hymnRows.length
                 ? hymnRows.map(([n, t]) => `<div class="body"><b>${esc(n)}</b> · ${esc(t)}</div>`).join('')
                 : '<div class="body muted">(찬송 미입력)</div>';
             const order = [
-                ['1', '찬양과 기도', hymnLabelFrom('hymn1Num', 'hymn1Title')],
-                ['2', '사도신경', ''],
-                ['3', '교독문', respTitle],
-                ['4', '찬송가', hymnLabelFrom('hymn2Num', 'hymn2Title')],
-                ['5', '예배의 기도', prayerLeader],
-                ['6', '오늘의 말씀', bibleRef],
-                ['7', '생명의 말씀', sermon],
-                ['8', '감사와 봉헌', hymnLabelFrom('hymn4Num', 'hymn4Title')],
-                ['9', '축도', benediction],
+                ['1', '예배 준비의 시간', hymnPairLabel('prepHymn1Num', 'prepHymn1Title', 'prepHymn2Num', 'prepHymn2Title')],
+                ['2', '찬양과 기도', hymnLabelFrom('hymn1Num', 'hymn1Title')],
+                ['3', '사도신경', ''],
+                ['4', '교독문', respTitle],
+                ['5', '찬송가', hymnLabelFrom('hymn2Num', 'hymn2Title')],
+                ['6', '예배의 기도', prayerLeader],
+                ['7', '오늘의 말씀', bibleRef],
+                ['8', '생명의 말씀', sermon],
+                ['9', '감사와 봉헌', hymnLabelFrom('hymn4Num', 'hymn4Title')],
+                ['10', '축도', benediction],
             ].map(([n, t, d]) => {
                 const detail = d && d !== '—' ? ` <span class="muted">— ${esc(d)}</span>` : '';
                 return `<div class="ord"><b>${n}. ${esc(t)}</b>${detail}</div>`;
@@ -1628,6 +1655,18 @@ window.WORSHIP_LOOKUP = {"hymns":{"1":"만복의 근원 하나님","2":"찬양 �
   .muted { color: #5A6F66; font-weight: normal; }
   .body { font-size: 9pt; line-height: 1.45; }
   .body-tight { font-size: 8.2pt; line-height: 1.38; }
+  .sheet.inside,
+  .sheet.inside .kicker,
+  .sheet.inside h2,
+  .sheet.inside h3,
+  .sheet.inside .ord,
+  .sheet.inside .ord b,
+  .sheet.inside .muted,
+  .sheet.inside .body,
+  .sheet.inside .body-tight,
+  .sheet.inside .meta {
+    font-weight: 700;
+  }
   ul { margin: 6px 0 0 1.1em; padding: 0; font-size: 10.5pt; line-height: 1.6; }
   ul li::marker { color: #1F5C4B; }
   .center { text-align: center; }
@@ -1717,7 +1756,7 @@ window.WORSHIP_LOOKUP = {"hymns":{"1":"만복의 근원 하나님","2":"찬양 �
     </div>
   </div>
 </section>
-<section class="sheet">
+<section class="sheet inside">
   <div class="panel">
     <div class="kicker">Order of Worship</div>
     <h2>예배 순서</h2>
@@ -1863,6 +1902,7 @@ window.WORSHIP_LOOKUP = {"hymns":{"1":"만복의 근원 하나님","2":"찬양 �
             const date = val('worshipDate');
             const leaderRaw = val('worshipLeader');
             const leader = leaderRaw ? (leaderRaw.startsWith('인도자') ? leaderRaw : `인도자 ${leaderRaw}`) : '';
+            const prepTitle = hymnPairLabel('prepHymn1Num', 'prepHymn1Title', 'prepHymn2Num', 'prepHymn2Title');
             const h1Title = hymnLabelFrom('hymn1Num', 'hymn1Title');
             const creed = val('apostlesCreed');
             const respTitle = val('responsiveTitle') || '교독문';
@@ -1879,15 +1919,16 @@ window.WORSHIP_LOOKUP = {"hymns":{"1":"만복의 근원 하나님","2":"찬양 �
             const announcements = val('announcements');
 
             const orderRows = [
-                ['1', '찬양과 기도', h1Title],
-                ['2', '사도신경', ''],
-                ['3', '교독문', respTitle],
-                ['4', '찬송가', h2Title],
-                ['5', '예배의 기도', prayerLeader],
-                ['6', '오늘의 말씀', bibleRef],
-                ['7', '생명의 말씀', sermonTitle],
-                ['8', '감사와 봉헌', h4Title],
-                ['9', '축도', benediction],
+                ['1', '예배 준비의 시간', prepTitle],
+                ['2', '찬양과 기도', h1Title],
+                ['3', '사도신경', ''],
+                ['4', '교독문', respTitle],
+                ['5', '찬송가', h2Title],
+                ['6', '예배의 기도', prayerLeader],
+                ['7', '오늘의 말씀', bibleRef],
+                ['8', '생명의 말씀', sermonTitle],
+                ['9', '감사와 봉헌', h4Title],
+                ['10', '축도', benediction],
             ].map(([n, t, d]) => {
                 const label = d && d !== '—' ? `${n}. ${t}  ·  ${d}` : `${n}. ${t}`;
                 return `<div>${esc(label)}</div>`;
@@ -1908,11 +1949,25 @@ window.WORSHIP_LOOKUP = {"hymns":{"1":"만복의 근원 하나님","2":"찬양 �
                 content: `<div class="order-list grid grid-cols-1 gap-y-4 text-left w-max max-w-full mt-2 text-2xl text-slate-200">${orderRows}</div>`,
             });
 
-            // 1 hymn intro + lyrics
-            newSlides.push({ type: 'section', title: '1. 찬양과 기도', subtitle: h1Title });
-            appendHymnLyrics(newSlides, '1. 찬양과 기도', h1Title, val('hymn1Num'));
+            // 1 prep hymns
+            const prepHymns = [
+                [hymnLabelFrom('prepHymn1Num', 'prepHymn1Title'), val('prepHymn1Num')],
+                [hymnLabelFrom('prepHymn2Num', 'prepHymn2Title'), val('prepHymn2Num')],
+            ].filter(([label, num]) => (label && label !== '—') || parseNum(num));
+            if (prepHymns.length) {
+                prepHymns.forEach(([label, num]) => {
+                    newSlides.push({ type: 'section', title: '1. 예배 준비의 시간', subtitle: label });
+                    appendHymnLyrics(newSlides, '1. 예배 준비의 시간', label, num);
+                });
+            } else {
+                newSlides.push({ type: 'section', title: '1. 예배 준비의 시간', subtitle: '' });
+            }
 
-            // 2 creed
+            // 2 hymn intro + lyrics
+            newSlides.push({ type: 'section', title: '2. 찬양과 기도', subtitle: h1Title });
+            appendHymnLyrics(newSlides, '2. 찬양과 기도', h1Title, val('hymn1Num'));
+
+            // 3 creed
             if (creed) {
                 const creedLines = creed.split(/\n+/).map(l => l.trim()).filter(Boolean);
                 const chunk = 4;
@@ -1922,17 +1977,17 @@ window.WORSHIP_LOOKUP = {"hymns":{"1":"만복의 근원 하나님","2":"찬양 �
                     const pages = Math.ceil(creedLines.length / chunk);
                     newSlides.push({
                         type: 'creed',
-                        header: '2. 사도신경',
+                        header: '3. 사도신경',
                         title: pages > 1 ? `사도신경 (${pageNo}/${pages})` : '사도신경',
                         content: part.map(esc).join('<br>'),
                     });
                 }
             } else {
-                newSlides.push({ type: 'section', title: '2. 사도신경', subtitle: "The Apostles' Creed" });
+                newSlides.push({ type: 'section', title: '3. 사도신경', subtitle: "The Apostles' Creed" });
             }
 
-            // 3 responsive
-            newSlides.push({ type: 'section', title: '3. 교독문', subtitle: respTitle });
+            // 4 responsive
+            newSlides.push({ type: 'section', title: '4. 교독문', subtitle: respTitle });
             if (respBody) {
                 const pairs = [];
                 const rlines = respBody.split(/\n+/).map(l => l.trim()).filter(Boolean);
@@ -1942,60 +1997,60 @@ window.WORSHIP_LOOKUP = {"hymns":{"1":"만복의 근원 하나님","2":"찬양 �
                 pairs.forEach(page => {
                     newSlides.push({
                         type: 'responsive',
-                        header: '3. 교독문',
+                        header: '4. 교독문',
                         title: respTitle,
                         content: responsiveHtml(page),
                     });
                 });
             }
 
-            // 4 hymn intro + lyrics
-            newSlides.push({ type: 'section', title: '4. 찬송가', subtitle: h2Title });
-            appendHymnLyrics(newSlides, '4. 찬송가', h2Title, val('hymn2Num'));
+            // 5 hymn intro + lyrics
+            newSlides.push({ type: 'section', title: '5. 찬송가', subtitle: h2Title });
+            appendHymnLyrics(newSlides, '5. 찬송가', h2Title, val('hymn2Num'));
 
-            // 5 prayer
+            // 6 prayer
             newSlides.push({
                 type: 'section',
-                title: '5. 예배의 기도',
+                title: '6. 예배의 기도',
                 subtitle: prayerLeader || '다함께 마음을 모아 주님께 기도드립니다.',
             });
             if (prayerText) {
                 newSlides.push({
                     type: 'scripture',
-                    header: '5. 예배의 기도',
+                    header: '6. 예배의 기도',
                     title: prayerLeader || '예배의 기도',
                     content: `<div class="text-left w-full max-w-5xl leading-relaxed">${linesHtml(prayerText)}</div>`,
                 });
             }
 
-            // 6 scripture
-            newSlides.push({ type: 'section', title: '6. 오늘의 말씀', subtitle: bibleRef || '성경 봉독' });
+            // 7 scripture
+            newSlides.push({ type: 'section', title: '7. 오늘의 말씀', subtitle: bibleRef || '성경 봉독' });
             const verses = bibleText.split(/\n+/).map(v => v.trim()).filter(Boolean);
             for (let i = 0; i < verses.length; i += 4) {
                 const chunk = verses.slice(i, i + 4).map(esc).join('<br><br>');
                 newSlides.push({
                     type: 'scripture',
-                    header: '6. 오늘의 말씀',
+                    header: '7. 오늘의 말씀',
                     title: bibleRef,
                     content: `<div class="text-left w-full max-w-5xl leading-relaxed">${chunk}</div>`,
                 });
             }
 
-            // 7 sermon
+            // 8 sermon
             newSlides.push({
                 type: 'sermon',
-                header: '7. 생명의 말씀',
+                header: '8. 생명의 말씀',
                 title: sermonTitle,
                 subtitle: bibleRef ? `본문: ${bibleRef}` : '',
                 footer: churchName,
             });
 
-            // 8 offering intro + lyrics
-            newSlides.push({ type: 'section', title: '8. 감사와 봉헌', subtitle: h4Title });
-            appendHymnLyrics(newSlides, '8. 감사와 봉헌', h4Title, val('hymn4Num'));
+            // 9 offering intro + lyrics
+            newSlides.push({ type: 'section', title: '9. 감사와 봉헌', subtitle: h4Title });
+            appendHymnLyrics(newSlides, '9. 감사와 봉헌', h4Title, val('hymn4Num'));
 
-            // 9 benediction + 안내
-            newSlides.push({ type: 'section', title: '9. 축도', subtitle: benediction });
+            // 10 benediction + 안내
+            newSlides.push({ type: 'section', title: '10. 축도', subtitle: benediction });
             if (closingNote) {
                 newSlides.push({
                     type: 'title',
@@ -2005,13 +2060,13 @@ window.WORSHIP_LOOKUP = {"hymns":{"1":"만복의 근원 하나님","2":"찬양 �
                 });
             }
 
-            // 10 announcements
+            // 11 announcements
             const adLines = announcements
                 ? announcements.split(/\n+/).map(l => l.trim()).filter(Boolean)
                 : ['주일 예배에 오신 모든 분들을 주님의 이름으로 환영합니다.'];
             newSlides.push({
                 type: 'title',
-                title: '10. 소식 · 광고',
+                title: '11. 안내 및 광고',
                 subtitle: 'Announcements',
                 content: `<ul class="text-left list-disc list-inside mt-8 text-3xl space-y-6 text-slate-200">${
                     adLines.slice(0, 12).map(ln => `<li>${esc(ln)}</li>`).join('')
@@ -2072,7 +2127,7 @@ window.WORSHIP_LOOKUP = {"hymns":{"1":"만복의 근원 하나님","2":"찬양 �
             else if (slide.type === 'creed') {
                 html = `
                     <div class="slide-header">
-                        <div class="text-3xl text-yellow-500 font-bold tracking-wider">${slide.header || '2. 사도신경'}</div>
+                        <div class="text-3xl text-yellow-500 font-bold tracking-wider">${slide.header || '3. 사도신경'}</div>
                     </div>
                     <div class="slide-body justify-center">
                         <h2 class="font-serif text-huge font-bold text-yellow-500 mb-8 drop-shadow-lg">${slide.title || '사도신경'}</h2>

@@ -218,7 +218,7 @@ def _set_paged_tokens(tokens: dict[str, str], prefix: str, pages: list[str]) -> 
 
 
 def _order_block(data: WorshipData, hymns: dict[str, ResolvedHymn]) -> str:
-    """One line per step — 9 items (no response hymn)."""
+    """One line per step — 10 numbered items (no response hymn)."""
 
     def _step(num: str, title: str, detail: str = "") -> str:
         detail = (detail or "").strip()
@@ -226,17 +226,23 @@ def _order_block(data: WorshipData, hymns: dict[str, ResolvedHymn]) -> str:
             return f"{num}. {title}"
         return f"{num}. {title}  ·  {detail}"
 
+    prep_detail = "  /  ".join(
+        p
+        for p in (hymns["PREP_1"].label, hymns["PREP_2"].label)
+        if (p or "").strip() and p != "—"
+    )
     return "\n".join(
         [
-            _step("1", "찬양과 기도", hymns["1"].label),
-            _step("2", "사도신경"),
-            _step("3", "교독문", data.responsive_reading_title),
-            _step("4", "찬송가", hymns["2"].label),
-            _step("5", "예배의 기도", data.worship_prayer_leader),
-            _step("6", "오늘의 말씀", data.scripture_reference),
-            _step("7", "생명의 말씀", data.sermon_title),
-            _step("8", "감사와 봉헌", hymns["3"].label),
-            _step("9", "축도", data.benediction),
+            _step("1", "예배 준비의 시간", prep_detail),
+            _step("2", "찬양과 기도", hymns["1"].label),
+            _step("3", "사도신경"),
+            _step("4", "교독문", data.responsive_reading_title),
+            _step("5", "찬송가", hymns["2"].label),
+            _step("6", "예배의 기도", data.worship_prayer_leader),
+            _step("7", "오늘의 말씀", data.scripture_reference),
+            _step("8", "생명의 말씀", data.sermon_title),
+            _step("9", "감사와 봉헌", hymns["3"].label),
+            _step("10", "축도", data.benediction),
         ]
     )
 
@@ -261,6 +267,8 @@ def build_token_map(data: WorshipData, *, allow_remote: bool = True) -> dict[str
     data = enrich_worship_data(data, allow_remote=allow_remote, force_hymn_lyrics=True)
 
     hymns = {
+        "PREP_1": resolve_hymn_entry(data.prep_hymn_1, allow_remote=allow_remote),
+        "PREP_2": resolve_hymn_entry(data.prep_hymn_2, allow_remote=allow_remote),
         "1": resolve_hymn_entry(data.praise_hymn, allow_remote=allow_remote),
         "2": resolve_hymn_entry(data.hymn, allow_remote=allow_remote),
         # Slot 3 = offering (response hymn removed from order)
@@ -276,6 +284,8 @@ def build_token_map(data: WorshipData, *, allow_remote: bool = True) -> dict[str
             include_lyrics=True,
         )
 
+    data.prep_hymn_1 = _to_entry(hymns["PREP_1"])
+    data.prep_hymn_2 = _to_entry(hymns["PREP_2"])
     data.praise_hymn = _to_entry(hymns["1"])
     data.hymn = _to_entry(hymns["2"])
     data.offering_hymn = _to_entry(hymns["3"])

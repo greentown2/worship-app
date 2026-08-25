@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-_PDF_VERSION = "2026-08-24-creed-word-no-hymns-v8"
+_PDF_VERSION = "2026-08-24-inside-bold-v10"
 
 from io import BytesIO
 from pathlib import Path
@@ -123,6 +123,11 @@ def _ensure_fonts() -> None:
 
 def _hymn_line(h: HymnEntry) -> str:
     return _clean(hymn_label(h) if h else "")
+
+
+def _hymn_pair_line(*hymns: HymnEntry) -> str:
+    parts = [p for p in (_hymn_line(h) for h in hymns) if p]
+    return "  /  ".join(parts)
 
 
 def _para(text: str, style: ParagraphStyle) -> Paragraph:
@@ -313,7 +318,7 @@ def _styles() -> dict[str, ParagraphStyle]:
         ),
         "order_heading": ParagraphStyle(
             "OrderHeading",
-            fontName=FONT_DISPLAY,
+            fontName=FONT_BOLD,
             fontSize=20,
             leading=26,
             alignment=1,
@@ -371,7 +376,7 @@ def _styles() -> dict[str, ParagraphStyle]:
         ),
         "section": ParagraphStyle(
             "Section",
-            fontName=FONT_DISPLAY,
+            fontName=FONT_BOLD,
             fontSize=11,
             leading=14,
             textColor=ACCENT,
@@ -387,7 +392,7 @@ def _styles() -> dict[str, ParagraphStyle]:
         ),
         "order_right": ParagraphStyle(
             "OrderRight",
-            fontName=FONT,
+            fontName=FONT_BOLD,
             fontSize=8,
             leading=20,
             textColor=MUTED,
@@ -395,7 +400,7 @@ def _styles() -> dict[str, ParagraphStyle]:
         ),
         "body": ParagraphStyle(
             "Body",
-            fontName=FONT,
+            fontName=FONT_BOLD,
             fontSize=8.5,
             leading=12,
             textColor=INK,
@@ -403,7 +408,7 @@ def _styles() -> dict[str, ParagraphStyle]:
         ),
         "body_sm": ParagraphStyle(
             "BodySm",
-            fontName=FONT,
+            fontName=FONT_BOLD,
             fontSize=7.5,
             leading=10.5,
             textColor=INK,
@@ -411,7 +416,7 @@ def _styles() -> dict[str, ParagraphStyle]:
         ),
         "body_xs": ParagraphStyle(
             "BodyXs",
-            fontName=FONT,
+            fontName=FONT_BOLD,
             fontSize=6.6,
             leading=9.2,
             textColor=INK,
@@ -419,7 +424,7 @@ def _styles() -> dict[str, ParagraphStyle]:
         ),
         "creed_sm": ParagraphStyle(
             "CreedSm",
-            fontName=FONT,
+            fontName=FONT_BOLD,
             fontSize=7.0,
             leading=9.6,
             textColor=INK,
@@ -456,21 +461,22 @@ def _styles() -> dict[str, ParagraphStyle]:
 
 def _order_items(data: WorshipData) -> List[Tuple[str, str, str]]:
     return [
-        ("1", "찬양과 기도", _hymn_line(data.praise_hymn)),
-        ("2", "사도신경", ""),
-        ("3", "교독문", _clean(data.responsive_reading_title)),
-        ("4", "찬송가", _hymn_line(data.hymn)),
-        ("5", "예배의 기도", _clean(data.worship_prayer_leader)),
-        ("6", "오늘의 말씀", _clean(data.scripture_reference)),
+        ("1", "예배 준비의 시간", _hymn_pair_line(data.prep_hymn_1, data.prep_hymn_2)),
+        ("2", "찬양과 기도", _hymn_line(data.praise_hymn)),
+        ("3", "사도신경", ""),
+        ("4", "교독문", _clean(data.responsive_reading_title)),
+        ("5", "찬송가", _hymn_line(data.hymn)),
+        ("6", "예배의 기도", _clean(data.worship_prayer_leader)),
+        ("7", "오늘의 말씀", _clean(data.scripture_reference)),
         (
-            "7",
+            "8",
             "생명의 말씀",
             _clean(data.sermon_title)
             or (_clean(data.sermon_subtitle) and f"({_clean(data.sermon_subtitle)})")
             or "",
         ),
-        ("8", "감사와 봉헌", _hymn_line(data.offering_hymn)),
-        ("9", "축도", _clean(data.benediction)[:48] if data.benediction else ""),
+        ("9", "감사와 봉헌", _hymn_line(data.offering_hymn)),
+        ("10", "축도", _clean(data.benediction)[:48] if data.benediction else ""),
     ]
 
 
@@ -624,7 +630,7 @@ def _flow_order(data: WorshipData, styles: dict) -> list:
         Spacer(1, 3 * mm),
         _order_table(data, styles),
         Spacer(1, 4),
-        _para("사도신경 · 교독문 · 기도는 인도에 따라 함께합니다.", styles["empty_hint"]),
+        _para("사도신경 · 교독문 · 기도는 인도에 따라 함께합니다.", styles["body_sm"]),
     ]
 
 
@@ -677,7 +683,7 @@ def _flow_scripture_hymns(data: WorshipData, styles: dict, *, lyric_lines: int =
         story.append(_para(creed, styles["creed_sm"]))
 
     if len(story) <= 1:
-        story.append(_para("성경 본문 · 교독문 · 사도신경을 입력하면 이 면에 표시됩니다.", styles["empty_hint"]))
+        story.append(_para("성경 본문 · 교독문 · 사도신경을 입력하면 이 면에 표시됩니다.", styles["body_sm"]))
     return story
 
 

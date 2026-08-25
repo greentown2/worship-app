@@ -59,6 +59,8 @@ def enrich_worship_data(
     allow_remote: bool = True,
     force_hymn_lyrics: bool = True,
 ) -> WorshipData:
+    data.prep_hymn_1 = enrich_hymn(data.prep_hymn_1, allow_remote=allow_remote)
+    data.prep_hymn_2 = enrich_hymn(data.prep_hymn_2, allow_remote=allow_remote)
     data.praise_hymn = enrich_hymn(data.praise_hymn, allow_remote=allow_remote)
     data.hymn = enrich_hymn(data.hymn, allow_remote=allow_remote)
     data.response_hymn = enrich_hymn(data.response_hymn, allow_remote=allow_remote)
@@ -66,7 +68,7 @@ def enrich_worship_data(
 
     if force_hymn_lyrics:
         data.include_hymn_lyrics = True
-        for slot in (data.praise_hymn, data.hymn, data.response_hymn, data.offering_hymn):
+        for slot in data.iter_hymns():
             slot.include_lyrics = True
 
     # Normalize free-text fields
@@ -143,3 +145,8 @@ def hymn_label(h: HymnEntry) -> str:
             num = f"{num}장"
         return f"{num}  ·  {title}"
     return title or num
+
+
+def hymn_pair_label(*hymns: HymnEntry) -> str:
+    parts = [hymn_label(h) for h in hymns if hymn_label(h)]
+    return "  /  ".join(parts)

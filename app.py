@@ -192,6 +192,10 @@ def _init_state():
         "service_time": DEFAULT_SERVICE_TIME,
         "preacher": "",
         "worship_leader": DEFAULT_WORSHIP_LEADER,
+        "prep_hymn_1_num": "",
+        "prep_hymn_1_title": "",
+        "prep_hymn_2_num": "",
+        "prep_hymn_2_title": "",
         "praise_num": "7",
         "praise_title": "",
         "apostles_creed": DEFAULT_APOSTLES_CREED,
@@ -266,6 +270,10 @@ def _init_state():
 
     # Apply pending widget values BEFORE any widgets are created
     pending = {
+        "_p_prep_hymn_1_num": "prep_hymn_1_num",
+        "_p_prep_hymn_1_title": "prep_hymn_1_title",
+        "_p_prep_hymn_2_num": "prep_hymn_2_num",
+        "_p_prep_hymn_2_title": "prep_hymn_2_title",
         "_p_praise_num": "praise_num",
         "_p_praise_title": "praise_title",
         "_p_hymn_num": "hymn_num",
@@ -300,7 +308,13 @@ def _init_state():
                 continue
             st.session_state[key] = value
             # Seed hymn lyric caches + titles via local lookup
-            if key in ("praise_num", "hymn_num", "offering_num") and value:
+            if key in (
+                "prep_hymn_1_num",
+                "prep_hymn_2_num",
+                "praise_num",
+                "hymn_num",
+                "offering_num",
+            ) and value:
                 hit = lookup_hymn(str(value), allow_remote=False)
                 if hit:
                     if hit.lyrics:
@@ -493,6 +507,8 @@ def _build_worship_data(service_date, *, allow_remote: bool, force_lyrics: bool 
         service_time=(st.session_state.get("service_time") or DEFAULT_SERVICE_TIME).strip(),
         preacher=(st.session_state.get("preacher") or "").strip(),
         worship_leader=(st.session_state.get("worship_leader") or DEFAULT_WORSHIP_LEADER).strip(),
+        prep_hymn_1=_hymn_from_keys("prep_hymn_1_num", "prep_hymn_1_title", allow_remote=allow_remote),
+        prep_hymn_2=_hymn_from_keys("prep_hymn_2_num", "prep_hymn_2_title", allow_remote=allow_remote),
         praise_hymn=_hymn_from_keys("praise_num", "praise_title", allow_remote=allow_remote),
         apostles_creed=(st.session_state.get("apostles_creed") or "").strip(),
         responsive_reading_title=resp_title or resp_num,
@@ -734,6 +750,8 @@ def main():
     # First load: fill titles/bodies from default numbers without waiting for Enter
     if not st.session_state.get("_bootstrapped_lookups"):
         for nk, tk in (
+            ("prep_hymn_1_num", "prep_hymn_1_title"),
+            ("prep_hymn_2_num", "prep_hymn_2_title"),
             ("praise_num", "praise_title"),
             ("hymn_num", "hymn_title"),
             ("offering_num", "offering_title"),
@@ -771,9 +789,9 @@ def main():
         st.divider()
         st.header("예배 순서")
         st.markdown(
-            "1. 찬양과 기도  \n2. 사도신경  \n3. 교독문  \n4. 찬송가  \n"
-            "5. 예배의 기도  \n6. 오늘의 말씀  \n7. 생명의 말씀  \n"
-            "8. 감사와 봉헌  \n9. 축도 · 안내  \n10. 소식 · 광고"
+            "1. 예배 준비의 시간  \n2. 찬양과 기도  \n3. 사도신경  \n4. 교독문  \n"
+            "5. 찬송가  \n6. 예배의 기도  \n7. 오늘의 말씀  \n8. 생명의 말씀  \n"
+            "9. 감사와 봉헌  \n10. 축도 · 안내  \n11. 안내 및 광고"
         )
         allow_remote = st.toggle("온라인 보조 검색", value=True)
         st.caption("예배 직전에는 로컬 찬송 DB를 쓰는 것이 가장 안정적입니다.")
@@ -840,7 +858,7 @@ def main():
     paste_text = st.text_area(
         "또는 주보/예배 순서 텍스트를 붙여넣기 (페이지는 빈 줄 3개 또는 --- Page N --- 로 구분)",
         height=110,
-        placeholder="예:\n1. 찬양과 기도  7장\n…\n\n\n--- Page 2 ---\n오늘의 말씀 히브리서 4:1-11\n…",
+        placeholder="예:\n1. 예배 준비의 시간  9장  20장\n2. 찬양과 기도  7장\n…\n\n\n--- Page 2 ---\n오늘의 말씀 히브리서 4:1-11\n…",
         key="bulletin_paste",
     )
 
@@ -969,7 +987,7 @@ def main():
 
     st.markdown("---")
 
-    # ===== Order 1–9 =====
+    # ===== Order 1–11 =====
     st.markdown(
         '<div class="bulletin-banner">'
         "<strong>2단계 · 예배 순서 입력 + 자동 불러오기</strong> — "
@@ -977,14 +995,17 @@ def main():
         "</div>",
         unsafe_allow_html=True,
     )
-    st.subheader("예배 순서 입력 (1–9)")
+    st.subheader("예배 순서 입력 (1–11)")
 
-    _hymn_inputs("1. 찬양과 기도 (Praise & Prayer)", "praise_num", "praise_title", "fetch_praise", allow_remote)
+    _hymn_inputs("1. 예배 준비의 시간 · 1곡", "prep_hymn_1_num", "prep_hymn_1_title", "fetch_prep_1", allow_remote)
+    _hymn_inputs("1. 예배 준비의 시간 · 2곡", "prep_hymn_2_num", "prep_hymn_2_title", "fetch_prep_2", allow_remote)
 
-    st.markdown('<p class="order-step">2. 사도신경</p>', unsafe_allow_html=True)
+    _hymn_inputs("2. 찬양과 기도 (Praise & Prayer)", "praise_num", "praise_title", "fetch_praise", allow_remote)
+
+    st.markdown('<p class="order-step">3. 사도신경</p>', unsafe_allow_html=True)
     st.text_area("사도신경 전문", key="apostles_creed", height=150)
 
-    st.markdown('<p class="order-step">3. 교독문</p>', unsafe_allow_html=True)
+    st.markdown('<p class="order-step">4. 교독문</p>', unsafe_allow_html=True)
     st.session_state["_allow_remote"] = allow_remote
 
     rc1, rc2, rc3 = st.columns([1.1, 2.6, 1.2])
@@ -1027,16 +1048,16 @@ def main():
         st.caption("번호를 입력(Enter)하면 교독문 본문이 자동으로 채워집니다.")
     st.text_area("교독문 본문 (`인도자:` / `회중:`)", key="responsive_body", height=140)
 
-    _hymn_inputs("4. 찬송가 (Hymn)", "hymn_num", "hymn_title", "fetch_hymn", allow_remote)
+    _hymn_inputs("5. 찬송가 (Hymn)", "hymn_num", "hymn_title", "fetch_hymn", allow_remote)
 
-    st.markdown('<p class="order-step">5. 예배의 기도</p>', unsafe_allow_html=True)
+    st.markdown('<p class="order-step">6. 예배의 기도</p>', unsafe_allow_html=True)
     p1, p2 = st.columns([2.2, 1])
     with p1:
         st.text_area("기도문", key="prayer_text", height=110)
     with p2:
         st.text_input("기도 인도", key="prayer_leader", placeholder="인도자")
 
-    st.markdown('<p class="order-step">6. 오늘의 말씀</p>', unsafe_allow_html=True)
+    st.markdown('<p class="order-step">7. 오늘의 말씀</p>', unsafe_allow_html=True)
     st.session_state["_allow_remote"] = allow_remote
 
     sc1, sc2 = st.columns([3, 1])
@@ -1068,29 +1089,29 @@ def main():
         st.caption("성경 구절을 입력(Enter)하면 교독문처럼 개역개정 본문이 자동으로 채워집니다. 예: 히브리서 4:1-11 또는 히 4:1-11")
     st.text_area("성경 본문", key="scripture_text_area", height=150)
 
-    st.markdown('<p class="order-step">7. 생명의 말씀</p>', unsafe_allow_html=True)
+    st.markdown('<p class="order-step">8. 생명의 말씀</p>', unsafe_allow_html=True)
     s1, s2 = st.columns(2)
     with s1:
         st.text_input("설교 제목", key="sermon_title", placeholder="생명의 말씀 제목")
     with s2:
         st.text_input("부제", key="sermon_subtitle")
 
-    _hymn_inputs("8. 감사와 봉헌 (Offering)", "offering_num", "offering_title", "fetch_offering", allow_remote)
+    _hymn_inputs("9. 감사와 봉헌 (Offering)", "offering_num", "offering_title", "fetch_offering", allow_remote)
 
     st.markdown(
         '<div class="bulletin-banner" style="margin-top:0.5rem;">'
-        "<strong>9–10 · 축도 · 안내 · 소식·광고</strong> — 주보·PPT·예배화면에 같이 들어갑니다."
+        "<strong>10–11 · 축도 · 안내 · 소식·광고</strong> — 주보·PPT·예배화면에 같이 들어갑니다."
         "</div>",
         unsafe_allow_html=True,
     )
-    st.markdown('<p class="order-step">9. 축도</p>', unsafe_allow_html=True)
+    st.markdown('<p class="order-step">10. 축도</p>', unsafe_allow_html=True)
     b1, b2 = st.columns(2)
     with b1:
         st.text_input("축도", key="benediction", placeholder="예: 담임목사")
     with b2:
         st.text_input("안내", key="closing_note", placeholder="예: 다음에 또 만나요. 평안하세요.")
 
-    st.markdown('<p class="order-step">10. 소식 · 광고</p>', unsafe_allow_html=True)
+    st.markdown('<p class="order-step">11. 안내 및 광고</p>', unsafe_allow_html=True)
     st.text_area(
         "소식 / 광고 본문 (한 줄에 하나씩)",
         key="announcements",
@@ -1141,7 +1162,7 @@ def main():
     # PPT is built from the same slide list as HTML (includes hymn lyric pages)
     data.include_hymn_lyrics = True
 
-    # this_week PPT files are merged into the master at HYMN_1/2/3 after generation
+    # this_week PPT files are merged into the master at HYMN_PREP_1/2 + HYMN_1/2/3 after generation
     try:
         _week_fp = "|".join(
             f"{p.name}:{p.stat().st_mtime_ns}:{p.stat().st_size}"
@@ -1155,7 +1176,8 @@ def main():
         f"{data.church_name_ko}|{data.worship_leader}|{data.sermon_title}|{data.sermon_subtitle}|"
         f"{data.scripture_reference}|{(data.scripture_text or '')[:120]}|"
         f"{data.responsive_reading_title}|{(data.responsive_reading or '')[:80]}|"
-        f"{data.preacher}|{(data.announcements or '')[:80]}|{data.praise_hymn.number}|"
+        f"{data.preacher}|{(data.announcements or '')[:80]}|{data.prep_hymn_1.number}|"
+        f"{data.prep_hymn_2.number}|{data.praise_hymn.number}|"
         f"{data.hymn.number}|{data.offering_hymn.number}|{data.benediction}|{data.date}|"
         f"{(data.apostles_creed or '')[:40]}|{data.include_hymn_lyrics}|week:{_week_fp}"
     )

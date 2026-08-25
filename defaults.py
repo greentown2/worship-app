@@ -44,15 +44,16 @@ DEFAULT_WORSHIP_PRAYER = """살아계신 하나님 아버지,
 
 DEFAULT_BENEDICTION = "담임목사"
 
-# Traditional order labels (9 steps — no response hymn)
+# Traditional order labels (10 numbered steps + announcements)
 ORDER_LABELS = [
-    ("1", "찬양과 기도", "Praise & Prayer"),
-    ("2", "사도신경", "The Apostles' Creed"),
-    ("3", "교독문", "Responsive Reading"),
-    ("4", "찬송가", "Hymn"),
-    ("5", "예배의 기도", "Pastoral Prayer"),
-    ("6", "오늘의 말씀", "Scripture Reading"),
-    ("7", "생명의 말씀", "The Word of Life"),
-    ("8", "감사와 봉헌", "Offering"),
-    ("9", "축도", "Benediction"),
+    ("1", "예배 준비의 시간", "Preparation for Worship"),
+    ("2", "찬양과 기도", "Praise & Prayer"),
+    ("3", "사도신경", "The Apostles' Creed"),
+    ("4", "교독문", "Responsive Reading"),
+    ("5", "찬송가", "Hymn"),
+    ("6", "예배의 기도", "Pastoral Prayer"),
+    ("7", "오늘의 말씀", "Scripture Reading"),
+    ("8", "생명의 말씀", "The Word of Life"),
+    ("9", "감사와 봉헌", "Offering"),
+    ("10", "축도", "Benediction"),
 ]

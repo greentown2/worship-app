@@ -163,6 +163,10 @@ class ParsedBulletin:
     service_title: str = ""
     service_time: str = ""
     preacher: str = ""
+    prep_hymn_1_num: str = ""
+    prep_hymn_1_title: str = ""
+    prep_hymn_2_num: str = ""
+    prep_hymn_2_title: str = ""
     praise_num: str = ""
     praise_title: str = ""
     responsive_num: str = ""
@@ -237,6 +241,8 @@ def _section_blocks(text: str) -> list[tuple[str, str]]:
     lines = [ln for ln in lines if ln]
 
     keyword_heads = [
+        "예배 준비",
+        "준비찬양",
         "찬양과 기도",
         "사도신경",
         "교독문",
@@ -319,6 +325,34 @@ def _first_hymn(text: str) -> tuple[str, str]:
     return f"{num}장", title
 
 
+def _hymns_from_text(text: str, limit: int = 2) -> list[tuple[str, str]]:
+    """Collect unique hymn numbers from a block (skips scripture 'N장 M절')."""
+    text_wo_scripture = _SCRIPTURE_RE.sub(" ", text or "")
+    seen: set[str] = set()
+    out: list[tuple[str, str]] = []
+    for m in _HYMN_INLINE.finditer(text_wo_scripture):
+        num = m.group(1)
+        if num in seen:
+            continue
+        after = text_wo_scripture[m.end() : m.end() + 4]
+        if after.strip().startswith("절"):
+            continue
+        title = _clean_line((m.group(2) or "").replace("\n", " "))
+        title = re.sub(r"^[·.\-:\s]+", "", title)
+        title = re.split(r"\s{2,}|\d+\s*[.)]", title)[0].strip()
+        if not title:
+            hit = lookup_hymn(num, allow_remote=False)
+            title = hit.title if hit else ""
+        seen.add(num)
+        out.append((f"{num}장", title))
+        if len(out) >= limit:
+            break
+    if out:
+        return out
+    first = _first_hymn(text)
+    return [first] if first[0] else []
+
+
 def _first_scripture(text: str) -> str:
     # Skip obvious time strings
     text_wo_time = _TIME_RE.sub(" ", text)
@@ -352,6 +386,8 @@ def _classify_heading(head: str) -> str:
         return "creed"
     if "교독" in head:
         return "responsive"
+    if "예배 준비" in head or "준비찬양" in head or "prelude" in h:
+        return "prep"
     if "찬양과 기도" in head or ("praise" in h and "prayer" in h):
         return "praise"
     if "봉헌" in head or "감사와" in head or "offering" in h:
@@ -408,19 +444,36 @@ def parse_bulletin_text(text: str, *, method: str = "") -> ParsedBulletin:
             break
 
     blocks = _section_blocks(text)
-    hymn_slots_used = {"praise": False, "hymn": False, "response": False, "offering": False}
+    hymn_slots_used = {
+        "prep": False,
+        "praise": False,
+        "hymn": False,
+        "response": False,
+        "offering": False,
+    }
 
     for head, body in blocks:
         kind = _classify_heading(head)
         combo = f"{head}\n{body}"
 
-        if kind == "praise" and not hymn_slots_used["praise"]:
+        if kind == "prep" and not hymn_slots_used["prep"]:
+            found = _hymns_from_text(combo, limit=2)
+            if found:
+                result.prep_hymn_1_num, result.prep_hymn_1_title = found[0]
+            if len(found) > 1:
+                result.prep_hymn_2_num, result.prep_hymn_2_title = found[1]
+            hymn_slots_used["prep"] = True
+            result.notes.append(
+                f"1. 예배 준비의 시간 ← {result.prep_hymn_1_num} {result.prep_hymn_1_title}"
+                f" / {result.prep_hymn_2_num} {result.prep_hymn_2_title}".strip()
+            )
+        elif kind == "praise" and not hymn_slots_used["praise"]:
             num, title = _first_hymn(combo)
             result.praise_num, result.praise_title = num, title
             hymn_slots_used["praise"] = True
-            result.notes.append(f"1. 찬양과 기도 ← {num} {title}".strip())
+            result.notes.append(f"2. 찬양과 기도 ← {num} {title}".strip())
         elif kind == "creed":
-            result.notes.append("2. 사도신경 감지")
+            result.notes.append("3. 사도신경 감지")
         elif kind == "responsive":
             result.responsive_title = head if "교독" in head else "교독문"
             # Keep responsive body if it has leader/congregation markers or length
@@ -430,13 +483,13 @@ def parse_bulletin_text(text: str, *, method: str = "") -> ParsedBulletin:
             if resp_n:
                 result.responsive_num = str(resp_n)
             result.notes.append(
-                f"3. 교독문 ← {result.responsive_num or ''} {result.responsive_title}".strip()
+                f"4. 교독문 ← {result.responsive_num or ''} {result.responsive_title}".strip()
             )
         elif kind == "hymn" and not hymn_slots_used["hymn"]:
             num, title = _first_hymn(combo)
             result.hymn_num, result.hymn_title = num, title
             hymn_slots_used["hymn"] = True
-            result.notes.append(f"4. 찬송가 ← {num} {title}".strip())
+            result.notes.append(f"5. 찬송가 ← {num} {title}".strip())
         elif kind == "prayer":
             if "인도" in head or re.search(r"[가-힣]{2,8}$", head):
                 leader = re.sub(r".*기도\s*", "", head).strip(" ·-:")
@@ -444,7 +497,7 @@ def parse_bulletin_text(text: str, *, method: str = "") -> ParsedBulletin:
                     result.prayer_leader = leader
             if body and len(body) > 20:
                 result.prayer_text = body
-            result.notes.append("5. 예배의 기도 감지")
+            result.notes.append("6. 예배의 기도 감지")
         elif kind == "scripture":
             ref = _first_scripture(combo) or _first_scripture(head)
             if ref:
@@ -452,25 +505,25 @@ def parse_bulletin_text(text: str, *, method: str = "") -> ParsedBulletin:
             # If body looks like verse text, keep it
             if re.search(r"^\d+\s+\S+", body, re.M) or len(body) > 60:
                 result.scripture_text = body
-            result.notes.append(f"6. 오늘의 말씀 ← {result.scripture_reference or '(구절 미확인)'}")
+            result.notes.append(f"7. 오늘의 말씀 ← {result.scripture_reference or '(구절 미확인)'}")
         elif kind == "response":
-            # 9-step order has no response hymn
-            result.notes.append("응답 찬양 감지 (현재 9단계 순서에서는 사용하지 않음)")
+            # numbered order has no response hymn
+            result.notes.append("응답 찬양 감지 (현재 순서에서는 사용하지 않음)")
         elif kind == "sermon":
             # Title often after colon or on same line
             title = re.sub(r"^(생명의 말씀|설교)\s*[:：-]?\s*", "", head).strip()
             if not title or title in ("생명의 말씀", "설교"):
                 title = body.split("\n")[0].strip() if body else ""
             result.sermon_title = title[:80]
-            result.notes.append(f"7. 생명의 말씀 ← {result.sermon_title or '(제목 미확인)'}")
+            result.notes.append(f"8. 생명의 말씀 ← {result.sermon_title or '(제목 미확인)'}")
         elif kind == "offering" and not hymn_slots_used["offering"]:
             num, title = _first_hymn(combo)
             result.offering_num, result.offering_title = num, title
             hymn_slots_used["offering"] = True
-            result.notes.append(f"8. 감사와 봉헌 ← {num} {title}".strip())
+            result.notes.append(f"9. 감사와 봉헌 ← {num} {title}".strip())
         elif kind == "benediction":
             result.benediction = body.split("\n")[0][:60] if body else result.benediction
-            result.notes.append("9. 축도 감지")
+            result.notes.append("10. 축도 감지")
 
     # Fallback: collect hymns only from lines that mention 장 with worship context
     all_hymns = []
@@ -521,6 +574,8 @@ def parse_bulletin_text(text: str, *, method: str = "") -> ParsedBulletin:
 def _enrich_parsed_lookups(result: ParsedBulletin) -> None:
     """Fill titles/bodies from local hymn · 교독문 · scripture indexes by number/ref."""
     for num_attr, title_attr in (
+        ("prep_hymn_1_num", "prep_hymn_1_title"),
+        ("prep_hymn_2_num", "prep_hymn_2_title"),
         ("praise_num", "praise_title"),
         ("hymn_num", "hymn_title"),
         ("offering_num", "offering_title"),
@@ -591,6 +646,10 @@ def result_to_session_updates(p: ParsedBulletin) -> dict[str, str]:
         "service_title": p.service_title,
         "service_time": p.service_time,
         "preacher": p.preacher,
+        "prep_hymn_1_num": p.prep_hymn_1_num,
+        "prep_hymn_1_title": p.prep_hymn_1_title,
+        "prep_hymn_2_num": p.prep_hymn_2_num,
+        "prep_hymn_2_title": p.prep_hymn_2_title,
         "praise_num": p.praise_num,
         "praise_title": p.praise_title,
         "responsive_num": p.responsive_num,
@@ -844,6 +903,10 @@ def _merge_parsed(base: ParsedBulletin, extra: ParsedBulletin, *, role: str) -> 
         "service_title",
         "service_time",
         "preacher",
+        "prep_hymn_1_num",
+        "prep_hymn_1_title",
+        "prep_hymn_2_num",
+        "prep_hymn_2_title",
         "praise_num",
         "praise_title",
         "responsive_num",

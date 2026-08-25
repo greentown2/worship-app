@@ -8,7 +8,7 @@ import json
 import re
 from pathlib import Path
 
-from data_enrich import enrich_worship_data, hymn_label
+from data_enrich import enrich_worship_data, hymn_label, hymn_pair_label
 from defaults import ORDER_LABELS
 from hymn_lookup import parse_hymn_number
 from lookup_bundle import build_lookup_bundle
@@ -21,7 +21,7 @@ ROOT = Path(__file__).resolve().parent
 TEMPLATE_PATH = ROOT / "worship_presentation.html"
 COVER_IMAGE_PATH = ROOT / "assets" / "crucifix_cover.png"
 
-_HTML_VERSION = "2026-08-24-order-align-v10"
+_HTML_VERSION = "2026-08-24-prep-praise-v11"
 
 
 def _esc(text: str) -> str:
@@ -43,6 +43,10 @@ def _cover_image_data_uri() -> str:
 
 def _hymn_label(h: HymnEntry) -> str:
     return hymn_label(h) or (h.number or h.title or "").strip() or "—"
+
+
+def _hymn_has(h: HymnEntry) -> bool:
+    return bool((h.number or "").strip() or (h.title or "").strip())
 
 
 def _scripture_ref_clean(ref: str) -> str:
@@ -196,7 +200,7 @@ def _ensure_service_hymn_lyrics(bundle: dict, data: WorshipData, *, allow_remote
             "lyrics": "\n".join(str(ln).rstrip() for ln in lines),
         }
 
-    for hymn in (data.praise_hymn, data.hymn, data.offering_hymn, data.response_hymn):
+    for hymn in data.iter_hymns():
         num = parse_hymn_number(getattr(hymn, "number", "") or "")
         if not num:
             continue
@@ -235,7 +239,7 @@ def _ensure_service_hymn_lyrics(bundle: dict, data: WorshipData, *, allow_remote
 
 def build_presentation_slides(data: WorshipData, *, allow_remote: bool = True) -> list[dict]:
     """
-    Slide list matching Streamlit / PPT worship order (9 steps).
+    Slide list matching Streamlit / PPT worship order (10 steps + announcements).
     Hymn slots include intro + full lyric pages for fullscreen HTML projection.
     """
     # Prefer complete lyrics: honor allow_remote (HTML generator usually passes True)
@@ -258,6 +262,7 @@ def build_presentation_slides(data: WorshipData, *, allow_remote: bool = True) -
         else ""
     )
     service_title = (data.service_title or "주일 예배").strip()
+    prep = hymn_pair_label(data.prep_hymn_1, data.prep_hymn_2) or "—"
     praise = _hymn_label(data.praise_hymn)
     hymn = _hymn_label(data.hymn)
     offering = _hymn_label(data.offering_hymn)
@@ -281,17 +286,18 @@ def build_presentation_slides(data: WorshipData, *, allow_remote: bool = True) -
         }
     )
 
-    # Order of worship (9 steps)
+    # Order of worship (10 steps)
     details = {
-        "1": praise,
-        "2": "",
-        "3": resp_title,
-        "4": hymn,
-        "5": prayer_leader,
-        "6": scripture_ref,
-        "7": sermon,
-        "8": offering,
-        "9": benediction,
+        "1": prep,
+        "2": praise,
+        "3": "",
+        "4": resp_title,
+        "5": hymn,
+        "6": prayer_leader,
+        "7": scripture_ref,
+        "8": sermon,
+        "9": offering,
+        "10": benediction,
     }
     order_rows = []
     for num, title, _en in ORDER_LABELS:
@@ -312,17 +318,33 @@ def build_presentation_slides(data: WorshipData, *, allow_remote: bool = True) -
         }
     )
 
-    # 1. 찬양과 기도 — intro + lyrics
-    slides.append({"type": "section", "title": "1. 찬양과 기도", "subtitle": praise})
+    # 1. 예배 준비의 시간 — two hymns, intro + lyrics each
+    prep_hymns = [h for h in (data.prep_hymn_1, data.prep_hymn_2) if _hymn_has(h)]
+    if prep_hymns:
+        for h in prep_hymns:
+            label = _hymn_label(h)
+            slides.append({"type": "section", "title": "1. 예배 준비의 시간", "subtitle": label})
+            _append_hymn_lyric_slides(
+                slides,
+                header="1. 예배 준비의 시간",
+                label=label,
+                hymn=h,
+                allow_remote=allow_remote,
+            )
+    else:
+        slides.append({"type": "section", "title": "1. 예배 준비의 시간", "subtitle": ""})
+
+    # 2. 찬양과 기도 — intro + lyrics
+    slides.append({"type": "section", "title": "2. 찬양과 기도", "subtitle": praise})
     _append_hymn_lyric_slides(
         slides,
-        header="1. 찬양과 기도",
+        header="2. 찬양과 기도",
         label=praise,
         hymn=data.praise_hymn,
         allow_remote=allow_remote,
     )
 
-    # 2. 사도신경
+    # 3. 사도신경
     creed_src = "\n".join(
         ln.strip() for ln in normalize_breaks(data.apostles_creed or "").splitlines() if ln.strip()
     )
@@ -333,14 +355,14 @@ def build_presentation_slides(data: WorshipData, *, allow_remote: bool = True) -
         slides.append(
             {
                 "type": "creed",
-                "header": "2. 사도신경",
+                "header": "3. 사도신경",
                 "title": "사도신경" + (f" ({i + 1}/{len(creed_pages)})" if len(creed_pages) > 1 else ""),
                 "content": _creed_html(page),
             }
         )
 
-    # 3. 교독문
-    slides.append({"type": "section", "title": "3. 교독문", "subtitle": resp_title})
+    # 4. 교독문
+    slides.append({"type": "section", "title": "4. 교독문", "subtitle": resp_title})
     resp_body = sanitize_responsive_body(data.responsive_reading or "")
     for page in _responsive_pages(resp_body):
         if not (page or "").strip():
@@ -348,31 +370,31 @@ def build_presentation_slides(data: WorshipData, *, allow_remote: bool = True) -
         slides.append(
             {
                 "type": "responsive",
-                "header": "3. 교독문",
+                "header": "4. 교독문",
                 "title": resp_title,
                 "content": _responsive_html(page),
             }
         )
 
-    # 4. 찬송가 — intro + lyrics
-    slides.append({"type": "section", "title": "4. 찬송가", "subtitle": hymn})
+    # 5. 찬송가 — intro + lyrics
+    slides.append({"type": "section", "title": "5. 찬송가", "subtitle": hymn})
     _append_hymn_lyric_slides(
         slides,
-        header="4. 찬송가",
+        header="5. 찬송가",
         label=hymn,
         hymn=data.hymn,
         allow_remote=allow_remote,
     )
 
-    # 5. 예배의 기도
+    # 6. 예배의 기도
     prayer_sub = prayer_leader or "다함께 마음을 모아 주님께 기도드립니다."
-    slides.append({"type": "section", "title": "5. 예배의 기도", "subtitle": prayer_sub})
+    slides.append({"type": "section", "title": "6. 예배의 기도", "subtitle": prayer_sub})
     prayer = normalize_breaks(data.worship_prayer or "").strip()
     if prayer:
         slides.append(
             {
                 "type": "scripture",
-                "header": "5. 예배의 기도",
+                "header": "6. 예배의 기도",
                 "title": prayer_leader or "예배의 기도",
                 "content": (
                     f'<div class="text-left w-full max-w-5xl leading-relaxed">'
@@ -381,11 +403,11 @@ def build_presentation_slides(data: WorshipData, *, allow_remote: bool = True) -
             }
         )
 
-    # 6. 오늘의 말씀
+    # 7. 오늘의 말씀
     slides.append(
         {
             "type": "section",
-            "title": "6. 오늘의 말씀",
+            "title": "7. 오늘의 말씀",
             "subtitle": scripture_ref or "성경 봉독",
         }
     )
@@ -396,35 +418,35 @@ def build_presentation_slides(data: WorshipData, *, allow_remote: bool = True) -
         slides.append(
             {
                 "type": "scripture",
-                "header": "6. 오늘의 말씀",
+                "header": "7. 오늘의 말씀",
                 "title": scripture_ref,
                 "content": _scripture_html(page),
             }
         )
 
-    # 7. 생명의 말씀
+    # 8. 생명의 말씀
     slides.append(
         {
             "type": "sermon",
-            "header": "7. 생명의 말씀",
+            "header": "8. 생명의 말씀",
             "title": sermon or "생명의 말씀",
             "subtitle": sermon_sub or (f"본문: {scripture_ref}" if scripture_ref else ""),
             "footer": church,
         }
     )
 
-    # 8. 감사와 봉헌 — intro + lyrics
-    slides.append({"type": "section", "title": "8. 감사와 봉헌", "subtitle": offering})
+    # 9. 감사와 봉헌 — intro + lyrics
+    slides.append({"type": "section", "title": "9. 감사와 봉헌", "subtitle": offering})
     _append_hymn_lyric_slides(
         slides,
-        header="8. 감사와 봉헌",
+        header="9. 감사와 봉헌",
         label=offering,
         hymn=data.offering_hymn,
         allow_remote=allow_remote,
     )
 
-    # 9. 축도
-    slides.append({"type": "section", "title": "9. 축도", "subtitle": benediction})
+    # 10. 축도
+    slides.append({"type": "section", "title": "10. 축도", "subtitle": benediction})
     note = normalize_breaks(data.closing_note or "").strip()
     if note:
         slides.append(
@@ -441,7 +463,7 @@ def build_presentation_slides(data: WorshipData, *, allow_remote: bool = True) -
     slides.append(
         {
             "type": "title",
-            "title": "10. 소식 · 광고",
+            "title": "11. 안내 및 광고",
             "subtitle": "Announcements",
             "content": _announce_html(ads),
         }
@@ -472,6 +494,10 @@ def build_form_prefetch(data: WorshipData) -> dict:
         "churchNameKo": data.church_name_ko or "플러톤 빌라 교회",
         "churchNameEn": data.church_name_en or "",
         "worshipDate": "  ·  ".join(x for x in [data.date, data.service_time] if x),
+        "prepHymn1Num": _num(data.prep_hymn_1),
+        "prepHymn1Title": _hymn_label(data.prep_hymn_1) if _hymn_has(data.prep_hymn_1) else "",
+        "prepHymn2Num": _num(data.prep_hymn_2),
+        "prepHymn2Title": _hymn_label(data.prep_hymn_2) if _hymn_has(data.prep_hymn_2) else "",
         "hymn1Num": _num(data.praise_hymn),
         "hymn1Title": _hymn_label(data.praise_hymn),
         "responsiveNum": str(resp_n) if resp_n else "",
@@ -510,14 +536,21 @@ def generate_worship_html(
     from hymn_lookup import parse_hymn_number, warm_hymn_numbers
 
     nums = []
-    for h in (data.praise_hymn, data.hymn, data.offering_hymn, data.response_hymn):
+    for h in data.iter_hymns():
         n = parse_hymn_number(getattr(h, "number", "") or "")
         if n:
             nums.append(n)
     if nums:
         warmed = warm_hymn_numbers(nums, allow_remote=bool(allow_remote))
         # Push warmed lyrics onto slots so slides never see stubs
-        for slot_name in ("praise_hymn", "hymn", "offering_hymn", "response_hymn"):
+        for slot_name in (
+            "prep_hymn_1",
+            "prep_hymn_2",
+            "praise_hymn",
+            "hymn",
+            "offering_hymn",
+            "response_hymn",
+        ):
             slot = getattr(data, slot_name)
             n = parse_hymn_number(getattr(slot, "number", "") or "")
             hit = warmed.get(str(n)) if n else None

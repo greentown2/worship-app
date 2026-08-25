@@ -19,7 +19,7 @@ TEMPLATES = ROOT / "templates"
 TEMPLATES.mkdir(exist_ok=True)
 
 # Bump when slide background / type system changes — app auto-reloads master
-MASTER_DESIGN_VERSION = "2026-08-09-cover-center-restore"
+MASTER_DESIGN_VERSION = "2026-08-24-worship-prep"
 
 # ── Design system: senior-friendly sanctuary projection ───
 # Deep slate + warm ivory type + champagne gold + dusty rose accents.
@@ -678,7 +678,7 @@ def build_master_pptx(path: Path) -> Path:
             name=name,
         )
 
-    # ── Order: left-aligned list in the centered column (all 10 steps) ──
+    # ── Order: left-aligned list in the centered column (10 numbered steps) ──
     s = _blank(prs)
     _bg(s, "order")
     _eyebrow(s, "예배 순서")
@@ -700,13 +700,17 @@ def build_master_pptx(path: Path) -> Path:
         space_after=4,
     )
 
-    # ── 1. Praise — intro only (lyrics from separate hymn PPT) ──
-    _hymn_intro_slide(prs, "1. 찬양과 기도", "{{HYMN_1}}", token_name="HYMN_1", motif="announce")
+    # ── 1. Preparation praise — two hymn intros ──
+    _hymn_intro_slide(prs, "1. 예배 준비의 시간", "{{HYMN_PREP_1}}", token_name="HYMN_PREP_1", motif="announce")
+    _hymn_intro_slide(prs, "1. 예배 준비의 시간", "{{HYMN_PREP_2}}", token_name="HYMN_PREP_2", motif="announce")
 
-    # ── 2. Creed (seed; continues if long) ──────────────────
+    # ── 2. Praise — intro only (lyrics from separate hymn PPT) ──
+    _hymn_intro_slide(prs, "2. 찬양과 기도", "{{HYMN_1}}", token_name="HYMN_1", motif="announce")
+
+    # ── 3. Creed (seed; continues if long) ──────────────────
     _reading_slide(
         prs,
-        "2. 사도신경",
+        "3. 사도신경",
         "{{APOSTLES_CREED_HEADING}}",
         "{{APOSTLES_CREED_1}}",
         body_name="APOSTLES_CREED_1",
@@ -717,7 +721,7 @@ def build_master_pptx(path: Path) -> Path:
     # ── 3. Responsive (seed; continues if long) ─────────────
     _reading_slide(
         prs,
-        "3. 교독문",
+        "4. 교독문",
         "{{RESPONSIVE_TITLE}}",
         "{{RESPONSIVE_1}}",
         body_name="RESPONSIVE_1",
@@ -726,18 +730,18 @@ def build_master_pptx(path: Path) -> Path:
         body_align=PP_ALIGN.LEFT,
     )
 
-    # ── 4. Hymn — intro only ───────────────────────────────
-    _hymn_intro_slide(prs, "4. 찬송가", "{{HYMN_2}}", token_name="HYMN_2", motif="announce")
+    # ── 5. Hymn — intro only ───────────────────────────────
+    _hymn_intro_slide(prs, "5. 찬송가", "{{HYMN_2}}", token_name="HYMN_2", motif="announce")
 
-    # ── 5. Prayer ──────────────────────────────────────────
+    # ── 6. Prayer ──────────────────────────────────────────
     _reading_slide(
-        prs, "5. 예배의 기도", "{{PRAYER_LEADER}}", "{{PRAYER_TEXT}}", body_size=SIZE_BODY, motif="pray"
+        prs, "6. 예배의 기도", "{{PRAYER_LEADER}}", "{{PRAYER_TEXT}}", body_size=SIZE_BODY, motif="pray"
     )
 
-    # ── 6. Scripture (seed; continues automatically) ────────
+    # ── 7. Scripture (seed; continues automatically) ────────
     _reading_slide(
         prs,
-        "6. 오늘의 말씀",
+        "7. 오늘의 말씀",
         "{{SCRIPTURE_REF}}",
         "{{BIBLE_TEXT_1}}",
         body_name="BIBLE_TEXT_1",
@@ -745,7 +749,7 @@ def build_master_pptx(path: Path) -> Path:
         motif="word",
     )
 
-    # ── 7. Sermon — small "설교제목" label + centered title ──
+    # ── 8. Sermon — small "설교제목" label + centered title ──
     s = _blank(prs)
     _bg(s, "sermon")
     _eyebrow(s, "설교제목")
@@ -790,13 +794,13 @@ def build_master_pptx(path: Path) -> Path:
         space_after=0,
     )
 
-    # ── 8. Offering — intro only ───────────────────────────
-    _hymn_intro_slide(prs, "8. 감사와 봉헌", "{{HYMN_3}}", token_name="HYMN_3", motif="give")
+    # ── 9. Offering — intro only ───────────────────────────
+    _hymn_intro_slide(prs, "9. 감사와 봉헌", "{{HYMN_3}}", token_name="HYMN_3", motif="give")
 
-    # ── 9. Benediction (was 10) ────────────────────────────
+    # ── 10. Benediction ────────────────────────────────────
     _reading_slide(
         prs,
-        "9. 축도",
+        "10. 축도",
         "축도",
         "{{BENEDICTION_BODY}}",
         body_name="BENEDICTION_BODY",
@@ -807,8 +811,8 @@ def build_master_pptx(path: Path) -> Path:
     # ── Announcements ──────────────────────────────────────
     _reading_slide(
         prs,
-        "소식 · 광고",
-        "소식 · 광고",
+        "11. 안내 및 광고",
+        "안내 및 광고",
         "{{ANNOUNCEMENTS}}",
         body_name="ANNOUNCEMENTS",
         body_size=SIZE_BODY,
