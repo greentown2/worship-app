@@ -348,6 +348,7 @@
         .text-title { font-size: 5.5vh; line-height: 1.4; }
         .text-lyric { font-size: 6.2vh; line-height: 1.6; font-weight: 600; text-shadow: 2px 2px 8px rgba(0,0,0,0.8); }
         .text-body { font-size: 4.2vh; line-height: 1.7; }
+        .text-responsive { font-size: 7.4vh; line-height: 1.5; font-weight: 600; }
 
         .leader-text { color: #ffe066; font-weight: 600; }
         .congregation-text { color: #ff5c5c; font-weight: 600; }
@@ -513,6 +514,15 @@ window.WORSHIP_LOOKUP = {"hymns":{"1":"만복의 근원 하나님","2":"찬양 �
                         </div>
                         <textarea id="bibleText" rows="3" class="w-full bg-slate-800 border border-slate-600 rounded p-2 text-slate-300 text-xs" placeholder="장·절 입력 후 Enter 또는 본문 불러오기"></textarea>
                         <p id="bibleHint" class="text-[11px] text-slate-500">교독문처럼 장·절을 넣으면 개역 본문을 자동으로 채웁니다.</p>
+                    </div>
+                    <div>
+                        <label class="block text-slate-400 mb-1">금주의 암송구절</label>
+                        <div class="flex gap-2 mb-1">
+                            <input type="text" id="memoryVerseRef" value="" class="flex-1 bg-slate-800 border border-slate-600 rounded p-2 text-white" placeholder="예: 요한복음 3:16 또는 요 3:16" onchange="lookupMemoryVerse()" onkeydown="if(event.key==='Enter'){event.preventDefault();lookupMemoryVerse();}">
+                            <button type="button" onclick="lookupMemoryVerse()" class="shrink-0 bg-slate-700 hover:bg-slate-600 border border-slate-500 text-slate-100 px-3 rounded text-xs font-semibold">한 절 불러오기</button>
+                        </div>
+                        <textarea id="memoryVerseText" rows="2" class="w-full bg-slate-800 border border-slate-600 rounded p-2 text-slate-300 text-xs" placeholder="한 절 본문 (직접 입력도 가능)"></textarea>
+                        <p id="memoryVerseHint" class="text-[11px] text-slate-500">한 절만 주보 성경 본문 아래에 들어갑니다.</p>
                     </div>
                     <div>
                         <label class="block text-slate-400 mb-1">8. 생명의 말씀 (설교 제목)</label>
@@ -1237,6 +1247,54 @@ window.WORSHIP_LOOKUP = {"hymns":{"1":"만복의 근원 하나님","2":"찬양 �
             return false;
         }
 
+        function firstVerseOnly(body) {
+            const first = String(body || '').split(/\n+/).map(s => s.trim()).filter(Boolean)[0] || '';
+            return first.replace(/^\d+\s+/, '').trim();
+        }
+
+        function singleVerseDisplay(parsed) {
+            if (!parsed) return '';
+            if (parsed.bookKo && parsed.chapter && parsed.verseStart) {
+                return `${parsed.bookKo} ${parsed.chapter}:${parsed.verseStart}`;
+            }
+            return parsed.display || '';
+        }
+
+        async function lookupMemoryVerse() {
+            const ref = val('memoryVerseRef');
+            if (!ref) {
+                setHint('memoryVerseHint', '암송 구절을 입력하세요. 예: 요한복음 3:16', false);
+                return false;
+            }
+            const parsed = parseBibleRef(ref);
+            if (!parsed) {
+                setHint('memoryVerseHint', '구절 형식을 확인해 주세요. 예: 요 3:16', false);
+                return false;
+            }
+            const labeled = singleVerseDisplay(parsed) || parsed.display;
+            if (labeled) setVal('memoryVerseRef', labeled);
+            let body = scriptureBodyFromLocal(parsed);
+            if (body) {
+                setVal('memoryVerseText', firstVerseOnly(body));
+                setHint('memoryVerseHint', `암송 한 절: ${labeled}`, true);
+                return true;
+            }
+            setHint('memoryVerseHint', `온라인에서 ${labeled} 한 절을 불러오는 중…`, false);
+            try {
+                body = await fetchScriptureOnline(parsed);
+                if (body) {
+                    setVal('memoryVerseText', firstVerseOnly(body));
+                    setHint('memoryVerseHint', `암송 한 절: ${labeled}`, true);
+                    return true;
+                }
+            } catch (err) {
+                setHint('memoryVerseHint', '조회 실패. 본문을 직접 입력해 주세요.', false);
+                return false;
+            }
+            setHint('memoryVerseHint', '한 절을 찾지 못했습니다. 구절을 확인하거나 직접 입력해 주세요.', false);
+            return false;
+        }
+
         async function autoFillAll() {
             lookupHymn('prepHymn1');
             lookupHymn('prepHymn2');
@@ -1245,6 +1303,7 @@ window.WORSHIP_LOOKUP = {"hymns":{"1":"만복의 근원 하나님","2":"찬양 �
             lookupHymn('hymn4');
             lookupResponsive();
             await lookupScripture();
+            await lookupMemoryVerse();
         }
 
         function linesHtml(text) {
@@ -1294,6 +1353,8 @@ window.WORSHIP_LOOKUP = {"hymns":{"1":"만복의 근원 하나님","2":"찬양 �
                 hymn2Title: 'hymn2Title',
                                 bibleRef: 'bibleRef',
                 bibleText: 'bibleText',
+                memoryVerseRef: 'memoryVerseRef',
+                memoryVerseText: 'memoryVerseText',
                 sermonTitle: 'sermonTitle',
                 hymn4Num: 'hymn4Num',
                 hymn4Title: 'hymn4Title',
@@ -1558,11 +1619,11 @@ window.WORSHIP_LOOKUP = {"hymns":{"1":"만복의 근원 하나님","2":"찬양 �
             const leaderRaw = val('worshipLeader');
             const leader = leaderRaw ? (leaderRaw.startsWith('인도자') ? leaderRaw : `인도자 ${leaderRaw}`) : '';
             const coverImage = (window.WORSHIP_PAYLOAD && window.WORSHIP_PAYLOAD.coverImage) || '';
-            const creed = val('apostlesCreed');
             const respTitle = val('responsiveTitle') || '교독문';
-            const respBody = val('responsiveBody');
-            const bibleRef = val('bibleRef');
+            const bibleRef = String(val('bibleRef') || '').replace(/\s*[\(\[]\s*(개역개정|새번역|개역한글|공동번역|NIV|ESV|KJV|GAE|RNKSV)\s*[\)\]]\s*$/i, '').trim();
             const bibleText = val('bibleText');
+            const memoryVerseRef = String(val('memoryVerseRef') || '').replace(/\s*[\(\[]\s*(개역개정|새번역|개역한글|공동번역|NIV|ESV|KJV|GAE|RNKSV)\s*[\)\]]\s*$/i, '').trim();
+            const memoryVerseText = val('memoryVerseText');
             const sermon = val('sermonTitle');
             const prayerLeader = val('prayerLeader');
             const benediction = val('benediction') || '담임목사';
@@ -1589,14 +1650,13 @@ window.WORSHIP_LOOKUP = {"hymns":{"1":"만복의 근원 하나님","2":"찬양 �
                 ['9', '감사와 봉헌', hymnLabelFrom('hymn4Num', 'hymn4Title')],
                 ['10', '축도', benediction],
             ].map(([n, t, d]) => {
+                const small = n === '1' ? ' ord-prep' : '';
                 const detail = d && d !== '—' ? ` <span class="muted">— ${esc(d)}</span>` : '';
-                return `<div class="ord"><b>${n}. ${esc(t)}</b>${detail}</div>`;
+                return `<div class="ord${small}"><b>${n}. ${esc(t)}</b>${detail}</div>`;
             }).join('');
             const adsHtml = (ads.length ? ads : ['주일 예배에 오신 것을 환영합니다.']).map(a => `<li>${esc(a)}</li>`).join('');
             const linesHtml = (text) => text.split(/\n+/).map(s => s.trim()).filter(Boolean).map(esc).join('<br>');
             const bibleLines = linesHtml(bibleText);
-            const respLines = linesHtml(respBody);
-            const creedLines = linesHtml(creed);
             const w = window.open('', '_blank', 'width=1100,height=850');
             if (!w) {
                 alert('팝업이 차단되었습니다. 브라우저에서 팝업을 허용해 주세요.');
@@ -1635,26 +1695,54 @@ window.WORSHIP_LOOKUP = {"hymns":{"1":"만복의 근원 하나님","2":"찬양 �
   }
   h1 { font-size: 20pt; margin: 0 0 6px; }
   h2 {
-    font-size: 15pt; margin: 0 0 8px; padding-bottom: 6px;
-    border-bottom: 1px solid #9A7B4F; box-shadow: 0 1px 0 #1F5C4B;
+    font-size: 18pt; margin: 0 0 4px; padding-bottom: 0;
+    border-bottom: none; box-shadow: none; text-align: center;
   }
   h3 {
     font-family: 'Noto Serif KR', serif;
     font-size: 11pt; margin: 10px 0 4px; color: #1F5C4B;
   }
+  .order-foot h3 { font-size: 22pt; margin: 12px 0 6px; color: #5A6F66; }
+  .word-heading {
+    font-family: 'Noto Serif KR', serif;
+    font-size: 18pt; margin: 4px 0 8px; color: #1F5C4B;
+    text-align: center; font-weight: 700;
+  }
+  .word-ref {
+    font-size: 17pt; color: #1A2E28; text-align: center;
+    font-weight: 700; margin-bottom: 14px;
+  }
+  .word-body {
+    font-size: 11.5pt; line-height: 1.45; font-weight: 400;
+  }
+  .memory-heading {
+    font-family: 'Noto Serif KR', serif;
+    font-size: 13pt; margin: 14px 0 4px; color: #1F5C4B;
+    text-align: center; font-weight: 700;
+  }
+  .memory-ref {
+    font-size: 11pt; color: #9A7B4F; text-align: center;
+    font-weight: 700; margin-bottom: 4px;
+  }
+  .memory-body {
+    font-size: 12pt; line-height: 1.45; font-weight: 700;
+    text-align: center;
+  }
+  .sermon-body { font-size: 9pt; line-height: 1.4; }
   .meta { font-size: 10pt; color: #5A6F66; line-height: 1.45; }
   .cover-meta {
     font-size: 9.5pt; color: #5A6F66; line-height: 1.35;
-    margin-top: 6px; font-weight: 700; letter-spacing: 0.02em;
+    margin-top: 8px; font-weight: 400; letter-spacing: 0.02em;
   }
   .ord {
-    font-size: 10pt; line-height: 1.75;
-    border-bottom: 1px solid #D2E3DB; padding: 4px 6px;
+    font-size: 20pt; line-height: 1.35;
+    border-bottom: 1px solid #D2E3DB; padding: 8px 6px;
   }
   .ord:nth-child(odd) { background: #E3EEE8; }
+  .ord-prep .muted { font-size: 7pt; line-height: 1.25; }
   .muted { color: #5A6F66; font-weight: normal; }
-  .body { font-size: 9pt; line-height: 1.45; }
-  .body-tight { font-size: 8.2pt; line-height: 1.38; }
+  .body { font-size: 18pt; line-height: 1.4; }
+  .body-tight { font-size: 13pt; line-height: 1.42; }
   .sheet.inside,
   .sheet.inside .kicker,
   .sheet.inside h2,
@@ -1675,23 +1763,37 @@ window.WORSHIP_LOOKUP = {"hymns":{"1":"만복의 근원 하나님","2":"찬양 �
   .ads-panel .body {
     font-weight: 700;
   }
-  ul { margin: 6px 0 0 1.1em; padding: 0; font-size: 10.5pt; line-height: 1.6; }
+  ul { margin: 6px 0 0 1.1em; padding: 0; font-size: 21pt; line-height: 1.45; }
   ul li::marker { color: #1F5C4B; }
   .center { text-align: center; }
   .cover-panel {
-    display: flex; flex-direction: column; align-items: center;
-    height: 100%; text-align: center; padding-top: 0.28in; padding-bottom: 0.28in;
+    display: flex; flex-direction: column; align-items: center; justify-content: flex-start;
+    height: 100%; text-align: center; padding-top: 0.87in; padding-bottom: 0.18in;
+    gap: 0;
   }
   .cover-panel > .kicker { margin-bottom: 14px; opacity: 0.85; }
   .cover-title {
-    font-size: 28.5pt; margin: 0; color: #1F5C4B; line-height: 1.15;
+    font-size: 26pt; margin: 0; color: #1F5C4B; line-height: 1.15;
     letter-spacing: 0.06em; font-weight: 700;
   }
-  .cover-art-wrap { margin: 8px 0 0; }
+  .cover-meta {
+    font-size: 9.5pt; color: #5A6F66; line-height: 1.35;
+    margin-top: 8px; font-weight: 400; letter-spacing: 0.02em;
+  }
+  .cover-art-wrap { margin: 4px 0 0; }
   .leader {
-    margin-top: 14px; font-size: 14pt; font-weight: 700;
-    font-family: 'Noto Serif KR', serif; color: #1A2E28;
-    letter-spacing: 0.04em;
+    margin-top: 44px; font-size: 8.5pt; font-weight: 700;
+    font-family: 'Noto Sans KR', 'Malgun Gothic', sans-serif; color: #5A6F66;
+    letter-spacing: 0.02em;
+  }
+  .cover-phone {
+    margin-top: 20px; font-size: 8pt; font-weight: 700;
+    font-family: 'Noto Sans KR', 'Malgun Gothic', sans-serif; color: #5A6F66;
+    letter-spacing: 0.02em;
+  }
+  .cover-verse {
+    margin-top: 12px; font-size: 9pt; font-weight: 700;
+    color: #9A7B4F; letter-spacing: 0.04em;
   }
   .church-logo { display: block; margin: 0 auto; width: 54px; height: 54px; }
   .cover-art {
@@ -1700,17 +1802,17 @@ window.WORSHIP_LOOKUP = {"hymns":{"1":"만복의 근원 하나님","2":"찬양 �
     width: auto; height: auto; object-fit: contain;
   }
   .cover-bottom {
-    margin-top: auto; padding-top: 20px; padding-bottom: 4px; width: 100%;
+    margin-top: 4px; padding-top: 0; padding-bottom: 0; width: 100%;
   }
-  .cover-bottom .ornament { margin: 0 auto 12px; width: 42%; }
+  .cover-bottom .ornament { margin: 14px auto 10px; width: 42%; }
   .church-en {
     font-family: 'Cormorant Garamond', Georgia, serif;
-    font-size: 14.25pt; letter-spacing: .06em; color: #5A6F66; font-weight: 500;
+    font-size: 11pt; letter-spacing: .06em; color: #5A6F66; font-weight: 700;
     line-height: 1.25;
   }
   .church-ko {
     font-family: 'Noto Serif KR', serif;
-    font-size: 14.25pt; color: #1F5C4B; font-weight: 500; margin-top: 3px;
+    font-size: 15pt; color: #1F5C4B; font-weight: 700; margin-top: 3px;
     line-height: 1.25;
   }
   .ornament {
@@ -1741,7 +1843,6 @@ window.WORSHIP_LOOKUP = {"hymns":{"1":"만복의 근원 하나님","2":"찬양 �
     ${note ? `<p class="body" style="margin-top:14px"><b>안내</b> ${esc(note)}</p>` : ''}
   </div>
   <div class="panel cover-panel">
-    <div class="kicker">Cover</div>
     <div class="cover-title">${esc(title)}</div>
     <div class="cover-meta">${esc(date)}</div>
     <div class="ornament">◆</div>
@@ -1756,11 +1857,13 @@ window.WORSHIP_LOOKUP = {"hymns":{"1":"만복의 근원 하나님","2":"찬양 �
       <rect x="17" y="26.5" width="30" height="7.6" rx="0.5" fill="#1F5C4B"/>
     </svg>`}
     </div>
-    ${leader ? `<div class="leader">${esc(leader)}</div>` : ''}
+    <div class="cover-verse">“다 이루었다” (요 19:30)</div>
     <div class="cover-bottom">
       <div class="ornament">◆</div>
       ${churchEn ? `<div class="church-en">${esc(churchEn)}</div>` : ''}
       <div class="church-ko">${esc(churchKo)}</div>
+      ${leader ? `<div class="leader">${esc(leader)}</div>` : ''}
+      <div class="cover-phone">714) 337-0550</div>
     </div>
   </div>
 </section>
@@ -1770,20 +1873,24 @@ window.WORSHIP_LOOKUP = {"hymns":{"1":"만복의 근원 하나님","2":"찬양 �
     <h2>예배 순서</h2>
     <div class="ornament">◆</div>
     ${order}
+    <div class="order-foot">
     <h3>축도 · 안내</h3>
     <div class="body"><b>축도</b> ${esc(benediction)}<br><b>안내</b> ${esc(note || '—')}</div>
+    </div>
   </div>
   <div class="panel">
-    <div class="kicker">Word &amp; Hymn</div>
+    <div class="kicker">The Word</div>
     <h2>오늘의 말씀</h2>
-    <div class="meta"><b>${esc(bibleRef || '(구절 미입력)')}</b></div>
-    <div class="body-tight" style="margin-top:4px">${bibleLines || '(본문 없음)'}</div>
+    <div class="ornament">◆</div>
+    <div class="word-ref">${esc(bibleRef || '(구절 미입력)')}</div>
+    <div class="word-body">${bibleLines || '(본문 없음)'}</div>
+    ${(memoryVerseRef || memoryVerseText) ? `
+    <div class="memory-heading">금주의 암송구절</div>
+    ${memoryVerseRef ? `<div class="memory-ref">${esc(memoryVerseRef)}</div>` : ''}
+    ${memoryVerseText ? `<div class="memory-body">${esc(memoryVerseText)}</div>` : ''}
+    ` : ''}
     <h3>생명의 말씀</h3>
-    <div class="body">${esc(sermon || '—')}</div>
-    <h3>교독문 · ${esc(respTitle)}</h3>
-    <div class="body-tight">${respLines || '(교독문 없음)'}</div>
-    <h3>사도신경</h3>
-    <div class="body-tight">${creedLines || '(사도신경 없음)'}</div>
+    <div class="sermon-body">${esc(sermon || '—')}</div>
   </div>
 </section>
 </body></html>`);
@@ -2165,7 +2272,7 @@ window.WORSHIP_LOOKUP = {"hymns":{"1":"만복의 근원 하나님","2":"찬양 �
                         <div class="text-3xl text-slate-300">${slide.title || ''}</div>
                     </div>
                     <div class="slide-body">
-                        <div class="text-body text-white w-full max-w-6xl mx-auto drop-shadow-lg">
+                        <div class="text-responsive text-white w-full max-w-6xl mx-auto drop-shadow-lg">
                             ${slide.content || ''}
                         </div>
                     </div>

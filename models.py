@@ -49,6 +49,9 @@ class WorshipData:
     # 7. 오늘의 말씀
     scripture_reference: str = ""
     scripture_text: str = ""
+    # 금주의 암송구절 (one verse, shown under scripture on the bulletin)
+    memory_verse_reference: str = ""
+    memory_verse_text: str = ""
 
     # (removed from numbered order — keep empty)
     response_hymn: HymnEntry = field(default_factory=HymnEntry)

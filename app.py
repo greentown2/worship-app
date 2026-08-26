@@ -89,7 +89,7 @@ import html_share
 from pdf_generator import bulletin_preview_text, generate_worship_pdf
 from pptx_generator import generate_worship_pptx, pptx_slide_previews, scan_placeholders
 from responsive_lookup import format_responsive_label, lookup_responsive, parse_responsive_number
-from scripture_lookup import lookup_scripture, verses_to_body
+from scripture_lookup import first_verse_body, lookup_scripture, single_verse_reference, verses_to_body
 
 DEFAULT_WORSHIP_LEADER = getattr(defaults, "DEFAULT_WORSHIP_LEADER", "엄영민 목사")
 
@@ -209,6 +209,9 @@ def _init_state():
         "prayer_leader": "",
         "scripture_reference_input": "히브리서 4:1-11",
         "scripture_text_area": "",
+        "memory_verse_ref": "",
+        "memory_verse_text": "",
+        "resolved_memory_verse": None,
         "response_num": "",
         "response_title": "",
         "sermon_title": "",
@@ -284,6 +287,8 @@ def _init_state():
         "_p_offering_title": "offering_title",
         "_pending_scripture_ref": "scripture_reference_input",
         "_pending_scripture_body": "scripture_text_area",
+        "_pending_memory_verse_ref": "memory_verse_ref",
+        "_pending_memory_verse_text": "memory_verse_text",
         "_pending_responsive_title": "responsive_title",
         "_pending_responsive_body": "responsive_body",
         "_pending_responsive_num": "responsive_num",
@@ -472,6 +477,27 @@ def _build_worship_data(service_date, *, allow_remote: bool, force_lyrics: bool 
             if (st.session_state.get("scripture_text_area") or "").strip() != body:
                 st.session_state["_pending_scripture_body"] = body
 
+    mem_ref = normalize_breaks(st.session_state.get("memory_verse_ref") or "").strip()
+    mem_body = normalize_breaks(st.session_state.get("memory_verse_text") or "").strip()
+    if mem_ref:
+        mem_result = lookup_scripture(mem_ref, allow_remote=allow_remote)
+        mem_parsed = scripture_lookup.parse_scripture_reference(mem_ref)
+        if (
+            mem_result.found
+            and mem_result.verses
+            and not scripture_lookup._looks_like_rnksv(mem_result.verses)
+            and not scripture_lookup._is_bad_verses(mem_result.verses)
+        ):
+            one = first_verse_body(mem_result.verses)
+            labeled = single_verse_reference(mem_parsed, mem_result.reference or mem_ref)
+            if labeled:
+                mem_ref = labeled
+                if (st.session_state.get("memory_verse_ref") or "").strip() != labeled:
+                    st.session_state["_pending_memory_verse_ref"] = labeled
+            if one and (not mem_body or mem_body == labeled or mem_body == mem_ref):
+                mem_body = one
+                st.session_state["_pending_memory_verse_text"] = one
+
     resp_num = normalize_breaks(st.session_state.get("responsive_num") or "").strip()
     resp_title = normalize_breaks(st.session_state.get("responsive_title") or "").strip()
     resp_body = normalize_breaks(st.session_state.get("responsive_body") or "").strip()
@@ -518,6 +544,8 @@ def _build_worship_data(service_date, *, allow_remote: bool, force_lyrics: bool 
         worship_prayer_leader=(st.session_state.get("prayer_leader") or "").strip(),
         scripture_reference=ref,
         scripture_text=body,
+        memory_verse_reference=mem_ref,
+        memory_verse_text=mem_body,
         response_hymn=HymnEntry(),  # removed from order — keep empty
         sermon_title=(st.session_state.get("sermon_title") or "").strip(),
         sermon_subtitle=(st.session_state.get("sermon_subtitle") or "").strip(),
@@ -708,6 +736,38 @@ def _on_scripture_ref_change() -> None:
             "found": False,
             "source": getattr(result, "source", "") or "",
             "message": getattr(result, "message", "") or "본문을 찾지 못했습니다.",
+        }
+
+
+def _on_memory_verse_change() -> None:
+    ref = (st.session_state.get("memory_verse_ref") or "").strip()
+    if not ref:
+        return
+    allow = bool(st.session_state.get("_allow_remote", True))
+    result = lookup_scripture(ref, allow_remote=allow)
+    parsed = scripture_lookup.parse_scripture_reference(ref)
+    if (
+        result.found
+        and result.verses
+        and not scripture_lookup._looks_like_rnksv(result.verses)
+        and not scripture_lookup._is_bad_verses(result.verses)
+    ):
+        labeled = single_verse_reference(parsed, result.reference or ref)
+        if labeled:
+            st.session_state["memory_verse_ref"] = labeled
+        st.session_state["memory_verse_text"] = first_verse_body(result.verses)
+        st.session_state["resolved_memory_verse"] = {
+            "reference": labeled or ref,
+            "found": True,
+            "source": result.source,
+            "message": "",
+        }
+    else:
+        st.session_state["resolved_memory_verse"] = {
+            "reference": ref,
+            "found": False,
+            "source": getattr(result, "source", "") or "",
+            "message": getattr(result, "message", "") or "한 절을 찾지 못했습니다.",
         }
 
 
@@ -1089,6 +1149,35 @@ def main():
         st.caption("성경 구절을 입력(Enter)하면 교독문처럼 개역개정 본문이 자동으로 채워집니다. 예: 히브리서 4:1-11 또는 히 4:1-11")
     st.text_area("성경 본문", key="scripture_text_area", height=150)
 
+    st.markdown('<p class="order-step">금주의 암송구절</p>', unsafe_allow_html=True)
+    mv1, mv2 = st.columns([3, 1])
+    with mv1:
+        st.text_input(
+            "암송 구절 (한 절)",
+            key="memory_verse_ref",
+            placeholder="예: 요한복음 3:16 또는 요 3:16",
+            on_change=_on_memory_verse_change,
+        )
+    with mv2:
+        st.write("")
+        st.write("")
+        if st.button("한 절 불러오기", use_container_width=True, key="fetch_memory_verse"):
+            _on_memory_verse_change()
+            st.rerun()
+    resolved_mv = st.session_state.get("resolved_memory_verse")
+    if resolved_mv and resolved_mv.get("found"):
+        st.success(f"암송: **{resolved_mv['reference']}** · `{resolved_mv['source']}`")
+    elif resolved_mv and resolved_mv.get("message"):
+        st.warning(resolved_mv["message"])
+    else:
+        st.caption("장·절을 넣으면 개역개정 한 절이 자동으로 채워지고, 주보 성경 본문 아래에 표시됩니다.")
+    st.text_area(
+        "암송 본문",
+        key="memory_verse_text",
+        height=80,
+        placeholder="한 절 본문 (직접 입력도 가능)",
+    )
+
     st.markdown('<p class="order-step">8. 생명의 말씀</p>', unsafe_allow_html=True)
     s1, s2 = st.columns(2)
     with s1:
@@ -1175,6 +1264,7 @@ def main():
         f"{_PDF_VERSION}|{getattr(pptx_generator, '_INJECT_VERSION', '')}|"
         f"{data.church_name_ko}|{data.worship_leader}|{data.sermon_title}|{data.sermon_subtitle}|"
         f"{data.scripture_reference}|{(data.scripture_text or '')[:120]}|"
+        f"{data.memory_verse_reference}|{(data.memory_verse_text or '')[:80]}|"
         f"{data.responsive_reading_title}|{(data.responsive_reading or '')[:80]}|"
         f"{data.preacher}|{(data.announcements or '')[:80]}|{data.prep_hymn_1.number}|"
         f"{data.prep_hymn_2.number}|{data.praise_hymn.number}|"

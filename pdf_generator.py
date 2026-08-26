@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-_PDF_VERSION = "2026-08-24-ads-bold-v11"
+_PDF_VERSION = "2026-08-26-cover-half-down-v21"
 
 from io import BytesIO
 from pathlib import Path
 from typing import List, Tuple
 from xml.sax.saxutils import escape
+import re
 
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter, landscape
@@ -73,6 +74,17 @@ def clean_text(text: str | None) -> str:
 
 def _clean(text: str | None) -> str:
     return clean_text(text)
+
+
+def _display_ref(text: str | None) -> str:
+    """Bulletin citation without translation labels like (개역개정)."""
+    raw = _clean(text)
+    return re.sub(
+        r"\s*[\(\[]\s*(개역개정|새번역|개역한글|공동번역|NIV|ESV|KJV|GAE|RNKSV)\s*[\)\]]\s*$",
+        "",
+        raw,
+        flags=re.I,
+    ).strip()
 
 
 def _ensure_fonts() -> None:
@@ -184,8 +196,45 @@ def _rule(width: str = "55%") -> HRFlowable:
     return HRFlowable(width=width, thickness=0.9, color=ACCENT, spaceBefore=5, spaceAfter=5, hAlign="CENTER")
 
 
-def _ornament(width: float = 130) -> _OrnamentRule:
-    return _OrnamentRule(width=width)
+def _ornament(width: float = 96, space_before: float = 4, space_after: float = 6) -> _OrnamentRule:
+    return _OrnamentRule(width=width, space_before=space_before, space_after=space_after)
+
+
+def _center_in_panel(flowables: list, *, lift_mm: float = 0) -> Table:
+    """Place a content stack near the vertical middle of a bulletin panel.
+
+    lift_mm nudges the block upward by adding empty space below it.
+    """
+    width = PANEL_W - 4
+    height = PANEL_H - 4
+    stack = list(flowables)
+    if lift_mm > 0:
+        stack.append(Spacer(1, lift_mm * mm))
+    inner = KeepInFrame(width, height - 6, stack, mode="shrink", hAlign="CENTER")
+    tbl = Table([[inner]], colWidths=[width], rowHeights=[height])
+    tbl.setStyle(
+        TableStyle(
+            [
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                ("TOPPADDING", (0, 0), (-1, -1), 0),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+            ]
+        )
+    )
+    return tbl
+
+
+def _page_header(kicker: str, title: str, styles: dict, *, ornament_w: float = 96) -> list:
+    """Shared inner-page header: English kicker, Korean title, brass ornament."""
+    return [
+        _para(kicker, styles["face_tag"]),
+        _para(title, styles["page_title"]),
+        _ornament(ornament_w),
+        Spacer(1, 2.2 * mm),
+    ]
 
 
 class _ChurchCrossLogo(Flowable):
@@ -286,22 +335,22 @@ def _styles() -> dict[str, ParagraphStyle]:
             leading=9,
             alignment=1,
             textColor=GOLD,
-            spaceAfter=6,
+            spaceAfter=4,
         ),
         "church_en": ParagraphStyle(
             "ChurchEn",
-            fontName=FONT_EN,
-            fontSize=14.25,
-            leading=18,
+            fontName=FONT_BOLD,
+            fontSize=11,
+            leading=14,
             alignment=1,
             textColor=MUTED,
             spaceAfter=2,
         ),
         "church_ko": ParagraphStyle(
             "ChurchKo",
-            fontName=FONT_DISPLAY,
-            fontSize=14.25,
-            leading=18,
+            fontName=FONT_BOLD,
+            fontSize=15,
+            leading=19,
             alignment=1,
             textColor=ACCENT,
             spaceAfter=0,
@@ -309,48 +358,78 @@ def _styles() -> dict[str, ParagraphStyle]:
         "cover_leader": ParagraphStyle(
             "CoverLeader",
             fontName=FONT_BOLD,
-            fontSize=17,
-            leading=22,
+            fontSize=8.5,
+            leading=11,
             alignment=1,
-            textColor=INK,
-            spaceBefore=2,
+            textColor=MUTED,
+            spaceBefore=0,
             spaceAfter=0,
+        ),
+        "cover_phone": ParagraphStyle(
+            "CoverPhone",
+            fontName=FONT_BOLD,
+            fontSize=8,
+            leading=10,
+            alignment=1,
+            textColor=MUTED,
+            spaceBefore=0,
+            spaceAfter=0,
+        ),
+        "cover_verse": ParagraphStyle(
+            "CoverVerse",
+            fontName=FONT_BOLD,
+            fontSize=9,
+            leading=13,
+            alignment=1,
+            textColor=GOLD,
+            spaceBefore=8,
+            spaceAfter=0,
+        ),
+        "page_title": ParagraphStyle(
+            "PageTitle",
+            fontName=FONT_BOLD,
+            fontSize=18,
+            leading=23,
+            alignment=1,
+            textColor=ACCENT,
+            spaceBefore=0,
+            spaceAfter=2,
         ),
         "order_heading": ParagraphStyle(
             "OrderHeading",
             fontName=FONT_BOLD,
-            fontSize=20,
-            leading=26,
+            fontSize=18,
+            leading=23,
             alignment=1,
             textColor=ACCENT,
-            spaceBefore=2,
+            spaceBefore=0,
             spaceAfter=2,
         ),
         "ads_heading": ParagraphStyle(
             "AdsHeading",
             fontName=FONT_BOLD,
-            fontSize=17,
-            leading=22,
+            fontSize=18,
+            leading=23,
             alignment=1,
             textColor=ACCENT,
-            spaceBefore=4,
+            spaceBefore=0,
             spaceAfter=2,
         ),
         "ads_body": ParagraphStyle(
             "AdsBody",
             fontName=FONT_BOLD,
-            fontSize=11.5,
-            leading=17,
+            fontSize=23,
+            leading=32,
             textColor=INK,
-            spaceBefore=4,
-            spaceAfter=4,
+            spaceBefore=6,
+            spaceAfter=6,
             leftIndent=4,
         ),
         "service": ParagraphStyle(
             "ServiceTitle",
             fontName=FONT_BOLD,
-            fontSize=28.5,
-            leading=34,
+            fontSize=26,
+            leading=32,
             alignment=1,
             textColor=ACCENT,
             spaceBefore=0,
@@ -358,9 +437,9 @@ def _styles() -> dict[str, ParagraphStyle]:
         ),
         "meta": ParagraphStyle(
             "Meta",
-            fontName=FONT_BOLD,
+            fontName=FONT,
             fontSize=9.5,
-            leading=12,
+            leading=13,
             alignment=1,
             textColor=MUTED,
             spaceAfter=2,
@@ -377,26 +456,111 @@ def _styles() -> dict[str, ParagraphStyle]:
         "section": ParagraphStyle(
             "Section",
             fontName=FONT_BOLD,
-            fontSize=11,
-            leading=14,
+            fontSize=12,
+            leading=16,
+            alignment=1,
             textColor=ACCENT,
-            spaceBefore=6,
+            spaceBefore=8,
             spaceAfter=3,
+        ),
+        "body_bold": ParagraphStyle(
+            "BodyBold",
+            fontName=FONT_BOLD,
+            fontSize=11,
+            leading=15,
+            alignment=1,
+            textColor=INK,
+            spaceAfter=2,
         ),
         "order_left": ParagraphStyle(
             "OrderLeft",
             fontName=FONT_BOLD,
-            fontSize=8.5,
-            leading=20,
+            fontSize=17,
+            leading=19,
             textColor=INK,
         ),
         "order_right": ParagraphStyle(
             "OrderRight",
             fontName=FONT_BOLD,
-            fontSize=8,
-            leading=20,
+            fontSize=16,
+            leading=19,
             textColor=MUTED,
             alignment=2,
+        ),
+        "order_right_prep": ParagraphStyle(
+            "OrderRightPrep",
+            fontName=FONT_BOLD,
+            fontSize=6,
+            leading=8,
+            textColor=MUTED,
+            alignment=2,
+        ),
+        "order_note": ParagraphStyle(
+            "OrderNote",
+            fontName=FONT,
+            fontSize=9.5,
+            leading=13,
+            alignment=1,
+            textColor=MUTED,
+            spaceBefore=8,
+            spaceAfter=0,
+        ),
+        "scripture_heading": ParagraphStyle(
+            "ScriptureHeading",
+            fontName=FONT_BOLD,
+            fontSize=18,
+            leading=23,
+            alignment=1,
+            textColor=ACCENT,
+            spaceBefore=0,
+            spaceAfter=2,
+        ),
+        "scripture_ref": ParagraphStyle(
+            "ScriptureRef",
+            fontName=FONT_BOLD,
+            fontSize=17,
+            leading=22,
+            alignment=1,
+            textColor=INK,
+            spaceAfter=2,
+        ),
+        "scripture_body": ParagraphStyle(
+            "ScriptureBody",
+            fontName=FONT,
+            fontSize=11.5,
+            leading=16.5,
+            alignment=0,
+            textColor=INK,
+            spaceAfter=3,
+        ),
+        "memory_heading": ParagraphStyle(
+            "MemoryHeading",
+            fontName=FONT_BOLD,
+            fontSize=12,
+            leading=16,
+            alignment=1,
+            textColor=ACCENT,
+            spaceBefore=8,
+            spaceAfter=3,
+        ),
+        "memory_ref": ParagraphStyle(
+            "MemoryRef",
+            fontName=FONT_BOLD,
+            fontSize=11,
+            leading=14,
+            alignment=1,
+            textColor=GOLD,
+            spaceAfter=2,
+        ),
+        "memory_body": ParagraphStyle(
+            "MemoryBody",
+            fontName=FONT,
+            fontSize=12,
+            leading=17,
+            alignment=1,
+            textColor=INK,
+            spaceBefore=2,
+            spaceAfter=2,
         ),
         "body": ParagraphStyle(
             "Body",
@@ -430,28 +594,20 @@ def _styles() -> dict[str, ParagraphStyle]:
             textColor=INK,
             spaceAfter=1.5,
         ),
-        "body_bold": ParagraphStyle(
-            "BodyBold",
-            fontName=FONT_BOLD,
-            fontSize=9,
-            leading=12,
-            textColor=INK,
-            spaceAfter=2,
-        ),
         "footer": ParagraphStyle(
             "Footer",
-            fontName=FONT_BOLD,
-            fontSize=8,
-            leading=11,
+            fontName=FONT,
+            fontSize=10,
+            leading=14,
             alignment=1,
             textColor=MUTED,
-            spaceBefore=8,
+            spaceBefore=10,
         ),
         "empty_hint": ParagraphStyle(
             "EmptyHint",
             fontName=FONT_BOLD,
-            fontSize=8,
-            leading=11,
+            fontSize=16,
+            leading=22,
             alignment=1,
             textColor=MUTED,
             spaceBefore=10,
@@ -467,7 +623,7 @@ def _order_items(data: WorshipData) -> List[Tuple[str, str, str]]:
         ("4", "교독문", _clean(data.responsive_reading_title)),
         ("5", "찬송가", _hymn_line(data.hymn)),
         ("6", "예배의 기도", _clean(data.worship_prayer_leader)),
-        ("7", "오늘의 말씀", _clean(data.scripture_reference)),
+        ("7", "오늘의 말씀", _display_ref(data.scripture_reference)),
         (
             "8",
             "생명의 말씀",
@@ -496,19 +652,20 @@ def _lyrics_block(h: HymnEntry, *, max_lines: int | None = None) -> str:
 def _order_table(data: WorshipData, styles: dict) -> Table:
     table_data = []
     for num, title, detail in _order_items(data):
+        right_style = styles["order_right_prep"] if num == "1" else styles["order_right"]
         table_data.append(
             [
                 _para(f"{num}.  {title}", styles["order_left"]),
-                _para(detail or " ", styles["order_right"]),
+                _para(detail or " ", right_style),
             ]
         )
-    left_w = PANEL_W * 0.42
-    right_w = PANEL_W * 0.55
+    left_w = PANEL_W * 0.46
+    right_w = PANEL_W * 0.51
     t = Table(table_data, colWidths=[left_w, right_w])
     style_cmds = [
         ("BACKGROUND", (0, 0), (-1, -1), WHITE),
-        ("TOPPADDING", (0, 0), (-1, -1), 7),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
+        ("TOPPADDING", (0, 0), (-1, -1), 6),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
         ("LEFTPADDING", (0, 0), (-1, -1), 5),
         ("RIGHTPADDING", (0, 0), (-1, -1), 4),
         ("LINEBELOW", (0, 0), (-1, -2), 0.4, RULE),
@@ -524,10 +681,9 @@ def _order_table(data: WorshipData, styles: dict) -> Table:
 
 
 def _flow_cover(data: WorshipData, styles: dict) -> list:
-    """Front cover: balanced vertical rhythm — title, art, leader, church names."""
+    """Front cover: top-aligned column — title, cross, quote, church, leader, phone."""
     story: list = [
-        _para("COVER", styles["face_tag"]),
-        Spacer(1, 5 * mm),
+        Spacer(1, 18 * mm),
         _para(data.service_title or "주일 예배", styles["service"]),
     ]
     meta_bits = [
@@ -540,19 +696,17 @@ def _flow_cover(data: WorshipData, styles: dict) -> list:
         if b
     ]
     if meta_bits:
-        story.append(Spacer(1, 1.5 * mm))
+        story.append(Spacer(1, 2.4 * mm))
         story.append(_para("  ·  ".join(meta_bits), styles["meta"]))
 
-    story.append(Spacer(1, 4 * mm))
-    story.append(_ornament(96))
-    story.append(Spacer(1, 5 * mm))
+    story.append(_ornament(88, space_before=10, space_after=10))
 
-    crucifix = _cover_crucifix(max_width=1.7 * inch, max_height=2.35 * inch)
+    crucifix = _cover_crucifix(max_width=1.48 * inch, max_height=1.92 * inch)
     if crucifix is not None:
         story.append(
             KeepInFrame(
                 PANEL_W - 8,
-                2.4 * inch,
+                1.96 * inch,
                 [crucifix],
                 mode="shrink",
                 hAlign="CENTER",
@@ -563,26 +717,24 @@ def _flow_cover(data: WorshipData, styles: dict) -> list:
         logo.hAlign = "CENTER"
         story.append(logo)
 
-    leader = _clean(getattr(data, "worship_leader", "") or "")
-    if leader:
-        label = leader if leader.startswith("인도자") else f"인도자 {leader}"
-        story.append(Spacer(1, 4 * mm))
-        story.append(_para(label, styles["cover_leader"]))
+    story.append(_para("“다 이루었다” (요 19:30)", styles["cover_verse"]))
 
-    # Bottom brand block — quieter weight, more air above
-    story.append(Spacer(1, 11 * mm))
-    story.append(_ornament(72))
-    story.append(Spacer(1, 3.5 * mm))
+    story.append(_ornament(72, space_before=10, space_after=8))
     if _clean(data.church_name_en):
         story.append(_para(data.church_name_en, styles["church_en"]))
     story.append(_para(data.church_name_ko or "플러톤 빌라 교회", styles["church_ko"]))
+    leader = _clean(getattr(data, "worship_leader", "") or "")
+    if leader:
+        label = leader if leader.startswith("인도자") else f"인도자 {leader}"
+        story.append(Spacer(1, 16 * mm))
+        story.append(_para(label, styles["cover_leader"]))
+    story.append(Spacer(1, 7 * mm))
+    story.append(_para("714) 337-0550", styles["cover_phone"]))
     return story
 
 
 def _announcement_items(text: str) -> list[str]:
     """Split announcements into bullet items (one per line / bullet)."""
-    import re
-
     raw = _clean(text)
     if not raw:
         return []
@@ -598,14 +750,8 @@ def _announcement_items(text: str) -> list[str]:
 
 
 def _flow_announcements(data: WorshipData, styles: dict) -> list:
-    """Back cover: large centered title + senior-readable bulleted ads."""
-    story: list = [
-        _para("ANNOUNCEMENTS", styles["face_tag"]),
-        Spacer(1, 2 * mm),
-        _para("소식 · 광고", styles["ads_heading"]),
-        _ornament(100),
-        Spacer(1, 3 * mm),
-    ]
+    """Back cover: shared header + senior-readable bulleted ads."""
+    story: list = _page_header("Announcements", "소식 · 광고", styles, ornament_w=96)
     items = _announcement_items(data.announcements or "")
     if items:
         for item in items:
@@ -613,10 +759,12 @@ def _flow_announcements(data: WorshipData, styles: dict) -> list:
     else:
         story.append(_para("이번 주 소식이 있으면 여기에 표시됩니다.", styles["empty_hint"]))
     if _clean(data.closing_note):
-        story.append(Spacer(1, 6 * mm))
+        story.append(Spacer(1, 8 * mm))
+        story.append(_ornament(64, space_before=2, space_after=6))
         story.append(_para(data.closing_note, styles["footer"]))
     elif _clean(data.benediction):
-        story.append(Spacer(1, 6 * mm))
+        story.append(Spacer(1, 8 * mm))
+        story.append(_ornament(64, space_before=2, space_after=6))
         story.append(_para(f"축도  ·  {_clean(data.benediction)}", styles["footer"]))
     return story
 
@@ -624,13 +772,9 @@ def _flow_announcements(data: WorshipData, styles: dict) -> list:
 def _flow_order(data: WorshipData, styles: dict) -> list:
     """Inside left panel — order of worship."""
     return [
-        _para("ORDER OF WORSHIP", styles["face_tag"]),
-        _para("예배 순서", styles["order_heading"]),
-        _ornament(110),
-        Spacer(1, 3 * mm),
+        *_page_header("Order of Worship", "예배 순서", styles, ornament_w=96),
         _order_table(data, styles),
-        Spacer(1, 4),
-        _para("사도신경 · 교독문 · 기도는 인도에 따라 함께합니다.", styles["body_sm"]),
+        _para("사도신경 · 교독문 · 기도는 인도에 따라 함께합니다.", styles["order_note"]),
     ]
 
 
@@ -638,52 +782,58 @@ def _section_rule() -> HRFlowable:
     return HRFlowable(width="100%", thickness=0.55, color=GOLD, spaceBefore=1, spaceAfter=4)
 
 
+def _ensure_memory_verse(data: WorshipData) -> tuple[str, str]:
+    """Reference + one-verse body for the bulletin, filling from lookup if needed."""
+    mem_ref = _display_ref(getattr(data, "memory_verse_reference", "") or "")
+    mem_body = _clean(getattr(data, "memory_verse_text", "") or "")
+    if mem_ref and (not mem_body or mem_body == mem_ref):
+        try:
+            from scripture_lookup import first_verse_body, lookup_scripture
+
+            hit = lookup_scripture(mem_ref, allow_remote=True)
+            if hit.found and hit.verses:
+                mem_body = first_verse_body(hit.verses)
+            if hit.reference:
+                mem_ref = _display_ref(hit.reference) or mem_ref
+        except Exception:
+            pass
+    return mem_ref, mem_body
+
+
 def _flow_scripture_hymns(data: WorshipData, styles: dict, *, lyric_lines: int = 0) -> list:
-    """Inside right panel — scripture, sermon, responsive, creed (no hymn list)."""
+    """Inside right panel — today's scripture, memory verse, sermon title."""
     del lyric_lines
-    story: list = [
-        _para("WORD & HYMN", styles["face_tag"]),
-    ]
-    ref = _clean(data.scripture_reference)
+    story: list = _page_header("The Word", "오늘의 말씀", styles, ornament_w=96)
+    ref = _display_ref(data.scripture_reference)
     body = _clean(data.scripture_text)
-    if ref or body:
-        story.append(_para("오늘의 말씀", styles["section"]))
-        story.append(_section_rule())
-        if ref:
-            story.append(_para(ref, styles["body_bold"]))
-        if body:
-            style = styles["body_xs"] if len(body) > 280 else styles["body_sm"]
-            story.append(_para(body, style))
+    if ref:
+        story.append(_para(ref, styles["scripture_ref"]))
+    if body:
+        story.append(Spacer(1, 4.2 * mm))
+        story.append(_para(body, styles["scripture_body"]))
+
+    mem_ref, mem_body = _ensure_memory_verse(data)
+    if mem_ref or mem_body:
+        story.append(Spacer(1, 3 * mm))
+        story.append(_ornament(64, space_before=4, space_after=6))
+        story.append(_para("금주의 암송구절", styles["memory_heading"]))
+        if mem_ref:
+            story.append(_para(mem_ref, styles["memory_ref"]))
+        if mem_body:
+            story.append(Spacer(1, 1.8 * mm))
+            story.append(_para(mem_body, styles["memory_body"]))
 
     if _clean(data.sermon_title) or _clean(data.sermon_subtitle):
+        story.append(Spacer(1, 3 * mm))
+        story.append(_ornament(64, space_before=4, space_after=6))
         story.append(_para("생명의 말씀", styles["section"]))
-        story.append(_section_rule())
         if _clean(data.sermon_title):
             story.append(_para(data.sermon_title, styles["body_bold"]))
         if _clean(data.sermon_subtitle):
             story.append(_para(data.sermon_subtitle, styles["body_sm"]))
 
-    resp_title = _clean(data.responsive_reading_title) or "교독문"
-    resp_body = _clean(data.responsive_reading)
-    if resp_body:
-        story.append(
-            _para(
-                f"교독문 · {resp_title}" if resp_title != "교독문" else "교독문",
-                styles["section"],
-            )
-        )
-        story.append(_section_rule())
-        style = styles["body_xs"] if len(resp_body) > 320 else styles["body_sm"]
-        story.append(_para(resp_body, style))
-
-    creed = _clean(data.apostles_creed)
-    if creed:
-        story.append(_para("사도신경", styles["section"]))
-        story.append(_section_rule())
-        story.append(_para(creed, styles["creed_sm"]))
-
-    if len(story) <= 1:
-        story.append(_para("성경 본문 · 교독문 · 사도신경을 입력하면 이 면에 표시됩니다.", styles["body_sm"]))
+    if len(story) <= 4 and not (ref or body):
+        story.append(_para("성경 본문을 입력하면 이 면에 표시됩니다.", styles["body_sm"]))
     return story
 
 
@@ -771,7 +921,7 @@ def _build_story(data: WorshipData, styles: dict, *, lyric_lines: int = 0) -> li
     """
     Booklet imposition on one Letter landscape sheet (duplex):
       Sheet 1 (outside):  [광고 | 커버]
-      Sheet 2 (inside):   [예배순서 | 성경·교독·사도신경]
+      Sheet 2 (inside):   [예배순서 | 오늘의 말씀]
     Fold center → cover front, ads back; open → order left, scripture right.
     """
     del lyric_lines
@@ -800,7 +950,7 @@ def _build_story(data: WorshipData, styles: dict, *, lyric_lines: int = 0) -> li
         )
     )
     story.append(FrameBreak())
-    # Inside right → scripture / hymn titles / responsive / creed (no truncation)
+    # Inside right → today's scripture (large) + sermon title
     story.append(
         KeepInFrame(
             PANEL_W - 4,
@@ -816,7 +966,7 @@ def _build_story(data: WorshipData, styles: dict, *, lyric_lines: int = 0) -> li
 def draw_bulletin(data: WorshipData) -> BytesIO:
     """
     Folded Letter (11×8.5) bulletin — 2 PDF pages for duplex print:
-      outside [광고 | 커버], inside [예배순서 | 성경·교독·사도신경].
+      outside [광고 | 커버], inside [예배순서 | 오늘의 말씀].
     """
     data = enrich_worship_data(data, allow_remote=True, force_hymn_lyrics=True)
     styles = _styles()
@@ -868,8 +1018,9 @@ def bulletin_preview_text(data: WorshipData) -> str:
     meta = [b for b in (_clean(data.date), _clean(data.service_time), _clean(data.preacher)) if b]
     if meta:
         lines.append("  ·  ".join(meta))
+    lines += ["", "“다 이루었다” (요 19:30)"]
     if leader_line:
-        lines += ["", f"(중앙) {leader_line}"]
+        lines += ["", f"(교회명 아래) {leader_line}", "714) 337-0550"]
 
     lines += ["", "======== 안면 (인쇄면 2) ========", "[왼쪽] 예배 순서"]
     for num, title, detail in _order_items(data):
@@ -878,20 +1029,21 @@ def bulletin_preview_text(data: WorshipData) -> str:
             row += f"  —  {detail}"
         lines.append(row)
 
-    lines += ["", "[오른쪽] 오늘의 말씀 · 교독 · 사도신경"]
-    ref = _clean(data.scripture_reference)
+    lines += ["", "[오른쪽] 오늘의 말씀"]
+    ref = _display_ref(data.scripture_reference)
     body = _clean(data.scripture_text)
     if ref:
         lines.append(ref)
     if body:
         lines.extend(body.splitlines())
+    mem_ref, mem_body = _ensure_memory_verse(data)
+    if mem_ref or mem_body:
+        lines += ["", "금주의 암송구절"]
+        if mem_ref:
+            lines.append(mem_ref)
+        if mem_body:
+            lines.append(mem_body)
     lines += ["", f"생명의 말씀  ·  {_clean(data.sermon_title) or '(제목 미입력)'}"]
-    resp = _clean(data.responsive_reading)
-    if resp:
-        lines += ["", f"교독문 · {_clean(data.responsive_reading_title) or '교독문'}", *resp.splitlines()]
-    creed = _clean(data.apostles_creed)
-    if creed:
-        lines += ["", "사도신경", *creed.splitlines()]
 
     lines += ["", "※ 양면 인쇄 후 가운데를 접으면 커버가 앞, 광고가 뒤, 안쪽에 순서·성경이 나옵니다."]
     return clean_text("\n".join(lines))

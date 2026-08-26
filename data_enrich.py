@@ -7,7 +7,15 @@ import re
 from hymn_lookup import _lyrics_richness, is_usable_lyrics, lookup_hymn
 from models import HymnEntry, WorshipData
 from responsive_lookup import format_responsive_label, lookup_responsive, parse_responsive_number
-from scripture_lookup import _is_bad_verses, _looks_like_rnksv, lookup_scripture, verses_to_body
+from scripture_lookup import (
+    _is_bad_verses,
+    _looks_like_rnksv,
+    first_verse_body,
+    lookup_scripture,
+    parse_scripture_reference,
+    single_verse_reference,
+    verses_to_body,
+)
 from text_normalize import normalize_breaks, normalize_line_list
 
 
@@ -82,6 +90,10 @@ def enrich_worship_data(
     data.closing_note = normalize_breaks(data.closing_note)
     data.announcements = normalize_breaks(data.announcements)
     data.scripture_text = normalize_breaks(data.scripture_text)
+    data.memory_verse_reference = normalize_breaks(
+        getattr(data, "memory_verse_reference", "") or ""
+    ).strip()
+    data.memory_verse_text = normalize_breaks(getattr(data, "memory_verse_text", "") or "").strip()
 
     # 교독문: number, "교독문 N번", or title like "시편 23편"
     resp_key = (data.responsive_reading_title or "").strip()
@@ -134,6 +146,23 @@ def enrich_worship_data(
             data.scripture_reference = result.reference
         else:
             data.scripture_reference = ref
+    mem_ref = normalize_breaks(getattr(data, "memory_verse_reference", "") or "").strip()
+    mem_body = normalize_breaks(getattr(data, "memory_verse_text", "") or "").strip()
+    if mem_ref:
+        mem = lookup_scripture(mem_ref, allow_remote=allow_remote)
+        parsed = parse_scripture_reference(mem_ref)
+        if (
+            mem.found
+            and mem.verses
+            and not _is_bad_verses(mem.verses)
+            and not _looks_like_rnksv(mem.verses)
+        ):
+            labeled = single_verse_reference(parsed, mem.reference or mem_ref)
+            one = first_verse_body(mem.verses)
+            if labeled:
+                data.memory_verse_reference = labeled
+            if one and (not mem_body or mem_body == labeled or mem_body == mem_ref):
+                data.memory_verse_text = one
     return data
 
 

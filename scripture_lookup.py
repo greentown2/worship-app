@@ -813,3 +813,29 @@ def lookup_scripture(
 
 def verses_to_body(verses: list[str]) -> str:
     return normalize_breaks("\n".join(v for v in _normalize_verses(verses) if v is not None))
+
+
+_LEADING_VERSE_NUM = re.compile(r"^\d+\s+")
+
+
+def first_verse_body(verses: list[str]) -> str:
+    """First verse only, without a leading verse number — for 금주의 암송구절."""
+    lines = _normalize_verses(verses)
+    if not lines:
+        return ""
+    return _LEADING_VERSE_NUM.sub("", lines[0]).strip()
+
+
+def single_verse_reference(parsed: Optional[ParsedReference], fallback: str = "") -> str:
+    """Force a one-verse citation (drop any end-verse from a typed range)."""
+    raw = re.sub(
+        r"\s*[\(\[]\s*(개역개정|새번역|개역한글|공동번역|NIV|ESV|KJV|GAE|RNKSV)\s*[\)\]]\s*$",
+        "",
+        (fallback or "").strip(),
+    ).strip()
+    m = re.match(r"^(.+?)\s+(\d+):(\d+)(?:\s*[-~]\s*\d+)?$", raw)
+    if m:
+        return f"{m.group(1)} {m.group(2)}:{m.group(3)}"
+    if parsed and parsed.book_ko and parsed.chapter and parsed.verse_start:
+        return f"{parsed.book_ko} {parsed.chapter}:{parsed.verse_start}"
+    return raw or (parsed.display if parsed else "") or fallback

@@ -21,7 +21,7 @@ ROOT = Path(__file__).resolve().parent
 TEMPLATE_PATH = ROOT / "worship_presentation.html"
 COVER_IMAGE_PATH = ROOT / "assets" / "crucifix_cover.png"
 
-_HTML_VERSION = "2026-08-24-prep-praise-v11"
+_HTML_VERSION = "2026-08-26-responsive-2x-v13"
 
 
 def _esc(text: str) -> str:
@@ -506,6 +506,8 @@ def build_form_prefetch(data: WorshipData) -> dict:
         "hymn2Title": _hymn_label(data.hymn),
         "bibleRef": _scripture_ref_clean(data.scripture_reference or ""),
         "bibleText": normalize_breaks(data.scripture_text or ""),
+        "memoryVerseRef": _scripture_ref_clean(getattr(data, "memory_verse_reference", "") or ""),
+        "memoryVerseText": normalize_breaks(getattr(data, "memory_verse_text", "") or ""),
         "sermonTitle": data.sermon_title or "",
         "hymn4Num": _num(data.offering_hymn),
         "hymn4Title": _hymn_label(data.offering_hymn),
