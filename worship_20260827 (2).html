@@ -1,0 +1,2676 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#000000">
+    <meta name="apple-mobile-web-app-title" content="주일예배">
+    <link rel="manifest" href="./worship.webmanifest">
+    <title>주일 예배 화면</title>
+    <!-- CDN must not block parsing: GitHub Pages / mobile Safari hang if Tailwind waits in <head> -->
+    <script src="https://cdn.tailwindcss.com" async></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.8/dist/web/static/pretendard.css" media="print" onload="this.media='all'">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@400;600;700&display=swap" media="print" onload="this.media='all'">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" media="print" onload="this.media='all'">
+    <noscript>
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.8/dist/web/static/pretendard.css">
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@400;600;700&display=swap">
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    </noscript>
+    <style>
+        :root {
+            --bg-primary: #0a0f1d;
+            --bg-secondary: #131b2f;
+            --accent-gold: #d4af37;
+            --accent-blue: #3b82f6;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+        }
+        body {
+            font-family: 'Pretendard', sans-serif;
+            background-color: #0f172a;
+            color: var(--text-main);
+            margin: 0;
+            overflow-x: hidden;
+            -webkit-text-size-adjust: 100%;
+            touch-action: manipulation;
+        }
+        html, body {
+            height: 100%;
+            min-height: 100%;
+            min-height: -webkit-fill-available;
+            min-height: 100dvh;
+        }
+        html.is-presenting,
+        body.is-presenting {
+            overflow: hidden !important;
+            height: var(--vvh, 100dvh);
+            overscroll-behavior: none;
+            background: #000;
+            touch-action: none;
+        }
+        .font-serif {
+            font-family: 'Noto Serif KR', serif;
+        }
+        #presentation-view {
+            display: none;
+            position: fixed;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            height: var(--vvh, 100dvh);
+            background-color: #000;
+            z-index: 9999;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            touch-action: none;
+            cursor: pointer;
+            -webkit-user-select: none;
+            user-select: none;
+            -webkit-tap-highlight-color: rgba(255,255,255,0.08);
+            padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+            box-sizing: border-box;
+        }
+        #presentation-view,
+        #presentation-view * {
+            cursor: pointer;
+        }
+        #present-hit-layer {
+            position: absolute;
+            inset: 0;
+            z-index: 70;
+            background: transparent;
+            touch-action: none;
+            cursor: pointer;
+            -webkit-tap-highlight-color: transparent;
+            -webkit-user-select: none;
+            user-select: none;
+        }
+        #presentation-view.active {
+            display: flex;
+        }
+        #presentation-view:fullscreen,
+        #presentation-view:-webkit-full-screen {
+            width: 100%;
+            height: 100%;
+            background: #000;
+        }
+        #presentation-view:fullscreen .slide-container,
+        #presentation-view:-webkit-full-screen .slide-container,
+        body.standalone-worship #presentation-view.active .slide-container,
+        body.touch-worship #presentation-view.active .slide-container {
+            width: 100%;
+            height: 100%;
+            max-width: none;
+            max-height: none;
+            box-shadow: none;
+            border-radius: 0;
+        }
+        @media all and (display-mode: standalone), all and (display-mode: fullscreen) {
+            header.app-chrome, .dashboard-layout, #mobile-present-gate {
+                display: none !important;
+            }
+        }
+        .slide-container {
+            width: 100vw;
+            height: 56.25vw;
+            max-height: 100vh;
+            max-height: 100dvh;
+            max-width: 177.78vh;
+            background: radial-gradient(circle at center, #1a233a 0%, #0a0f1d 100%);
+            position: relative;
+            overflow: hidden;
+            box-shadow: 0 0 50px rgba(0,0,0,0.8);
+            display: flex;
+            flex-direction: column;
+        }
+        /* iPhone / iPad: fill the whole screen for worship projection */
+        body.touch-worship #presentation-view.active .slide-container {
+            width: 100%;
+            height: 100%;
+            max-width: none;
+            max-height: none;
+            box-shadow: none;
+            border-radius: 0;
+        }
+        #mobile-present-gate {
+            display: none;
+            position: fixed;
+            inset: 0;
+            z-index: 8000;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 18px;
+            padding: 28px 24px;
+            padding-bottom: max(28px, env(safe-area-inset-bottom));
+            background: radial-gradient(circle at center, #1a233a 0%, #0a0f1d 100%);
+            text-align: center;
+        }
+        #mobile-present-gate .gate-btn {
+            width: min(420px, 92vw);
+            padding: 18px 22px;
+            border: 0;
+            border-radius: 14px;
+            background: linear-gradient(135deg, #2563eb, #4f46e5);
+            color: #fff;
+            font-size: 1.25rem;
+            font-weight: 700;
+            box-shadow: 0 10px 30px rgba(37, 99, 235, 0.35);
+        }
+        #mobile-present-gate .gate-hint {
+            color: #94a3b8;
+            font-size: 0.95rem;
+            line-height: 1.5;
+            max-width: 28rem;
+        }
+        .hidden-gate { display: none !important; }
+        /* iPad landscape is often >1024px — do not hide the worship gate behind that breakpoint */
+        body.touch-worship header.app-chrome,
+        body.touch-worship .dashboard-layout {
+            display: none !important;
+        }
+        body.touch-worship #mobile-present-gate:not(.hidden-gate) {
+            display: flex !important;
+        }
+        body.touch-worship.is-presenting #mobile-present-gate {
+            display: none !important;
+        }
+        @media (max-width: 1024px) {
+            .text-huge { font-size: 7.2vmin; }
+            .text-title { font-size: 5.4vmin; }
+            .text-lyric { font-size: 5.8vmin; line-height: 1.45; }
+            .text-body { font-size: 4.2vmin; line-height: 1.55; }
+            .slide-header { font-size: 3.2vmin; }
+            .slide-header .text-3xl { font-size: 3.4vmin !important; }
+        }
+        .present-nav-hint {
+            display: none;
+            position: absolute;
+            bottom: max(12px, env(safe-area-inset-bottom));
+            left: 0;
+            right: 0;
+            text-align: center;
+            color: rgba(255,255,255,0.45);
+            font-size: 12px;
+            z-index: 60;
+            pointer-events: none;
+        }
+        body.touch-worship.is-presenting .present-nav-hint {
+            display: block;
+        }
+        .slide-bg-decoration {
+            position: absolute;
+            inset: 0;
+            opacity: 0.15;
+            background-image:
+                linear-gradient(45deg, transparent 45%, rgba(212, 175, 55, 0.2) 50%, transparent 55%),
+                linear-gradient(-45deg, transparent 45%, rgba(212, 175, 55, 0.2) 50%, transparent 55%);
+            background-size: 200% 200%;
+            pointer-events: none;
+            z-index: 1;
+        }
+        .slide-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            z-index: 10;
+            opacity: 0;
+            transform: translateY(20px);
+            transition: opacity 0.5s ease-out, transform 0.5s ease-out;
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+        }
+        .slide-content.active {
+            opacity: 1;
+            transform: translateY(0);
+            pointer-events: auto;
+        }
+        .slide-header {
+            padding: 3% 5%;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 2px solid rgba(255, 255, 255, 0.05);
+        }
+        .slide-body {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding: 2% 8% 5.5vh;
+            text-align: center;
+            min-height: 0;
+            overflow: hidden;
+            box-sizing: border-box;
+            touch-action: none;
+        }
+        body.is-presenting .slide-body {
+            overflow: hidden;
+            touch-action: none;
+            -webkit-overflow-scrolling: auto;
+        }
+        .slide-body.scripture-body {
+            justify-content: flex-start;
+            padding-top: 4%;
+            padding-bottom: 8vh;
+        }
+        /* iPad / iPhone: non-scripture ~center; scripture stays a bit higher */
+        body.touch-worship.is-presenting .slide-body {
+            justify-content: center;
+            padding-top: 4vmin;
+            padding-bottom: 8vmin;
+            padding-left: 5%;
+            padding-right: 5%;
+        }
+        body.touch-worship.is-presenting .slide-body.scripture-body {
+            justify-content: flex-start;
+            padding-top: 4.5vmin; /* one line higher so the last line stays visible */
+            padding-bottom: 16vmin;
+        }
+        body.touch-worship.is-presenting .slide-body > .text-body,
+        body.touch-worship.is-presenting .slide-body > .text-lyric {
+            margin-top: 0;
+            max-height: none;
+        }
+        body.touch-worship.is-presenting .text-lyric {
+            font-size: 5.2vmin;
+            line-height: 1.4;
+        }
+        body.touch-worship.is-presenting .text-body {
+            font-size: 3.9vmin;
+            line-height: 1.45;
+        }
+        body.touch-worship.is-presenting .text-huge {
+            font-size: 6.5vmin;
+        }
+        body.touch-worship.is-presenting .text-title {
+            font-size: 5vmin;
+        }
+        /* Cover (first page): slightly larger type; church footer bold 2×, raised mid-way */
+        body.touch-worship.is-presenting .cover-body .text-huge {
+            font-size: 8.2vmin;
+        }
+        body.touch-worship.is-presenting .cover-body .text-title {
+            font-size: 6.0vmin;
+        }
+        body.touch-worship.is-presenting .cover-body .cover-leader {
+            font-size: 3.4vmin;
+            margin-top: 1.8vmin;
+        }
+        body.touch-worship.is-presenting .cover-footer {
+            position: absolute;
+            left: 0;
+            right: 0;
+            bottom: 26%;
+            text-align: center;
+            font-size: 2.3vmin;
+            font-weight: 500;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            color: #94a3b8;
+            font-family: 'Noto Serif KR', serif;
+            padding: 0 5%;
+            line-height: 1.35;
+        }
+        body.touch-worship.is-presenting .order-list {
+            text-align: left !important;
+            margin-left: 0;
+            margin-right: 0;
+        }
+        .slide-body.order-slide-body {
+            align-items: center;
+            text-align: left;
+        }
+        .order-stack {
+            display: inline-flex;
+            flex-direction: column;
+            align-items: flex-start;
+            text-align: left;
+            max-width: min(56rem, 92%);
+        }
+        .order-stack > h2,
+        .order-stack > p {
+            text-align: left;
+            width: 100%;
+        }
+        .order-list {
+            text-align: left;
+            width: max-content;
+            max-width: 100%;
+            margin-left: 0;
+            margin-right: 0;
+        }
+        .present-exit-btn {
+            display: none;
+            position: absolute;
+            top: max(10px, env(safe-area-inset-top));
+            right: max(12px, env(safe-area-inset-right));
+            z-index: 80;
+            width: 40px;
+            height: 40px;
+            border: 0;
+            border-radius: 999px;
+            background: rgba(15, 23, 42, 0.55);
+            color: rgba(255,255,255,0.75);
+            font-size: 18px;
+            line-height: 1;
+            pointer-events: auto;
+        }
+        body.touch-worship.is-presenting .present-exit-btn {
+            display: block;
+        }
+        .slide-footer {
+            padding: 2% 5%;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 1.5vh;
+            color: var(--text-muted);
+            opacity: 0.6;
+        }
+        .text-huge { font-size: 7.5vh; line-height: 1.3; }
+        .text-title { font-size: 5.5vh; line-height: 1.4; }
+        .text-lyric { font-size: 6.2vh; line-height: 1.6; font-weight: 600; text-shadow: 2px 2px 8px rgba(0,0,0,0.8); }
+        .text-body { font-size: 4.2vh; line-height: 1.7; }
+        .text-responsive { font-size: 7.4vh; line-height: 1.5; font-weight: 600; }
+
+        .leader-text { color: #ffe066; font-weight: 600; }
+        .congregation-text { color: #ff5c5c; font-weight: 600; }
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: var(--bg-primary); }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #475569; }
+        .dashboard-layout {
+            height: calc(100vh - 80px);
+            min-height: 0;
+        }
+        .form-scroll {
+            min-height: 0;
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+    </style>
+    <script>
+window.WORSHIP_LOOKUP = {"hymns":{"1":"만복의 근원 하나님","2":"찬양 성부 성자 성령","3":"성부 성자와 성령","4":"성부 성자와 성령","5":"이 천지간 만물들아","6":"목소리 높여서","7":"성부 성자 성령","8":"거룩 거룩 거룩","9":"하늘에 가득 찬 영광의 하나님","10":"전능왕 오셔서","11":"홀로 한 분 하나님께","12":"다 함께 주를 경배하세","13":"영원한 하늘나라","14":"주 우리 하나님","15":"하나님의 크신 사랑","16":"은혜로신 하나님 우리 주 하나님","17":"사랑의 하나님","18":"성도들아 찬양하자","19":"찬송하는 소리 있어","20":"큰 영광 중에 계신 주","21":"다 찬양하여라","22":"만유의 주 앞에","23":"만 입이 내게 있으면","24":"왕 되신 주","25":"면류관 벗어서","26":"구세주를 아는 이들","27":"빛나고 높은 보좌와","28":"복의 근원 강림 하사","29":"성도여 다 함께","30":"전능하고 놀라우신","31":"찬양하라 복되신 구세주 예수","32":"만유의 주재","33":"영광스런 주를 보라","34":"참 놀랍도다 주 크신 이름","35":"큰 영화로신 주","36":"주 예수 이름 높이어","37":"주 예수 이름 높이어","38":"예수 우리 왕이여","39":"주 은혜를 받으려","40":"찬송으로 보답할 수 없는","41":"내 영혼아 주 찬양하여라","42":"거룩한 주님께","43":"즐겁게 안식할 날","44":"지난 이레 동안에","45":"거룩한 주의 날","46":"이 날은 주님 정하신","47":"하늘이 푸르고","48":"거룩하신 주 하나님","49":"하나님이 언약하신 그대로","50":"내게 있는 모든 것을","51":"주님 주신 거룩한 날","52":"거룩하신 나의 하나님","53":"성전을 떠나가기 전","54":"주여 복을 구하오니","55":"주 이름으로 모였던","56":"우리의 주여","57":"오늘 주신 말씀에","58":"지난밤에 보호하사","59":"하나님 아버지 어둔 밤이 지나","60":"영혼의 햇빛 예수님","61":"우리가 기다리던","62":"고요히 머리 숙여","63":"주가 세상을 다스리니","64":"기뻐하며 경배하세","65":"내 영혼아 찬양하라","66":"다 감사드리세","67":"영광의 왕께 다 경배하며","68":"오 하나님 우리의 창조주시니","69":"온 천하 만물 우러러","70":"피난처 있으니","71":"예부터 도움 되시고","72":"만왕의 왕 앞에 나오라","73":"내 눈을 들어 두루 살피니","74":"오 만세 반석이신","75":"주여 우리 무리를","76":"창조의 주 아버지께","77":"거룩하신 하나님","78":"저 높고 푸른 하늘과","79":"주 하나님 지으신 모든 세계","80":"천지에 있는 이름 중","81":"주는 귀한 보배","82":"성부의 어린 양이","83":"나의 맘에 근심 구름","84":"온 세상이 캄캄하여서","85":"구주를 생각만 해도","86":"내가 늘 의지하는 예수","87":"내 주님 입으신 그 옷은","88":"내 진정 사모하는","89":"샤론의 꽃 예수","90":"주 예수 내가 알기 전","91":"슬픈 마음 있는 사람","92":"위에 계신 나의 친구","93":"예수는 나의 힘이요","94":"주 예수보다 더 귀한 것은 없네","95":"나의 기쁨 나의 소망되시며","96":"예수님은 누구신가","97":"정혼한 처녀에게","98":"예수님 오소서","99":"주님 앞에 떨며 서서","100":"미리암과 같은 여인들이","101":"이새의 뿌리에서","102":"영원한 문아 열려라","103":"우리 주님 예수께","104":"곧 오소서 임마누엘","105":"오랫동안 기다리던","106":"아기 예수 나셨네","107":"거룩한 밤 복된 이 밤","108":"그 어린 주 예수","109":"고요한 밤 거룩한 밤","110":"고요하고 거룩한 밤","111":"귀중한 보배합을","112":"그 맑고 환한 밤중에","113":"그 아기 잠들었네","114":"그 어린 주 예수","115":"기쁘다 구주오셨네","116":"동방에서 박사들","117":"만백성 기뻐하여라","118":"영광나라 천사들아","119":"옛날 임금 다윗 성에","120":"오 베들레헴 작은 골","121":"우리 구주 나신 날","122":"참 반가운 성도여","123":"저 들 밖에 한밤중에","124":"양 지키는 목자여","125":"천사들의 노래가","126":"천사 찬송하기를","127":"그 고요한 쓸쓸한","128":"거룩하신 우리 주님","129":"마리아는 아기를","130":"찬란한 주의 영광은","131":"다 나와 찬송 부르세","132":"주의 영광 빛나니","133":"하나님의 말씀으로","134":"나 어느 날 꿈속을 헤메며","135":"어저께나 오늘이나","136":"가나의 혼인 잔치","137":"하나님의 아들이","138":"햇빛을 받는 곳마다","139":"오 영원한 내 주 예수","140":"왕되신 우리 주께","141":"호산나 호산나","142":"시온에 오시는 주","143":"웬말인가 날 위하여","144":"예수 나를 위하여","145":"오 거룩하신 주님","146":"저 멀리 푸른 언덕에","147":"거기 너 있었는가","148":"영화로운 주 예수의","149":"주 달려 죽은 십자가","150":"갈보리 산 위에","151":"만왕의 왕 내 주께서","152":"귀하신 예수","153":"가시 면류관","154":"생명의 주여 면류관","155":"십자가 지고","156":"머리에 가시관 붉은 피 흐르는","157":"겟세마네 동산에서 최후 기도","158":"서쪽 하늘 붉은 노을","159":"기뻐 찬송하세","160":"무덤에 머물러","161":"할렐루야 우리 예수","162":"부활하신 구세주","163":"할렐루야 할렐루야","164":"예수 부활했으니","165":"주님께 영광","166":"싸움은 모두 끝나고","167":"즐겁도다 이 날","168":"하늘에 찬송이 들리던 그 날","169":"사망의 권세가","170":"내 주님은 살아 계셔","171":"하나님의 독생자","172":"사망을 이긴 주","173":"다 함께 찬송 부르자","174":"대속하신 구주께서","175":"신랑되신 예수께서","176":"주 어느 때 다시 오실는지","177":"오랫동안 고대하던","178":"주 예수 믿는 자여","179":"주 예수의 강림이","180":"하나님의 나팔 소리","181":"부활 승천하신 주께서","182":"강물같이 흐르는 기쁨","183":"빈 들에 마른 풀같이","184":"불길같은 주 성령","185":"이 기쁜 소식을","186":"영화로신 주 성령","187":"비둘기같이 온유한","188":"무한하신 주 성령","189":"진실하신 주 성령","190":"성령이여 강림하사","191":"내가 매일 기쁘게","192":"임하소서 임하소서","193":"성령의 봄바람 불어오니","194":"저 하늘 거룩하신 주여","195":"성령이여 우리 찬송 부를 때","196":"성령의 은사를","197":"은혜가 풍성한 하나님은","198":"주 예수 해변서","199":"나의 사랑하는 책","200":"달고 오묘한 그 말씀","201":"참 사람 되신 말씀","202":"하나님 아버지 주신 책은","203":"하나님의 말씀은","204":"주의 말씀 듣고서","205":"주 예수 크신 사랑","206":"주님의 귀한 말씀은","207":"귀하신 주님 계신 곳","208":"내 주의 나라와","209":"이 세상 풍파 심하고","210":"시온성과 같은 교회","211":"값비싼 향유를 주께 드린","212":"겸손히 주를 섬길 때","213":"나의 생명 드리니","214":"나 주의 도움 받고자","215":"내 죄 속해 주신 주께","216":"성자의 귀한 몸","217":"하나님이 말씀 하시기를","218":"네 맘과 정성을 다하여서","219":"주 하나님의 사랑은","220":"사랑하는 주님 앞에","221":"주 믿는 형제들","222":"우리 다시 만날 때까지","223":"하나님은 우리들의","224":"정한 물로 우리 죄를","225":"실로암 샘물가에 핀","226":"성령으로 세례 받아","227":"주 앞에 성찬받기 위하여","228":"오 나의 주님 친히 뵈오니","229":"아무 흠도 없고","230":"우리의 참되신 구주시니","231":"우리 다 같이 무릎 꿇고서","232":"유월절 때가 이르러","233":"자비로 그 몸을 찢기시고","234":"구주 예수 그리스도","235":"보아라 즐거운 우리 집","236":"우리 모든 수고 끝나","237":"저 건너편 강 언덕에","238":"해 지는 저편","239":"저 뵈는 본향 집","240":"주가 맡긴 모든 역사","241":"아름다운 본향","242":"황무지가 장미꽃같이","243":"저 요단강 건너편에","244":"구원 받은 천국의 성도들","245":"저 좋은 낙원 이르니","246":"나 가나안 땅 귀한 성에","247":"보아라 저 하늘에","248":"언약의 주 하나님","249":"주 사랑하는 자 다 찬송할 때에","250":"구주의 십자가 보혈로","251":"놀랍다 주님의 큰 은혜","252":"나의 죄를 씻기는","253":"그 자비하신 주님","254":"내 주의 보혈은","255":"너희 죄 흉악하나","256":"나의 죄 모두 지신 주님","257":"마음에 가득한 의심을 깨치고","258":"샘물과 같은 보혈은","259":"예수 십자가에 흘린 피로써","260":"우리를 죄에서 구하시려","261":"이 세상의 모든 죄를","262":"날 구원하신 예수님","263":"이 세상 험하고","264":"정결하게 하는 샘이","265":"주 십자가를 지심으로","266":"주의 피로 이룬 샘물","267":"주의 확실한 약속의 말씀 듣고","268":"죄에서 자유를 얻게 함은","269":"그 참혹한 십자가에","270":"변찮는 주님의 사랑과","271":"나와 같은 죄인 위해","272":"고통의 멍에 벗으려고","273":"나 주를 멀리 떠났다","274":"나 행한 것 죄뿐이니","275":"날마다 주와 멀어져","276":"아버지여 이 죄인을","277":"양떼를 떠나서","278":"여러 해 동안 주 떠나","279":"인애하신 구세주여","280":"천부여 의지 없어서","281":"요나처럼 순종않고","282":"큰 죄에 빠진 날 위해","283":"나 속죄함을 받은 후","284":"오랫동안 모든 죄 가운데 빠져","285":"주의 말씀 받은 그 날","286":"주 예수님 내 맘에 오사","287":"예수 앞에 나오면","288":"예수를 나의 구주삼고","289":"주 예수 내 맘에 들어와","290":"우리는 주님을 늘 배반하나","291":"외롭게 사는 이 그 누군가","292":"주 없이 살 수 없네","293":"주의 사랑 비칠 때에","294":"하나님은 외아들을","295":"큰 죄에 빠진 나를","296":"죄인 구원하시려고","297":"양 아흔아홉 마리는","298":"속죄하신 구세주를","299":"하나님 사랑은","300":"내 맘이 낙심되며","301":"지금까지 지내온 것","302":"내 주 하나님 넓고 큰 은혜는","303":"날 위하여 십자가의","304":"그 크신 하나님의 사랑","305":"나 같은 죄인 살리신","306":"죽을 죄인 살려주신","307":"소리없이 보슬보슬","308":"내 평생 살아온 길","309":"목마른 내 영혼","310":"아 하나님의 은혜로","311":"내 너를 위하여","312":"너 하나님께 이끌리어","313":"내 임금 예수 내 주여","314":"내 구주 예수를 더욱 사랑","315":"내 주 되신 주를 참 사랑하고","316":"주여 나의 생명","317":"내 주 예수 주신 은혜","318":"순교자의 흘린 피가","319":"말씀으로 이 세상을","320":"나의 죄를 정케하사","321":"날 대속하신 예수께","322":"세상의 헛된 신을 버리고","323":"부름받아 나선 이 몸","324":"예수 나를 오라 하네","325":"예수가 함께 계시니","326":"내 죄를 회개하고","327":"주님 주실 화평","328":"너 주의 사람아","329":"주 날 불러 이르소서","330":"어둔 밤 쉬 되리니","331":"영광을 받으신 만유의 주여","332":"우리는 부지런한","333":"충성하라 죽도록","334":"위대하신 주를","335":"크고 놀라운 평화가","336":"환난과 핍박 중에도","337":"내 모든 시험 무거운 짐을","338":"내 주를 가까이 하게 함은","339":"내 주님 지신 십자가","340":"어지러운 세상 중에","341":"십자가를 내가 지고","342":"너 시험을 당해","343":"시험 받을 때에","344":"믿음으로 가리라","345":"캄캄한 밤 사나운 바람 불 때","346":"주 예수 우리 구하려","347":"허락하신 새 땅에","348":"마귀들과 싸울지라","349":"나는 예수 따라가는","350":"우리들이 싸울 것은","351":"믿는 사람들은 주의 군사니","352":"십자가 군병들아","353":"십자가 군병되어서","354":"주를 앙모하는 자","355":"다 같이 일어나","356":"주 예수 이름 소리 높여","357":"주 믿는 사람 일어나","358":"주의 진리 위해 십자가 군기","359":"천성을 향해 가는 성도들아","360":"행군 나팔 소리에","361":"기도하는 이 시간","362":"주여 복을 주시기를","363":"내가 깊은 곳에서","364":"내 기도하는 그 시간","365":"마음 속에 근심 있는 사람","366":"어두운 내 눈 밝히사","367":"인내하게 하소서 주여 우리를","368":"주 예수여 은혜를","369":"죄짐맡은 우리 구주","370":"주 안에 있는 나에게","371":"구주여 광풍이 불어","372":"그 누가 나의 괴롬 알며","373":"고요한 바다로","374":"나의 믿음 약할 때","375":"나는 갈 길 모르니","376":"나그네와 같은 내가","377":"전능하신 주 하나님","378":"내 선한 목자","379":"내 갈 길 멀고 밤은 깊은데","380":"나의 생명되신 주","381":"나 캄캄한 밤 죄의 길에","382":"너 근심 걱정 말아라","383":"눈을 들어 산을 보니","384":"나의 갈 길 다 가도록","385":"못 박혀 죽으신","386":"만세반석 열린 곳에","387":"멀리멀리 갔더니","388":"비바람이 칠 때와","389":"내게로 오라 하신 주님의","390":"예수가 거느리시니","391":"오 놀라운 구세주","392":"주여 어린 사슴이","393":"오 신실하신 주","394":"이 세상의 친구들","395":"자비하신 예수여","396":"우리 주님 밤새워","397":"주 사랑 안에 살면","398":"어둠의 권세에서","399":"어린 양들아 두려워 말아라","400":"험한 시험 물 속에서","401":"주의 곁에 있을 때","402":"나의 반석 나의 방패","403":"영원하신 주님의","404":"바다에 놀이 일 때에","405":"주의 친절한 팔에 안기세","406":"곤한 내 영혼 편히 쉴 곳과","407":"구주와 함께 나 죽었으니","408":"나 어느 곳에 있든지","409":"나의 기쁨은 사랑의 주님께","410":"내 맘에 한 노래있어","411":"아 내 맘속에","412":"내 영혼의 그윽히 깊은 데서","413":"내 평생에 가는 길","414":"이 세상은 요란하나","415":"십자가 그늘 아래","416":"너희 근심 걱정을","417":"주 예수 넓은 품에","418":"기쁠 때나 슬플 때나","419":"주 날개 밑 내가 편안히 쉬네","420":"너 성결키 위해","421":"내가 예수 믿고서","422":"거룩하게 하소서","423":"먹보다도 더 검은","424":"아버지여 나의 맘을","425":"주님의 뜻을 이루소서","426":"이 죄인을 완전케 하시옵고","427":"맘 가난한 사람","428":"내 영혼에 햇빛 비치니","429":"세상 모든 풍파 너를 흔들어","430":"주와 같이 길 가는 것","431":"주 안에 기쁨 있네","432":"큰 물결이 설레는 어둔 바다","433":"귀하신 주여 날 붙드사","434":"귀하신 친구 내게 계시니","435":"나의 영원하신 기업","436":"나 이제 주님의 새 생명 얻은 몸","437":"하늘 보좌 떠나서","438":"내 영혼이 은총 입어","439":"십자가로 가까이","440":"어디든지 예수 나를 이끌면","441":"은혜 구한 내게 은혜의 주님","442":"저 장미꽃 위에 이슬","443":"아침 햇살 비칠 때","444":"겟세마네 동산에서","445":"태산을 넘어 험곡에 가도","446":"주 음성 외에는","447":"이 세상 끝날까지","448":"주님 가신 길을 따라","449":"예수 따라가며","450":"내 평생 소원 이것뿐","451":"예수 영광 버리사","452":"내 모든 소원 기도의 제목","453":"예수 더 알기 원하네","454":"주와 같이 되기를","455":"주님의 마음을 본받는 자","456":"거친 세상에서 실패하거든","457":"겟세마네 동산의","458":"너희 마음에 슬픔이 가득할 때","459":"누가 주를 따라","460":"뜻 없이 무릎 꿇는","461":"십자가를 질 수 있나","462":"생명 진리 은혜 되신","463":"신자 되기 원합니다","464":"믿음의 새 빛을","465":"주 믿는 나 남 위해","466":"죽기까지 사랑하신 주","467":"높으신 주께서 낮아지심은","468":"큰 사랑의 새 계명을","469":"내 주 하나님","470":"나의 몸이 상하여","471":"주여 나의 병든 몸을","472":"네 병든 손 내밀라고","473":"괴로움과 고통을","474":"의원되신 예수님의","475":"인류는 하나 되게","476":"꽃이 피고 새가 우는","477":"하나님이 창조하신","478":"참 아름다워라","479":"괴로운 인생길 가는 몸이","480":"천국에서 만나보자","481":"때 저물어서 날이 어두니","482":"참 즐거운 노래를","483":"구름같은 이 세상","484":"내 맘의 주여 소망되소서","485":"세월이 흘러가는데","486":"이 세상에 근심된 일이 많고","487":"어두움 후에 빛이 오며","488":"이 몸의 소망 무언가","489":"저 요단강 건너편에 찬란하게","490":"주여 지난밤 내 꿈에","491":"저 높은 곳을 향하여","492":"잠시 세상에 내가 살면서","493":"하늘가는 밝은 길이","494":"만세 반석 열리니","495":"익은 곡식 거둘 자가","496":"새벽부터 우리","497":"주 예수 넓은 사랑","498":"저 죽어가는 자 다 구원하고","499":"흑암에 사는 백성들을 보라","500":"물 위에 생명줄 던지어라","501":"너 시온아 이 소식 전파하라","502":"빛의 사자들이여","503":"세상 모두 사랑 없어","504":"주님의 명령 전할 사자여","505":"온 세상 위하여","506":"땅 끝까지 복음을","507":"저 북방 얼음 산과","508":"우리가 지금은 나그네 되어도","509":"기쁜 일이 있어 천국 종치네","510":"하나님의 진리 등대","511":"예수 말씀 하시기를","512":"천성 길을 버리고","513":"헛된 욕망 길을 가며","514":"먼동 튼다 일어나라","515":"눈을 들어 하늘 보라","516":"옳은 길 따르라 의의 길을","517":"가난한 자 돌봐주며","518":"기쁜 소리 들리니","519":"구주께서 부르되","520":"듣는 사람마다 복음 전하여","521":"구원으로 인도하는","522":"웬일인가 내 형제여","523":"어둔 죄악 길에서","524":"갈 길을 밝히 보이시니","525":"돌아와 돌아와","526":"목마른 자들아","527":"어서 돌아오오","528":"예수가 우리를 부르는 소리","529":"온유한 주님의 음성","530":"주께서 문에 오셔서","531":"자비한 주께서 부르시네","532":"주께로 한 걸음씩","533":"우리 주 십자가","534":"주님 찾아 오셨네","535":"주 예수 대문 밖에","536":"죄짐에 눌린 사람은","537":"형제여 지체말라","538":"죄짐을 지고서 곤하거든","539":"너 예수께 조용히 나가","540":"주의 음성을 내가 들으니","541":"꽃이 피는 봄날에만","542":"구주 예수 의지함이","543":"어려운 일 당할 때","544":"울어도 못하네","545":"이 눈에 아무 증거 아니 뵈어도","546":"주님 약속 하신 말씀 위에 서","547":"나 같은 죄인까지도","548":"날 구속하신","549":"내 주여 뜻대로","550":"시온의 영광이 빛나는 아침","551":"오늘까지 복과 은혜","552":"아침 해가 돋을 때","553":"새해 아침 환히 밝았네","554":"종소리 크게 울려라","555":"우리 주님 모신 가정","556":"날마다 주님을 의지하는","557":"에덴의 동산처럼","558":"미더워라 주의 가정","559":"사철에 봄바람 불어 잇고","560":"주의 발자취를 따름이","561":"예수님의 사랑은","562":"예루살렘 아이들","563":"예수 사랑하심을","564":"예수께서 오실 때에","565":"예수께로 가면","566":"사랑의 하나님 귀하신 이름은","567":"다정하신 목자 예수","568":"하나님은 나의 목자시니","569":"선한 목자 되신 우리 주","570":"주는 나를 기르시는 목자","571":"역사 속에 보냄 받아","572":"바다같이 넓은 은혜","573":"말씀에 순종하여","574":"가슴마다 파도친다","575":"주님께 귀한 것 드려","576":"하나님의 뜻을 따라","577":"낳으시고 길러주신","578":"언제나 바라봐도","579":"어머니의 넓은 사랑","580":"삼천리 반도 금수강산","581":"주 하나님 이 나라를 지켜주시고","582":"어둔 밤 마음에 잠겨","583":"이 민족에 복음을","584":"우리나라 지켜주신","585":"내 주는 강한 성이요","586":"어느 민족 누구게나","587":"감사하는 성도여","588":"공중 나는 새를 보라","589":"넓은 들에 익은 곡식","590":"논밭에 오곡백과","591":"저 밭에 농부 나가","592":"산마다 불이 탄다 고운 단풍에","593":"아름다운 하늘과","594":"감사하세 찬양하세","595":"나 맡은 본분은","596":"영광은 주님 홀로","597":"이전에 주님을 내가 몰라","598":"천지 주관하는 주님","599":"우리의 기도 들어주시옵소서","600":"교회의 참된 터는","601":"하나님이 정하시고","602":"성부님께 빕니다","603":"태초에 하나님이","604":"완전한 사랑","605":"오늘 모여 찬송함은","606":"해보다 더 밝은 천국","607":"내 본향 가는 길","608":"후일에 생명 그칠 때","609":"이 세상 살 때에","610":"고생과 수고가 다 지난 후","611":"주님 오라 부르시어","612":"이 땅에서 주를 위해","613":"사랑의 주 하나님","614":"얼마나 아프셨나","615":"그 큰 일을 행하신","616":"주를 경배하리","617":"주님을 찬양합니다","618":"나 주님을 사랑합니다","619":"놀라운 그 이름","620":"여기에 모인 우리","621":"찬양하라 내 영혼아","622":"거룩한 밤","623":"주님의 시간에","624":"우리 모두 찬양해","625":"거룩 거룩 거룩한 하나님","626":"만민들아 다 경배하라","627":"할렐루야 할렐루야 다 함께","628":"아멘 아멘 아멘 영광과 존귀를","629":"거룩 거룩 거룩","630":"진리와 생명 되신 주","631":"우리 기도를","632":"주여 주여 우리를","633":"나의 하나님 받으소서","634":"모든 것이 주께로부터","635":"하늘에 계신 아버지","636":"하늘에 계신 우리 아버지여","637":"주님 우리 마음을 여시어","638":"주 너를 지키시고","639":"주 함께하소서","640":"아멘","641":"아멘","642":"아멘","643":"아멘","644":"아멘","645":"아멘"},"hymnLyrics":{},"responsive":{},"scripture":{}};
+</script>
+<script>
+window.WORSHIP_PAYLOAD = {"version":"2026-08-27-light-html-v17","contentId":"2026-08-26-cover-half-down-v21|2026-08-24-pptx-from-slides-v1|플러톤 빌라 교회|엄영민 목사|잠된 안신||히브리서 4:1-11 (개역개정)|1 그러므로 우리는 두려워할지니 그의 안식에 들어갈 약속이 남아 있을지라도 너희 중에는 혹 이르지 못할 자가 있을까 함이라\n2 그들과 같이 우리도 복음 전함을 받았으되 들은 바 그 말씀이 그들에게 유익하지 못한 것은|히 4:1|그러므로 우리는 두려워할지니 그의 안식에 들어갈 약속이 남아 있을지라도 너희 중에는 혹 이르지 못할 자가 있을까 함이라|교독문 13번  ·  시편 23편|인도자: 여호와는 나의 목자시니\n회중: 내게 부족함이 없으리로다\n인도자: 그가 나를 푸른 풀밭에 누이시며\n회중: 쉴 만한 물 가로 인도하시는도다|||563장|96장|7장|30장|35장|담임목사|2026년 08월 27일|전능하사 천지를 만드신 하나님 아버지를 내가 믿사오며,\n그 외아들 우리 |True|week:01_009장 하늘에가득찬영광의하나님(통53).ppt.pptx:1787532518601777900:3024896|02_020장 큰영광중에계신주(통41).ppt.pptx:1787532518865908900:1487360|03_050장 내게있는모든것을(통71).ppt.pptx:1787532519097432800:1317888|04_050장 내게있는모든것을(통71).ppt.pptx:1787530562446304000:1317888","slides":[{"type":"cover","title":"주일 예배","subtitle":"2026년 08월 27일  ·  오전 11:00","footer":"Fullerton Villa Community Church","extra":"인도자 엄영민 목사"},{"type":"title","title":"예배 순서","subtitle":"Order of Worship","content":"<div class=\"order-list grid grid-cols-1 gap-y-4 text-left w-max max-w-full mt-2 text-2xl text-slate-200\"><div>1. 예배 준비의 시간  ·  563장  ·  예수 사랑하심을  /  96장  ·  예수님은 누구신가</div><div>2. 찬양과 기도  ·  7장  ·  성부 성자 성령</div><div>3. 사도신경</div><div>4. 교독문  ·  교독문 13번  ·  시편 23편</div><div>5. 찬송가  ·  30장  ·  전능하고 놀라우신</div><div>6. 예배의 기도</div><div>7. 오늘의 말씀  ·  히브리서 4:1-11</div><div>8. 생명의 말씀  ·  잠된 안신</div><div>9. 감사와 봉헌  ·  35장  ·  큰 영화로신 주</div><div>10. 축도  ·  담임목사</div></div>"},{"type":"section","title":"1. 예배 준비의 시간","subtitle":"563장  ·  예수 사랑하심을"},{"type":"lyric","header":"1. 예배 준비의 시간","title":"563장  ·  예수 사랑하심을 (1/4)","content":"1. 예수 사랑하심을 성경에서 배웠네<br>우리들은 약하나 예수 권세 많도다<br>날 사랑하심 날 사랑하심<br>날 사랑하심 성경에 쓰였네"},{"type":"lyric","header":"1. 예배 준비의 시간","title":"563장  ·  예수 사랑하심을 (2/4)","content":"2. 나를 사랑하시고 나의 죄를 다 씻어<br>하늘 문을 여시고 들어가게 하시네<br>날 사랑하심 날 사랑하심<br>날 사랑하심 성경에 쓰였네"},{"type":"lyric","header":"1. 예배 준비의 시간","title":"563장  ·  예수 사랑하심을 (3/4)","content":"3. 내가 연약할수록 더욱 귀히 여기사<br>높은 보좌 위에서 낮은 나를 보시네<br>날 사랑하심 날 사랑하심<br>날 사랑하심 성경에 쓰였네"},{"type":"lyric","header":"1. 예배 준비의 시간","title":"563장  ·  예수 사랑하심을 (4/4)","content":"4. 세상 사는 동안에 나와 함께 하시고<br>세상 떠나 가는 날 천국 가게 하소서<br>날 사랑하심 날 사랑하심<br>날 사랑하심 성경에 쓰였네 아멘"},{"type":"section","title":"1. 예배 준비의 시간","subtitle":"96장  ·  예수님은 누구신가"},{"type":"lyric","header":"1. 예배 준비의 시간","title":"96장  ·  예수님은 누구신가 (1/4)","content":"1. 예수님은 누구신가 우는 자의 위로와<br>없는 자의 풍성이며 천한 자의 높음과<br>잡힌 자의 놓임 되고 우리 기쁨 되시네"},{"type":"lyric","header":"1. 예배 준비의 시간","title":"96장  ·  예수님은 누구신가 (2/4)","content":"2. 예수님은 누구신가 약한 자의 강함과<br>눈먼 자의 빛이시며 병든 자의 고침과<br>죽은 자의 부활 되고 우리 생명 되시네"},{"type":"lyric","header":"1. 예배 준비의 시간","title":"96장  ·  예수님은 누구신가 (3/4)","content":"3. 예수님은 누구신가 추한자의 정함과<br>죽을 자의 생명이며 죄인들의 중보와<br>멸망자의 구원되고 우리 평화 되시네"},{"type":"lyric","header":"1. 예배 준비의 시간","title":"96장  ·  예수님은 누구신가 (4/4)","content":"4. 예수님은 누구신가 온 교회의 머리와<br>온 세상의 구주시며 모든 왕의 왕이요<br>심판하실 주님 되고 우리 영광 되시네"},{"type":"section","title":"2. 찬양과 기도","subtitle":"7장  ·  성부 성자 성령"},{"type":"lyric","header":"2. 찬양과 기도","title":"7장  ·  성부 성자 성령","content":"성부 성자 성령 삼위일체께<br>입을 모아 찬양 경배 드리세<br>태초부터 지금까지 또 영원토록<br>영광 영광 아멘"},{"type":"creed","header":"3. 사도신경","title":"사도신경 (1/3)","content":"전능하사 천지를 만드신 하나님 아버지를 내가 믿사오며,<br>그 외아들 우리 주 예수 그리스도를 믿사오니,<br>이는 성령으로 잉태하사 동정녀 마리아에게 나시고,<br>본디오 빌라도에게 고난을 받으사 십자가에 못 박혀 죽으시고,"},{"type":"creed","header":"3. 사도신경","title":"사도신경 (2/3)","content":"장사한 지 사흘 만에 죽은 자 가운데서 다시 살아나시며,<br>하늘에 오르사 전능하신 하나님 우편에 앉아 계시다가,<br>거기로부터 산 자와 죽은 자를 심판하러 오시리라.<br>성령을 믿사오며, 거룩한 공회와, 성도가 서로 교통하는 것과,"},{"type":"creed","header":"3. 사도신경","title":"사도신경 (3/3)","content":"죄를 사하여 주시는 것과, 몸이 다시 사는 것과, 영원히 사는 것을 믿사옵나이다. 아멘."},{"type":"section","title":"4. 교독문","subtitle":"교독문 13번  ·  시편 23편"},{"type":"responsive","header":"4. 교독문","title":"교독문 13번  ·  시편 23편","content":"<div class=\"mb-5 leader-text\"><span style=\"font-weight:700\">인도자:</span> 여호와는 나의 목자시니</div>\n<div class=\"mb-5 congregation-text\"><span style=\"font-weight:700\">회중:</span> 내게 부족함이 없으리로다</div>"},{"type":"responsive","header":"4. 교독문","title":"교독문 13번  ·  시편 23편","content":"<div class=\"mb-5 leader-text\"><span style=\"font-weight:700\">인도자:</span> 그가 나를 푸른 풀밭에 누이시며</div>\n<div class=\"mb-5 congregation-text\"><span style=\"font-weight:700\">회중:</span> 쉴 만한 물 가로 인도하시는도다</div>"},{"type":"responsive","header":"4. 교독문","title":"교독문 13번  ·  시편 23편","content":"<div class=\"mb-5 leader-text\"><span style=\"font-weight:700\">인도자:</span> 내 영혼을 소생시키시고</div>\n<div class=\"mb-5 congregation-text\"><span style=\"font-weight:700\">회중:</span> 자기 이름을 위하여 의의 길로 인도하시는도다</div>"},{"type":"responsive","header":"4. 교독문","title":"교독문 13번  ·  시편 23편","content":"<div class=\"mb-5 leader-text\"><span style=\"font-weight:700\">인도자:</span> 내가 사망의 음침한 골짜기로 다닐지라도 해를 두려워하지 않을 것은 주께서 나와 함께 하심이라 주의 지팡이와 막대기가 나를 안위하시나이다</div>\n<div class=\"mb-5 congregation-text\"><span style=\"font-weight:700\">회중:</span> 주께서 내 원수의 목전에서 내게 상을 차려 주시고</div>"},{"type":"responsive","header":"4. 교독문","title":"교독문 13번  ·  시편 23편","content":"<div class=\"mb-5 leader-text\"><span style=\"font-weight:700\">인도자:</span> 기름을 내 머리에 부으셨으니 내 잔이 넘치나이다</div>\n<div class=\"mb-5 congregation-text\"><span style=\"font-weight:700\">회중:</span> 내 평생에 선하심과 인자하심이 반드시 나를 따르리니</div>"},{"type":"responsive","header":"4. 교독문","title":"교독문 13번  ·  시편 23편","content":"<div class=\"mb-5 leader-text\"><span style=\"font-weight:700\">인도자:</span> 내가 여호와의 집에 영원히 살리로다</div>"},{"type":"section","title":"5. 찬송가","subtitle":"30장  ·  전능하고 놀라우신"},{"type":"lyric","header":"5. 찬송가","title":"30장  ·  전능하고 놀라우신 (1/8)","content":"1. 전능하고 놀라우신<br>나의 주님 구세주<br>거룩하신 은혜의 왕<br>주를 경배합니다"},{"type":"lyric","header":"5. 찬송가","title":"30장  ·  전능하고 놀라우신 (2/8)","content":"영광 영광 주의 이름 찬양해<br>영광 영광 귀한 이름 찬양해"},{"type":"lyric","header":"5. 찬송가","title":"30장  ·  전능하고 놀라우신 (3/8)","content":"2. 하늘 위에 계신 주님<br>참된 빛이 되시니<br>이 세상의 모든 나라<br>주께 영광 돌리네"},{"type":"lyric","header":"5. 찬송가","title":"30장  ·  전능하고 놀라우신 (4/8)","content":"영광 영광 주의 이름 찬양해<br>영광 영광 귀한 이름 찬양해"},{"type":"lyric","header":"5. 찬송가","title":"30장  ·  전능하고 놀라우신 (5/8)","content":"3. 하늘나라 보좌에서<br>죄악 많은 세상에<br>우리 구원하시려고<br>주님 세상 오셨네"},{"type":"lyric","header":"5. 찬송가","title":"30장  ·  전능하고 놀라우신 (6/8)","content":"영광 영광 주의 이름 찬양해<br>영광 영광 귀한 이름 찬양해"},{"type":"lyric","header":"5. 찬송가","title":"30장  ·  전능하고 놀라우신 (7/8)","content":"4. 영원하신 우리 주님<br>어서 속히 오셔서<br>주의 모든 성도들을<br>천국 인도하소서"},{"type":"lyric","header":"5. 찬송가","title":"30장  ·  전능하고 놀라우신 (8/8)","content":"영광 영광 주의 이름 찬양해<br>영광 영광 귀한 이름 찬양해<br>아멘"},{"type":"section","title":"6. 예배의 기도","subtitle":"다함께 마음을 모아 주님께 기도드립니다."},{"type":"scripture","header":"6. 예배의 기도","title":"예배의 기도","content":"<div class=\"text-left w-full max-w-5xl leading-relaxed\">살아계신 하나님 아버지,<br>오늘 이 자리에 모인 성도들을 주님의 사랑으로 품어 주시고,<br>예배를 통해 주님을 만나며 새 힘을 얻게 하옵소서.<br>예수님의 이름으로 기도드립니다. 아멘.</div>"},{"type":"section","title":"7. 오늘의 말씀","subtitle":"히브리서 4:1-11"},{"type":"scripture","header":"7. 오늘의 말씀","title":"히브리서 4:1-11","content":"<div class=\"text-left w-full max-w-5xl leading-relaxed\">1 그러므로 우리는 두려워할지니 그의 안식에 들어갈 약속이 남아 있을지라도 너희 중에는 혹 이르지 못할 자가 있을까 함이라<br><br>2 그들과 같이 우리도 복음 전함을 받았으되 들은 바 그 말씀이 그들에게 유익하지 못한 것은 듣는 자가 믿음과 결부시키지 아니함이라<br><br>3 이미 믿는 우리들은 저 안식에 들어가는도다 그 말씀하신 바와 같이 내가 노하여 맹세한 바와 그들이 내 안식에 들어오지 못하리라 하셨다 하였으나 세상을 창조할 때부터 그 일이 이루어졌느니라<br><br>4 제칠일에 관하여는 어딘가에 이같이 일렀으되 하나님이 제칠일에 그의 모든 일을 쉬셨다 하였으며</div>"},{"type":"scripture","header":"7. 오늘의 말씀","title":"히브리서 4:1-11","content":"<div class=\"text-left w-full max-w-5xl leading-relaxed\">5 또 다시 거기에 그들이 내 안식에 들어오지 못하리라 하였으니<br><br>6 그러면 거기에 들어갈 자들이 남아 있거니와 복음 전함을 먼저 받은 자들은 순종하지 아니함으로 말미암아 들어가지 못하였으므로<br><br>7 오랜 후에 다윗의 글에 다시 어느 날을 정하여 오늘이라고 미리 이같이 일렀으되 오늘 너희가 그의 음성을 듣거든 너희 마음을 완고하게 하지 말라 하였나니<br><br>8 만일 여호수아가 그들에게 안식을 주었더라면 그 후에 다른 날을 말씀하지 아니하셨으리라</div>"},{"type":"scripture","header":"7. 오늘의 말씀","title":"히브리서 4:1-11","content":"<div class=\"text-left w-full max-w-5xl leading-relaxed\">9 그런즉 안식할 때가 하나님의 백성에게 남아 있도다<br><br>10 이미 그의 안식에 들어간 자는 하나님이 자기의 일을 쉬심과 같이 자기 일을 쉬느니라<br><br>11 그러므로 우리가 저 안식에 들어가기를 힘쓸지니 이는 누구든지 저 순종하지 아니하는 본에 빠지지 않게 하려 함이라</div>"},{"type":"sermon","header":"8. 생명의 말씀","title":"잠된 안신","subtitle":"본문: 히브리서 4:1-11","footer":"Fullerton Villa Community Church"},{"type":"section","title":"9. 감사와 봉헌","subtitle":"35장  ·  큰 영화로신 주"},{"type":"lyric","header":"9. 감사와 봉헌","title":"35장  ·  큰 영화로신 주 (1/8)","content":"1. 큰 영화로신 주<br>이 곳에 오셔서<br>이 모인 자들로<br>주 백성 삼으사"},{"type":"lyric","header":"9. 감사와 봉헌","title":"35장  ·  큰 영화로신 주 (2/8)","content":"그 중에 항상 계시고<br>그 중에 항상 계시고<br>큰 영광 나타내소서"},{"type":"lyric","header":"9. 감사와 봉헌","title":"35장  ·  큰 영화로신 주 (3/8)","content":"2. 이 백성 기도와<br>또 예물 드림이<br>향내와 같으니<br>곧 받으옵소서"},{"type":"lyric","header":"9. 감사와 봉헌","title":"35장  ·  큰 영화로신 주 (4/8)","content":"주 예수 크신 복음을<br>주 예수 크신 복음을<br>만백성 듣게 하소서"},{"type":"lyric","header":"9. 감사와 봉헌","title":"35장  ·  큰 영화로신 주 (5/8)","content":"3. 또 우리 자손들<br>다 주를 기리고<br>저 성전 돌같이<br>견고하게 하소서"},{"type":"lyric","header":"9. 감사와 봉헌","title":"35장  ·  큰 영화로신 주 (6/8)","content":"주 구원하신 능력을<br>주 구원하신 능력을<br>늘 끝날까지 주소서"},{"type":"lyric","header":"9. 감사와 봉헌","title":"35장  ·  큰 영화로신 주 (7/8)","content":"4. 주 믿는 만민이<br>참 진리 지키며<br>옛 성도들 같이<br>주 찬송하다가"},{"type":"lyric","header":"9. 감사와 봉헌","title":"35장  ·  큰 영화로신 주 (8/8)","content":"저 천국 보좌 앞에서<br>저 천국 보좌 앞에서<br>늘 찬송하게 하소서<br>아멘"},{"type":"section","title":"10. 축도","subtitle":"담임목사"},{"type":"title","title":"담임목사","subtitle":"다음에 또 만나요. 평안하세요.","content":""},{"type":"title","title":"11. 안내 및 광고","subtitle":"Announcements","content":"<ul class=\"text-left list-disc list-inside mt-8 text-3xl space-y-6 text-slate-200\"><li>주일 예배에 오신 모든 분들을 주님의 이름으로 환영합니다.</li></ul>"},{"type":"cover","title":"평안히 돌아가십시오","subtitle":"다음에 또 만나요. 평안하세요.","footer":"Fullerton Villa Community Church"}],"form":{"churchName":"Fullerton Villa Community Church","churchNameKo":"플러톤 빌라 교회","churchNameEn":"Fullerton Villa Community Church","worshipDate":"2026년 08월 27일  ·  오전 11:00","prepHymn1Num":"563","prepHymn1Title":"563장  ·  예수 사랑하심을","prepHymn2Num":"96","prepHymn2Title":"96장  ·  예수님은 누구신가","hymn1Num":"7","hymn1Title":"7장  ·  성부 성자 성령","responsiveNum":"13","responsiveTitle":"교독문 13번  ·  시편 23편","hymn2Num":"30","hymn2Title":"30장  ·  전능하고 놀라우신","bibleRef":"히브리서 4:1-11","bibleText":"1 그러므로 우리는 두려워할지니 그의 안식에 들어갈 약속이 남아 있을지라도 너희 중에는 혹 이르지 못할 자가 있을까 함이라\n2 그들과 같이 우리도 복음 전함을 받았으되 들은 바 그 말씀이 그들에게 유익하지 못한 것은 듣는 자가 믿음과 결부시키지 아니함이라\n3 이미 믿는 우리들은 저 안식에 들어가는도다 그 말씀하신 바와 같이 내가 노하여 맹세한 바와 그들이 내 안식에 들어오지 못하리라 하셨다 하였으나 세상을 창조할 때부터 그 일이 이루어졌느니라\n4 제칠일에 관하여는 어딘가에 이같이 일렀으되 하나님이 제칠일에 그의 모든 일을 쉬셨다 하였으며\n5 또 다시 거기에 그들이 내 안식에 들어오지 못하리라 하였으니\n6 그러면 거기에 들어갈 자들이 남아 있거니와 복음 전함을 먼저 받은 자들은 순종하지 아니함으로 말미암아 들어가지 못하였으므로\n7 오랜 후에 다윗의 글에 다시 어느 날을 정하여 오늘이라고 미리 이같이 일렀으되 오늘 너희가 그의 음성을 듣거든 너희 마음을 완고하게 하지 말라 하였나니\n8 만일 여호수아가 그들에게 안식을 주었더라면 그 후에 다른 날을 말씀하지 아니하셨으리라\n9 그런즉 안식할 때가 하나님의 백성에게 남아 있도다\n10 이미 그의 안식에 들어간 자는 하나님이 자기의 일을 쉬심과 같이 자기 일을 쉬느니라\n11 그러므로 우리가 저 안식에 들어가기를 힘쓸지니 이는 누구든지 저 순종하지 아니하는 본에 빠지지 않게 하려 함이라","memoryVerseRef":"히 4:1","memoryVerseText":"그러므로 우리는 두려워할지니 그의 안식에 들어갈 약속이 남아 있을지라도 너희 중에는 혹 이르지 못할 자가 있을까 함이라","sermonTitle":"잠된 안신","hymn4Num":"35","hymn4Title":"35장  ·  큰 영화로신 주","worshipLeader":"엄영민 목사","serviceTitle":"주일 예배","apostlesCreed":"전능하사 천지를 만드신 하나님 아버지를 내가 믿사오며,\n그 외아들 우리 주 예수 그리스도를 믿사오니,\n이는 성령으로 잉태하사 동정녀 마리아에게 나시고,\n본디오 빌라도에게 고난을 받으사 십자가에 못 박혀 죽으시고,\n장사한 지 사흘 만에 죽은 자 가운데서 다시 살아나시며,\n하늘에 오르사 전능하신 하나님 우편에 앉아 계시다가,\n거기로부터 산 자와 죽은 자를 심판하러 오시리라.\n성령을 믿사오며, 거룩한 공회와, 성도가 서로 교통하는 것과,\n죄를 사하여 주시는 것과, 몸이 다시 사는 것과, 영원히 사는 것을 믿사옵나이다. 아멘.","responsiveBody":"인도자: 여호와는 나의 목자시니\n회중: 내게 부족함이 없으리로다\n인도자: 그가 나를 푸른 풀밭에 누이시며\n회중: 쉴 만한 물 가로 인도하시는도다\n인도자: 내 영혼을 소생시키시고\n회중: 자기 이름을 위하여 의의 길로 인도하시는도다\n인도자: 내가 사망의 음침한 골짜기로 다닐지라도 해를 두려워하지 않을 것은 주께서 나와 함께 하심이라 주의 지팡이와 막대기가 나를 안위하시나이다\n회중: 주께서 내 원수의 목전에서 내게 상을 차려 주시고\n인도자: 기름을 내 머리에 부으셨으니 내 잔이 넘치나이다\n회중: 내 평생에 선하심과 인자하심이 반드시 나를 따르리니\n인도자: 내가 여호와의 집에 영원히 살리로다","prayerText":"살아계신 하나님 아버지,\n오늘 이 자리에 모인 성도들을 주님의 사랑으로 품어 주시고,\n예배를 통해 주님을 만나며 새 힘을 얻게 하옵소서.\n예수님의 이름으로 기도드립니다. 아멘.","prayerLeader":"","benediction":"담임목사","closingNote":"다음에 또 만나요. 평안하세요.","announcements":""},"source":"streamlit","artifacts":{},"coverImage":"data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20120%20168%22%20aria-hidden%3D%22true%22%3E%3Crect%20width%3D%22120%22%20height%3D%22168%22%20fill%3D%22%23fff%22%2F%3E%3Crect%20x%3D%2254%22%20y%3D%228%22%20width%3D%2212%22%20height%3D%22152%22%20fill%3D%22%231a1a1a%22%2F%3E%3Crect%20x%3D%2222%22%20y%3D%2236%22%20width%3D%2276%22%20height%3D%2212%22%20fill%3D%22%231a1a1a%22%2F%3E%3C%2Fsvg%3E","lookup":{"hymns":{"1":"만복의 근원 하나님","2":"찬양 성부 성자 성령","3":"성부 성자와 성령","4":"성부 성자와 성령","5":"이 천지간 만물들아","6":"목소리 높여서","7":"성부 성자 성령","8":"거룩 거룩 거룩","9":"하늘에 가득 찬 영광의 하나님","10":"전능왕 오셔서","11":"홀로 한 분 하나님께","12":"다 함께 주를 경배하세","13":"영원한 하늘나라","14":"주 우리 하나님","15":"하나님의 크신 사랑","16":"은혜로신 하나님 우리 주 하나님","17":"사랑의 하나님","18":"성도들아 찬양하자","19":"찬송하는 소리 있어","20":"큰 영광 중에 계신 주","21":"다 찬양하여라","22":"만유의 주 앞에","23":"만 입이 내게 있으면","24":"왕 되신 주","25":"면류관 벗어서","26":"구세주를 아는 이들","27":"빛나고 높은 보좌와","28":"복의 근원 강림 하사","29":"성도여 다 함께","30":"전능하고 놀라우신","31":"찬양하라 복되신 구세주 예수","32":"만유의 주재","33":"영광스런 주를 보라","34":"참 놀랍도다 주 크신 이름","35":"큰 영화로신 주","36":"주 예수 이름 높이어","37":"주 예수 이름 높이어","38":"예수 우리 왕이여","39":"주 은혜를 받으려","40":"찬송으로 보답할 수 없는","41":"내 영혼아 주 찬양하여라","42":"거룩한 주님께","43":"즐겁게 안식할 날","44":"지난 이레 동안에","45":"거룩한 주의 날","46":"이 날은 주님 정하신","47":"하늘이 푸르고","48":"거룩하신 주 하나님","49":"하나님이 언약하신 그대로","50":"내게 있는 모든 것을","51":"주님 주신 거룩한 날","52":"거룩하신 나의 하나님","53":"성전을 떠나가기 전","54":"주여 복을 구하오니","55":"주 이름으로 모였던","56":"우리의 주여","57":"오늘 주신 말씀에","58":"지난밤에 보호하사","59":"하나님 아버지 어둔 밤이 지나","60":"영혼의 햇빛 예수님","61":"우리가 기다리던","62":"고요히 머리 숙여","63":"주가 세상을 다스리니","64":"기뻐하며 경배하세","65":"내 영혼아 찬양하라","66":"다 감사드리세","67":"영광의 왕께 다 경배하며","68":"오 하나님 우리의 창조주시니","69":"온 천하 만물 우러러","70":"피난처 있으니","71":"예부터 도움 되시고","72":"만왕의 왕 앞에 나오라","73":"내 눈을 들어 두루 살피니","74":"오 만세 반석이신","75":"주여 우리 무리를","76":"창조의 주 아버지께","77":"거룩하신 하나님","78":"저 높고 푸른 하늘과","79":"주 하나님 지으신 모든 세계","80":"천지에 있는 이름 중","81":"주는 귀한 보배","82":"성부의 어린 양이","83":"나의 맘에 근심 구름","84":"온 세상이 캄캄하여서","85":"구주를 생각만 해도","86":"내가 늘 의지하는 예수","87":"내 주님 입으신 그 옷은","88":"내 진정 사모하는","89":"샤론의 꽃 예수","90":"주 예수 내가 알기 전","91":"슬픈 마음 있는 사람","92":"위에 계신 나의 친구","93":"예수는 나의 힘이요","94":"주 예수보다 더 귀한 것은 없네","95":"나의 기쁨 나의 소망되시며","96":"예수님은 누구신가","97":"정혼한 처녀에게","98":"예수님 오소서","99":"주님 앞에 떨며 서서","100":"미리암과 같은 여인들이","101":"이새의 뿌리에서","102":"영원한 문아 열려라","103":"우리 주님 예수께","104":"곧 오소서 임마누엘","105":"오랫동안 기다리던","106":"아기 예수 나셨네","107":"거룩한 밤 복된 이 밤","108":"그 어린 주 예수","109":"고요한 밤 거룩한 밤","110":"고요하고 거룩한 밤","111":"귀중한 보배합을","112":"그 맑고 환한 밤중에","113":"그 아기 잠들었네","114":"그 어린 주 예수","115":"기쁘다 구주오셨네","116":"동방에서 박사들","117":"만백성 기뻐하여라","118":"영광나라 천사들아","119":"옛날 임금 다윗 성에","120":"오 베들레헴 작은 골","121":"우리 구주 나신 날","122":"참 반가운 성도여","123":"저 들 밖에 한밤중에","124":"양 지키는 목자여","125":"천사들의 노래가","126":"천사 찬송하기를","127":"그 고요한 쓸쓸한","128":"거룩하신 우리 주님","129":"마리아는 아기를","130":"찬란한 주의 영광은","131":"다 나와 찬송 부르세","132":"주의 영광 빛나니","133":"하나님의 말씀으로","134":"나 어느 날 꿈속을 헤메며","135":"어저께나 오늘이나","136":"가나의 혼인 잔치","137":"하나님의 아들이","138":"햇빛을 받는 곳마다","139":"오 영원한 내 주 예수","140":"왕되신 우리 주께","141":"호산나 호산나","142":"시온에 오시는 주","143":"웬말인가 날 위하여","144":"예수 나를 위하여","145":"오 거룩하신 주님","146":"저 멀리 푸른 언덕에","147":"거기 너 있었는가","148":"영화로운 주 예수의","149":"주 달려 죽은 십자가","150":"갈보리 산 위에","151":"만왕의 왕 내 주께서","152":"귀하신 예수","153":"가시 면류관","154":"생명의 주여 면류관","155":"십자가 지고","156":"머리에 가시관 붉은 피 흐르는","157":"겟세마네 동산에서 최후 기도","158":"서쪽 하늘 붉은 노을","159":"기뻐 찬송하세","160":"무덤에 머물러","161":"할렐루야 우리 예수","162":"부활하신 구세주","163":"할렐루야 할렐루야","164":"예수 부활했으니","165":"주님께 영광","166":"싸움은 모두 끝나고","167":"즐겁도다 이 날","168":"하늘에 찬송이 들리던 그 날","169":"사망의 권세가","170":"내 주님은 살아 계셔","171":"하나님의 독생자","172":"사망을 이긴 주","173":"다 함께 찬송 부르자","174":"대속하신 구주께서","175":"신랑되신 예수께서","176":"주 어느 때 다시 오실는지","177":"오랫동안 고대하던","178":"주 예수 믿는 자여","179":"주 예수의 강림이","180":"하나님의 나팔 소리","181":"부활 승천하신 주께서","182":"강물같이 흐르는 기쁨","183":"빈 들에 마른 풀같이","184":"불길같은 주 성령","185":"이 기쁜 소식을","186":"영화로신 주 성령","187":"비둘기같이 온유한","188":"무한하신 주 성령","189":"진실하신 주 성령","190":"성령이여 강림하사","191":"내가 매일 기쁘게","192":"임하소서 임하소서","193":"성령의 봄바람 불어오니","194":"저 하늘 거룩하신 주여","195":"성령이여 우리 찬송 부를 때","196":"성령의 은사를","197":"은혜가 풍성한 하나님은","198":"주 예수 해변서","199":"나의 사랑하는 책","200":"달고 오묘한 그 말씀","201":"참 사람 되신 말씀","202":"하나님 아버지 주신 책은","203":"하나님의 말씀은","204":"주의 말씀 듣고서","205":"주 예수 크신 사랑","206":"주님의 귀한 말씀은","207":"귀하신 주님 계신 곳","208":"내 주의 나라와","209":"이 세상 풍파 심하고","210":"시온성과 같은 교회","211":"값비싼 향유를 주께 드린","212":"겸손히 주를 섬길 때","213":"나의 생명 드리니","214":"나 주의 도움 받고자","215":"내 죄 속해 주신 주께","216":"성자의 귀한 몸","217":"하나님이 말씀 하시기를","218":"네 맘과 정성을 다하여서","219":"주 하나님의 사랑은","220":"사랑하는 주님 앞에","221":"주 믿는 형제들","222":"우리 다시 만날 때까지","223":"하나님은 우리들의","224":"정한 물로 우리 죄를","225":"실로암 샘물가에 핀","226":"성령으로 세례 받아","227":"주 앞에 성찬받기 위하여","228":"오 나의 주님 친히 뵈오니","229":"아무 흠도 없고","230":"우리의 참되신 구주시니","231":"우리 다 같이 무릎 꿇고서","232":"유월절 때가 이르러","233":"자비로 그 몸을 찢기시고","234":"구주 예수 그리스도","235":"보아라 즐거운 우리 집","236":"우리 모든 수고 끝나","237":"저 건너편 강 언덕에","238":"해 지는 저편","239":"저 뵈는 본향 집","240":"주가 맡긴 모든 역사","241":"아름다운 본향","242":"황무지가 장미꽃같이","243":"저 요단강 건너편에","244":"구원 받은 천국의 성도들","245":"저 좋은 낙원 이르니","246":"나 가나안 땅 귀한 성에","247":"보아라 저 하늘에","248":"언약의 주 하나님","249":"주 사랑하는 자 다 찬송할 때에","250":"구주의 십자가 보혈로","251":"놀랍다 주님의 큰 은혜","252":"나의 죄를 씻기는","253":"그 자비하신 주님","254":"내 주의 보혈은","255":"너희 죄 흉악하나","256":"나의 죄 모두 지신 주님","257":"마음에 가득한 의심을 깨치고","258":"샘물과 같은 보혈은","259":"예수 십자가에 흘린 피로써","260":"우리를 죄에서 구하시려","261":"이 세상의 모든 죄를","262":"날 구원하신 예수님","263":"이 세상 험하고","264":"정결하게 하는 샘이","265":"주 십자가를 지심으로","266":"주의 피로 이룬 샘물","267":"주의 확실한 약속의 말씀 듣고","268":"죄에서 자유를 얻게 함은","269":"그 참혹한 십자가에","270":"변찮는 주님의 사랑과","271":"나와 같은 죄인 위해","272":"고통의 멍에 벗으려고","273":"나 주를 멀리 떠났다","274":"나 행한 것 죄뿐이니","275":"날마다 주와 멀어져","276":"아버지여 이 죄인을","277":"양떼를 떠나서","278":"여러 해 동안 주 떠나","279":"인애하신 구세주여","280":"천부여 의지 없어서","281":"요나처럼 순종않고","282":"큰 죄에 빠진 날 위해","283":"나 속죄함을 받은 후","284":"오랫동안 모든 죄 가운데 빠져","285":"주의 말씀 받은 그 날","286":"주 예수님 내 맘에 오사","287":"예수 앞에 나오면","288":"예수를 나의 구주삼고","289":"주 예수 내 맘에 들어와","290":"우리는 주님을 늘 배반하나","291":"외롭게 사는 이 그 누군가","292":"주 없이 살 수 없네","293":"주의 사랑 비칠 때에","294":"하나님은 외아들을","295":"큰 죄에 빠진 나를","296":"죄인 구원하시려고","297":"양 아흔아홉 마리는","298":"속죄하신 구세주를","299":"하나님 사랑은","300":"내 맘이 낙심되며","301":"지금까지 지내온 것","302":"내 주 하나님 넓고 큰 은혜는","303":"날 위하여 십자가의","304":"그 크신 하나님의 사랑","305":"나 같은 죄인 살리신","306":"죽을 죄인 살려주신","307":"소리없이 보슬보슬","308":"내 평생 살아온 길","309":"목마른 내 영혼","310":"아 하나님의 은혜로","311":"내 너를 위하여","312":"너 하나님께 이끌리어","313":"내 임금 예수 내 주여","314":"내 구주 예수를 더욱 사랑","315":"내 주 되신 주를 참 사랑하고","316":"주여 나의 생명","317":"내 주 예수 주신 은혜","318":"순교자의 흘린 피가","319":"말씀으로 이 세상을","320":"나의 죄를 정케하사","321":"날 대속하신 예수께","322":"세상의 헛된 신을 버리고","323":"부름받아 나선 이 몸","324":"예수 나를 오라 하네","325":"예수가 함께 계시니","326":"내 죄를 회개하고","327":"주님 주실 화평","328":"너 주의 사람아","329":"주 날 불러 이르소서","330":"어둔 밤 쉬 되리니","331":"영광을 받으신 만유의 주여","332":"우리는 부지런한","333":"충성하라 죽도록","334":"위대하신 주를","335":"크고 놀라운 평화가","336":"환난과 핍박 중에도","337":"내 모든 시험 무거운 짐을","338":"내 주를 가까이 하게 함은","339":"내 주님 지신 십자가","340":"어지러운 세상 중에","341":"십자가를 내가 지고","342":"너 시험을 당해","343":"시험 받을 때에","344":"믿음으로 가리라","345":"캄캄한 밤 사나운 바람 불 때","346":"주 예수 우리 구하려","347":"허락하신 새 땅에","348":"마귀들과 싸울지라","349":"나는 예수 따라가는","350":"우리들이 싸울 것은","351":"믿는 사람들은 주의 군사니","352":"십자가 군병들아","353":"십자가 군병되어서","354":"주를 앙모하는 자","355":"다 같이 일어나","356":"주 예수 이름 소리 높여","357":"주 믿는 사람 일어나","358":"주의 진리 위해 십자가 군기","359":"천성을 향해 가는 성도들아","360":"행군 나팔 소리에","361":"기도하는 이 시간","362":"주여 복을 주시기를","363":"내가 깊은 곳에서","364":"내 기도하는 그 시간","365":"마음 속에 근심 있는 사람","366":"어두운 내 눈 밝히사","367":"인내하게 하소서 주여 우리를","368":"주 예수여 은혜를","369":"죄짐맡은 우리 구주","370":"주 안에 있는 나에게","371":"구주여 광풍이 불어","372":"그 누가 나의 괴롬 알며","373":"고요한 바다로","374":"나의 믿음 약할 때","375":"나는 갈 길 모르니","376":"나그네와 같은 내가","377":"전능하신 주 하나님","378":"내 선한 목자","379":"내 갈 길 멀고 밤은 깊은데","380":"나의 생명되신 주","381":"나 캄캄한 밤 죄의 길에","382":"너 근심 걱정 말아라","383":"눈을 들어 산을 보니","384":"나의 갈 길 다 가도록","385":"못 박혀 죽으신","386":"만세반석 열린 곳에","387":"멀리멀리 갔더니","388":"비바람이 칠 때와","389":"내게로 오라 하신 주님의","390":"예수가 거느리시니","391":"오 놀라운 구세주","392":"주여 어린 사슴이","393":"오 신실하신 주","394":"이 세상의 친구들","395":"자비하신 예수여","396":"우리 주님 밤새워","397":"주 사랑 안에 살면","398":"어둠의 권세에서","399":"어린 양들아 두려워 말아라","400":"험한 시험 물 속에서","401":"주의 곁에 있을 때","402":"나의 반석 나의 방패","403":"영원하신 주님의","404":"바다에 놀이 일 때에","405":"주의 친절한 팔에 안기세","406":"곤한 내 영혼 편히 쉴 곳과","407":"구주와 함께 나 죽었으니","408":"나 어느 곳에 있든지","409":"나의 기쁨은 사랑의 주님께","410":"내 맘에 한 노래있어","411":"아 내 맘속에","412":"내 영혼의 그윽히 깊은 데서","413":"내 평생에 가는 길","414":"이 세상은 요란하나","415":"십자가 그늘 아래","416":"너희 근심 걱정을","417":"주 예수 넓은 품에","418":"기쁠 때나 슬플 때나","419":"주 날개 밑 내가 편안히 쉬네","420":"너 성결키 위해","421":"내가 예수 믿고서","422":"거룩하게 하소서","423":"먹보다도 더 검은","424":"아버지여 나의 맘을","425":"주님의 뜻을 이루소서","426":"이 죄인을 완전케 하시옵고","427":"맘 가난한 사람","428":"내 영혼에 햇빛 비치니","429":"세상 모든 풍파 너를 흔들어","430":"주와 같이 길 가는 것","431":"주 안에 기쁨 있네","432":"큰 물결이 설레는 어둔 바다","433":"귀하신 주여 날 붙드사","434":"귀하신 친구 내게 계시니","435":"나의 영원하신 기업","436":"나 이제 주님의 새 생명 얻은 몸","437":"하늘 보좌 떠나서","438":"내 영혼이 은총 입어","439":"십자가로 가까이","440":"어디든지 예수 나를 이끌면","441":"은혜 구한 내게 은혜의 주님","442":"저 장미꽃 위에 이슬","443":"아침 햇살 비칠 때","444":"겟세마네 동산에서","445":"태산을 넘어 험곡에 가도","446":"주 음성 외에는","447":"이 세상 끝날까지","448":"주님 가신 길을 따라","449":"예수 따라가며","450":"내 평생 소원 이것뿐","451":"예수 영광 버리사","452":"내 모든 소원 기도의 제목","453":"예수 더 알기 원하네","454":"주와 같이 되기를","455":"주님의 마음을 본받는 자","456":"거친 세상에서 실패하거든","457":"겟세마네 동산의","458":"너희 마음에 슬픔이 가득할 때","459":"누가 주를 따라","460":"뜻 없이 무릎 꿇는","461":"십자가를 질 수 있나","462":"생명 진리 은혜 되신","463":"신자 되기 원합니다","464":"믿음의 새 빛을","465":"주 믿는 나 남 위해","466":"죽기까지 사랑하신 주","467":"높으신 주께서 낮아지심은","468":"큰 사랑의 새 계명을","469":"내 주 하나님","470":"나의 몸이 상하여","471":"주여 나의 병든 몸을","472":"네 병든 손 내밀라고","473":"괴로움과 고통을","474":"의원되신 예수님의","475":"인류는 하나 되게","476":"꽃이 피고 새가 우는","477":"하나님이 창조하신","478":"참 아름다워라","479":"괴로운 인생길 가는 몸이","480":"천국에서 만나보자","481":"때 저물어서 날이 어두니","482":"참 즐거운 노래를","483":"구름같은 이 세상","484":"내 맘의 주여 소망되소서","485":"세월이 흘러가는데","486":"이 세상에 근심된 일이 많고","487":"어두움 후에 빛이 오며","488":"이 몸의 소망 무언가","489":"저 요단강 건너편에 찬란하게","490":"주여 지난밤 내 꿈에","491":"저 높은 곳을 향하여","492":"잠시 세상에 내가 살면서","493":"하늘가는 밝은 길이","494":"만세 반석 열리니","495":"익은 곡식 거둘 자가","496":"새벽부터 우리","497":"주 예수 넓은 사랑","498":"저 죽어가는 자 다 구원하고","499":"흑암에 사는 백성들을 보라","500":"물 위에 생명줄 던지어라","501":"너 시온아 이 소식 전파하라","502":"빛의 사자들이여","503":"세상 모두 사랑 없어","504":"주님의 명령 전할 사자여","505":"온 세상 위하여","506":"땅 끝까지 복음을","507":"저 북방 얼음 산과","508":"우리가 지금은 나그네 되어도","509":"기쁜 일이 있어 천국 종치네","510":"하나님의 진리 등대","511":"예수 말씀 하시기를","512":"천성 길을 버리고","513":"헛된 욕망 길을 가며","514":"먼동 튼다 일어나라","515":"눈을 들어 하늘 보라","516":"옳은 길 따르라 의의 길을","517":"가난한 자 돌봐주며","518":"기쁜 소리 들리니","519":"구주께서 부르되","520":"듣는 사람마다 복음 전하여","521":"구원으로 인도하는","522":"웬일인가 내 형제여","523":"어둔 죄악 길에서","524":"갈 길을 밝히 보이시니","525":"돌아와 돌아와","526":"목마른 자들아","527":"어서 돌아오오","528":"예수가 우리를 부르는 소리","529":"온유한 주님의 음성","530":"주께서 문에 오셔서","531":"자비한 주께서 부르시네","532":"주께로 한 걸음씩","533":"우리 주 십자가","534":"주님 찾아 오셨네","535":"주 예수 대문 밖에","536":"죄짐에 눌린 사람은","537":"형제여 지체말라","538":"죄짐을 지고서 곤하거든","539":"너 예수께 조용히 나가","540":"주의 음성을 내가 들으니","541":"꽃이 피는 봄날에만","542":"구주 예수 의지함이","543":"어려운 일 당할 때","544":"울어도 못하네","545":"이 눈에 아무 증거 아니 뵈어도","546":"주님 약속 하신 말씀 위에 서","547":"나 같은 죄인까지도","548":"날 구속하신","549":"내 주여 뜻대로","550":"시온의 영광이 빛나는 아침","551":"오늘까지 복과 은혜","552":"아침 해가 돋을 때","553":"새해 아침 환히 밝았네","554":"종소리 크게 울려라","555":"우리 주님 모신 가정","556":"날마다 주님을 의지하는","557":"에덴의 동산처럼","558":"미더워라 주의 가정","559":"사철에 봄바람 불어 잇고","560":"주의 발자취를 따름이","561":"예수님의 사랑은","562":"예루살렘 아이들","563":"예수 사랑하심을","564":"예수께서 오실 때에","565":"예수께로 가면","566":"사랑의 하나님 귀하신 이름은","567":"다정하신 목자 예수","568":"하나님은 나의 목자시니","569":"선한 목자 되신 우리 주","570":"주는 나를 기르시는 목자","571":"역사 속에 보냄 받아","572":"바다같이 넓은 은혜","573":"말씀에 순종하여","574":"가슴마다 파도친다","575":"주님께 귀한 것 드려","576":"하나님의 뜻을 따라","577":"낳으시고 길러주신","578":"언제나 바라봐도","579":"어머니의 넓은 사랑","580":"삼천리 반도 금수강산","581":"주 하나님 이 나라를 지켜주시고","582":"어둔 밤 마음에 잠겨","583":"이 민족에 복음을","584":"우리나라 지켜주신","585":"내 주는 강한 성이요","586":"어느 민족 누구게나","587":"감사하는 성도여","588":"공중 나는 새를 보라","589":"넓은 들에 익은 곡식","590":"논밭에 오곡백과","591":"저 밭에 농부 나가","592":"산마다 불이 탄다 고운 단풍에","593":"아름다운 하늘과","594":"감사하세 찬양하세","595":"나 맡은 본분은","596":"영광은 주님 홀로","597":"이전에 주님을 내가 몰라","598":"천지 주관하는 주님","599":"우리의 기도 들어주시옵소서","600":"교회의 참된 터는","601":"하나님이 정하시고","602":"성부님께 빕니다","603":"태초에 하나님이","604":"완전한 사랑","605":"오늘 모여 찬송함은","606":"해보다 더 밝은 천국","607":"내 본향 가는 길","608":"후일에 생명 그칠 때","609":"이 세상 살 때에","610":"고생과 수고가 다 지난 후","611":"주님 오라 부르시어","612":"이 땅에서 주를 위해","613":"사랑의 주 하나님","614":"얼마나 아프셨나","615":"그 큰 일을 행하신","616":"주를 경배하리","617":"주님을 찬양합니다","618":"나 주님을 사랑합니다","619":"놀라운 그 이름","620":"여기에 모인 우리","621":"찬양하라 내 영혼아","622":"거룩한 밤","623":"주님의 시간에","624":"우리 모두 찬양해","625":"거룩 거룩 거룩한 하나님","626":"만민들아 다 경배하라","627":"할렐루야 할렐루야 다 함께","628":"아멘 아멘 아멘 영광과 존귀를","629":"거룩 거룩 거룩","630":"진리와 생명 되신 주","631":"우리 기도를","632":"주여 주여 우리를","633":"나의 하나님 받으소서","634":"모든 것이 주께로부터","635":"하늘에 계신 아버지","636":"하늘에 계신 우리 아버지여","637":"주님 우리 마음을 여시어","638":"주 너를 지키시고","639":"주 함께하소서","640":"아멘","641":"아멘","642":"아멘","643":"아멘","644":"아멘","645":"아멘"},"hymnLyrics":{"563":{"title":"예수 사랑하심을","lyrics":"1. 예수 사랑하심을 성경에서 배웠네\n우리들은 약하나 예수 권세 많도다\n날 사랑하심 날 사랑하심\n날 사랑하심 성경에 쓰였네\n\n2. 나를 사랑하시고 나의 죄를 다 씻어\n하늘 문을 여시고 들어가게 하시네\n날 사랑하심 날 사랑하심\n날 사랑하심 성경에 쓰였네\n\n3. 내가 연약할수록 더욱 귀히 여기사\n높은 보좌 위에서 낮은 나를 보시네\n날 사랑하심 날 사랑하심\n날 사랑하심 성경에 쓰였네\n\n4. 세상 사는 동안에 나와 함께 하시고\n세상 떠나 가는 날 천국 가게 하소서\n날 사랑하심 날 사랑하심\n날 사랑하심 성경에 쓰였네 아멘"},"96":{"title":"예수님은 누구신가","lyrics":"1. 예수님은 누구신가 우는 자의 위로와\n없는 자의 풍성이며 천한 자의 높음과\n잡힌 자의 놓임 되고 우리 기쁨 되시네\n\n2. 예수님은 누구신가 약한 자의 강함과\n눈먼 자의 빛이시며 병든 자의 고침과\n죽은 자의 부활 되고 우리 생명 되시네\n\n3. 예수님은 누구신가 추한자의 정함과\n죽을 자의 생명이며 죄인들의 중보와\n멸망자의 구원되고 우리 평화 되시네\n\n4. 예수님은 누구신가 온 교회의 머리와\n온 세상의 구주시며 모든 왕의 왕이요\n심판하실 주님 되고 우리 영광 되시네"},"7":{"title":"성부 성자 성령","lyrics":"성부 성자 성령 삼위일체께\n입을 모아 찬양 경배 드리세\n태초부터 지금까지 또 영원토록\n영광 영광 아멘"},"30":{"title":"전능하고 놀라우신","lyrics":"1. 전능하고 놀라우신\n나의 주님 구세주\n거룩하신 은혜의 왕\n주를 경배합니다\n영광 영광 주의 이름 찬양해\n영광 영광 귀한 이름 찬양해\n\n2. 하늘 위에 계신 주님\n참된 빛이 되시니\n이 세상의 모든 나라\n주께 영광 돌리네\n영광 영광 주의 이름 찬양해\n영광 영광 귀한 이름 찬양해\n\n3. 하늘나라 보좌에서\n죄악 많은 세상에\n우리 구원하시려고\n주님 세상 오셨네\n영광 영광 주의 이름 찬양해\n영광 영광 귀한 이름 찬양해\n\n4. 영원하신 우리 주님\n어서 속히 오셔서\n주의 모든 성도들을\n천국 인도하소서\n영광 영광 주의 이름 찬양해\n영광 영광 귀한 이름 찬양해\n아멘"},"35":{"title":"큰 영화로신 주","lyrics":"1. 큰 영화로신 주\n이 곳에 오셔서\n이 모인 자들로\n주 백성 삼으사\n그 중에 항상 계시고\n그 중에 항상 계시고\n큰 영광 나타내소서\n\n2. 이 백성 기도와\n또 예물 드림이\n향내와 같으니\n곧 받으옵소서\n주 예수 크신 복음을\n주 예수 크신 복음을\n만백성 듣게 하소서\n\n3. 또 우리 자손들\n다 주를 기리고\n저 성전 돌같이\n견고하게 하소서\n주 구원하신 능력을\n주 구원하신 능력을\n늘 끝날까지 주소서\n\n4. 주 믿는 만민이\n참 진리 지키며\n옛 성도들 같이\n주 찬송하다가\n저 천국 보좌 앞에서\n저 천국 보좌 앞에서\n늘 찬송하게 하소서\n아멘"}},"responsive":{"13":{"title":"시편 23편","body":"인도자: 여호와는 나의 목자시니\n회중: 내게 부족함이 없으리로다\n인도자: 그가 나를 푸른 풀밭에 누이시며\n회중: 쉴 만한 물 가로 인도하시는도다\n인도자: 내 영혼을 소생시키시고\n회중: 자기 이름을 위하여 의의 길로 인도하시는도다\n인도자: 내가 사망의 음침한 골짜기로 다닐지라도 해를 두려워하지 않을 것은 주께서 나와 함께 하심이라 주의 지팡이와 막대기가 나를 안위하시나이다\n회중: 주께서 내 원수의 목전에서 내게 상을 차려 주시고\n인도자: 기름을 내 머리에 부으셨으니 내 잔이 넘치나이다\n회중: 내 평생에 선하심과 인자하심이 반드시 나를 따르리니\n인도자: 내가 여호와의 집에 영원히 살리로다","label":"교독문 13번  ·  시편 23편"}},"scripture":{"히브리서 4:1-11 (개역개정)":"1 그러므로 우리는 두려워할지니 그의 안식에 들어갈 약속이 남아 있을지라도 너희 중에는 혹 이르지 못할 자가 있을까 함이라\n2 그들과 같이 우리도 복음 전함을 받았으되 들은 바 그 말씀이 그들에게 유익하지 못한 것은 듣는 자가 믿음과 결부시키지 아니함이라\n3 이미 믿는 우리들은 저 안식에 들어가는도다 그 말씀하신 바와 같이 내가 노하여 맹세한 바와 그들이 내 안식에 들어오지 못하리라 하셨다 하였으나 세상을 창조할 때부터 그 일이 이루어졌느니라\n4 제칠일에 관하여는 어딘가에 이같이 일렀으되 하나님이 제칠일에 그의 모든 일을 쉬셨다 하였으며\n5 또 다시 거기에 그들이 내 안식에 들어오지 못하리라 하였으니\n6 그러면 거기에 들어갈 자들이 남아 있거니와 복음 전함을 먼저 받은 자들은 순종하지 아니함으로 말미암아 들어가지 못하였으므로\n7 오랜 후에 다윗의 글에 다시 어느 날을 정하여 오늘이라고 미리 이같이 일렀으되 오늘 너희가 그의 음성을 듣거든 너희 마음을 완고하게 하지 말라 하였나니\n8 만일 여호수아가 그들에게 안식을 주었더라면 그 후에 다른 날을 말씀하지 아니하셨으리라\n9 그런즉 안식할 때가 하나님의 백성에게 남아 있도다\n10 이미 그의 안식에 들어간 자는 하나님이 자기의 일을 쉬심과 같이 자기 일을 쉬느니라\n11 그러므로 우리가 저 안식에 들어가기를 힘쓸지니 이는 누구든지 저 순종하지 아니하는 본에 빠지지 않게 하려 함이라","히 4:1":"그러므로 우리는 두려워할지니 그의 안식에 들어갈 약속이 남아 있을지라도 너희 중에는 혹 이르지 못할 자가 있을까 함이라"}}};
+</script>
+
+</head>
+<body class="bg-slate-900 overflow-hidden">
+    <div id="mobile-present-gate" class="hidden-gate" aria-live="polite">
+        <div class="w-14 h-14 bg-gradient-to-br from-yellow-500 to-yellow-700 rounded-xl flex items-center justify-center shadow-lg mb-2">
+            <i class="fa-solid fa-cross text-white text-2xl"></i>
+        </div>
+        <h2 class="text-2xl font-serif font-bold text-white">주일 예배 화면</h2>
+        <p class="gate-hint" id="gateMainHint">주소창 없이 보려면 <b>전체화면으로 예배 시작</b>을 누르세요.<br>iPhone은 Safari <b>공유</b> → <b>홈 화면에 추가</b> 후 아이콘으로 열면 주소창이 사라집니다.</p>
+        <button type="button" class="gate-btn" id="btnStartFullscreen" onclick="startPresentation()">전체화면으로 예배 시작</button>
+        <p class="gate-hint" id="mobileSlideCountHint"></p>
+        <p class="gate-hint" id="fsHelpNote" style="display:none;color:#fbbf24;"></p>
+    </div>
+    <header class="app-chrome bg-slate-800 border-b border-slate-700 h-[80px] flex items-center justify-between px-6 shadow-md z-20 relative">
+        <div class="flex items-center space-x-4">
+            <div class="w-10 h-10 bg-gradient-to-br from-yellow-500 to-yellow-700 rounded-lg flex items-center justify-center shadow-lg">
+                <i class="fa-solid fa-cross text-white text-xl"></i>
+            </div>
+            <div>
+                <h1 class="text-xl font-bold text-white tracking-wide font-serif">Worship PPT & PDF Generator</h1>
+                <p class="text-xs text-slate-400">예배순서 입력 · 축도·안내·광고 포함 · 전체화면</p>
+            </div>
+        </div>
+        <div class="flex space-x-3">
+            <button onclick="printBulletin()" class="bg-emerald-700 hover:bg-emerald-600 text-white font-semibold py-2 px-4 rounded-lg text-sm transition flex items-center space-x-2 border border-emerald-500/40">
+                <i class="fa-solid fa-print"></i>
+                <span>주보 인쇄</span>
+            </button>
+            <button id="btnDownloadPdf" onclick="downloadArtifact('pdf')" class="hidden bg-slate-700 hover:bg-slate-600 text-slate-200 font-semibold py-2 px-4 rounded-lg text-sm transition flex items-center space-x-2 border border-slate-600">
+                <i class="fa-solid fa-file-pdf"></i>
+                <span>주보 PDF</span>
+            </button>
+            <button id="btnDownloadPptx" onclick="downloadArtifact('pptx')" class="bg-amber-700 hover:bg-amber-600 text-white font-semibold py-2 px-4 rounded-lg text-sm transition flex items-center space-x-2 border border-amber-500/40">
+                <i class="fa-solid fa-file-powerpoint"></i>
+                <span>PPT 다운로드</span>
+            </button>
+            <button type="button" onclick="togglePptLibraryPanel()" class="bg-slate-700 hover:bg-slate-600 text-amber-200 font-semibold py-2 px-4 rounded-lg text-sm transition flex items-center space-x-2 border border-amber-500/50">
+                <i class="fa-solid fa-folder-open"></i>
+                <span>PPT 자료 보관</span>
+            </button>
+            <button onclick="downloadStandaloneFile()" class="bg-slate-700 hover:bg-slate-600 text-slate-200 font-semibold py-2 px-4 rounded-lg text-sm transition flex items-center space-x-2 border border-slate-600">
+                <i class="fa-solid fa-download"></i>
+                <span>HTML 저장</span>
+            </button>
+            <button type="button" data-start-presentation onclick="startPresentation()" class="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold py-2.5 px-6 rounded-lg transition-all duration-300 shadow-lg shadow-blue-900/50 flex items-center space-x-2 border border-blue-400/35">
+                <i class="fa-solid fa-play"></i>
+                <span>예배 화면 (전체화면)</span>
+            </button>
+        </div>
+    </header>
+    <div class="flex dashboard-layout">
+
+        <!-- 좌측: 입력 및 제어 패널 -->
+        <div class="w-1/3 bg-slate-800/50 border-r border-slate-700 flex flex-col overflow-hidden" style="height:calc(100vh - 80px); min-height:0;">
+            <div class="p-4 border-b border-slate-700 shrink-0 space-y-2">
+                <div class="flex items-center justify-between gap-2">
+                    <h2 class="text-lg font-bold text-slate-200"><i class="fa-solid fa-pen-to-square mr-2 text-yellow-500"></i>예배 순서 입력</h2>
+                    <button onclick="applyChanges()" class="text-xs bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded transition font-semibold shadow whitespace-nowrap">적용하기</button>
+                </div>
+                <button type="button" onclick="scrollToClosingSection()" class="w-full text-center text-xs font-semibold text-amber-300 bg-amber-950/40 border border-amber-600/50 rounded-lg py-2 px-3 hover:bg-amber-900/50">
+                    ↓ 10. 축도 · 11. 안내 및 광고로 바로가기
+                </button>
+                <p id="applyStatus" class="text-xs text-emerald-400 hidden"></p>
+            </div>
+            <div class="flex-1 form-scroll p-6 space-y-4 text-sm" style="min-height:0; overflow-y:auto;">
+                <!-- 교회 기본 정보 -->
+                <div class="bg-slate-900/80 p-4 rounded-xl border border-slate-700/50 space-y-3">
+                    <h3 class="text-yellow-500 font-semibold text-xs uppercase tracking-wider mb-2">기본 정보</h3>
+                    <div>
+                        <label class="block text-slate-400 mb-1">교회명</label>
+                        <input type="text" id="churchName" value="Fullerton Villa Community Church" class="w-full bg-slate-800 border border-slate-600 rounded p-2 text-white focus:border-blue-500 outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-slate-400 mb-1">예배 제목</label>
+                        <input type="text" id="serviceTitle" value="주일 예배" class="w-full bg-slate-800 border border-slate-600 rounded p-2 text-white focus:border-blue-500 outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-slate-400 mb-1">예배 일시</label>
+                        <input type="text" id="worshipDate" value="" class="w-full bg-slate-800 border border-slate-600 rounded p-2 text-white focus:border-blue-500 outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-slate-400 mb-1">인도자</label>
+                        <input type="text" id="worshipLeader" value="" class="w-full bg-slate-800 border border-slate-600 rounded p-2 text-white focus:border-blue-500 outline-none">
+                    </div>
+                </div>
+                <!-- 예배 순서 세부 입력 -->
+                <div class="bg-slate-900/80 p-4 rounded-xl border border-slate-700/50 space-y-3">
+                    <h3 class="text-blue-400 font-semibold text-xs uppercase tracking-wider mb-2">예배 순서 1–11 (번호 → 자동 불러오기)</h3>
+                    <p class="text-[11px] text-slate-500 -mt-1 mb-2">장번호·교독문 번호·성경 구절을 입력한 뒤 <b>적용하기</b>를 누르면 미리보기에 반영됩니다.</p>
+
+                    <div>
+                        <label class="block text-slate-400 mb-1">1. 예배 준비의 시간</label>
+                        <div class="flex gap-2 mb-1">
+                            <input type="text" id="prepHymn1Num" placeholder="1곡 장번호" class="w-24 bg-slate-800 border border-slate-600 rounded p-2 text-white" onchange="lookupHymn('prepHymn1')" onkeydown="if(event.key==='Enter'){event.preventDefault();lookupHymn('prepHymn1');}">
+                            <input type="text" id="prepHymn1Title" placeholder="제목 (자동)" class="flex-1 bg-slate-800 border border-slate-600 rounded p-2 text-white">
+                        </div>
+                        <p id="prepHymn1Hint" class="text-[11px] text-slate-500">첫 번째 찬송 · 장번호 입력 시 제목만 자동</p>
+                        <div class="flex gap-2 mb-1 mt-2">
+                            <input type="text" id="prepHymn2Num" placeholder="2곡 장번호" class="w-24 bg-slate-800 border border-slate-600 rounded p-2 text-white" onchange="lookupHymn('prepHymn2')" onkeydown="if(event.key==='Enter'){event.preventDefault();lookupHymn('prepHymn2');}">
+                            <input type="text" id="prepHymn2Title" placeholder="제목 (자동)" class="flex-1 bg-slate-800 border border-slate-600 rounded p-2 text-white">
+                        </div>
+                        <p id="prepHymn2Hint" class="text-[11px] text-slate-500">두 번째 찬송 · 장번호 입력 시 제목만 자동</p>
+                    </div>
+                    <div>
+                        <label class="block text-slate-400 mb-1">2. 찬양과 기도</label>
+                        <div class="flex gap-2 mb-1">
+                            <input type="text" id="hymn1Num" placeholder="장번호" class="w-24 bg-slate-800 border border-slate-600 rounded p-2 text-white" onchange="lookupHymn('hymn1')" onkeydown="if(event.key==='Enter'){event.preventDefault();lookupHymn('hymn1');}">
+                            <input type="text" id="hymn1Title" placeholder="제목 (자동)" class="flex-1 bg-slate-800 border border-slate-600 rounded p-2 text-white">
+                        </div>
+                        <p id="hymn1Hint" class="text-[11px] text-slate-500">장번호 입력 시 제목만 자동</p>
+                    </div>
+                    <div>
+                        <label class="block text-slate-400 mb-1">3. 사도신경</label>
+                        <textarea id="apostlesCreed" rows="3" class="w-full bg-slate-800 border border-slate-600 rounded p-2 text-slate-300 text-xs"></textarea>
+                    </div>
+                    <div>
+                        <label class="block text-slate-400 mb-1">4. 교독문</label>
+                        <div class="flex gap-2 mb-1">
+                            <input type="text" id="responsiveNum" placeholder="번호" class="w-24 bg-slate-800 border border-slate-600 rounded p-2 text-white" onchange="lookupResponsive()">
+                            <input type="text" id="responsiveTitle" placeholder="제목 (자동)" class="flex-1 bg-slate-800 border border-slate-600 rounded p-2 text-white">
+                        </div>
+                        <textarea id="responsiveBody" rows="3" class="w-full bg-slate-800 border border-slate-600 rounded p-2 text-slate-300 text-xs" placeholder="인도자: …&#10;회중: …"></textarea>
+                        <p id="responsiveHint" class="text-[11px] text-slate-500"></p>
+                    </div>
+                    <div>
+                        <label class="block text-slate-400 mb-1">5. 찬송가</label>
+                        <div class="flex gap-2 mb-1">
+                            <input type="text" id="hymn2Num" placeholder="장번호" class="w-24 bg-slate-800 border border-slate-600 rounded p-2 text-white" onchange="lookupHymn('hymn2')" onkeydown="if(event.key==='Enter'){event.preventDefault();lookupHymn('hymn2');}">
+                            <input type="text" id="hymn2Title" placeholder="제목 (자동)" class="flex-1 bg-slate-800 border border-slate-600 rounded p-2 text-white">
+                        </div>
+                        <p id="hymn2Hint" class="text-[11px] text-slate-500">장번호 입력 시 제목만 자동</p>
+                    </div>
+                    <div>
+                        <label class="block text-slate-400 mb-1">6. 예배의 기도</label>
+                        <input type="text" id="prayerLeader" value="" class="w-full bg-slate-800 border border-slate-600 rounded p-2 text-white mb-1" placeholder="기도 인도자">
+                        <textarea id="prayerText" rows="2" class="w-full bg-slate-800 border border-slate-600 rounded p-2 text-slate-300 text-xs"></textarea>
+                    </div>
+                    <div>
+                        <label class="block text-slate-400 mb-1">7. 오늘의 말씀</label>
+                        <div class="flex gap-2 mb-1">
+                            <input type="text" id="bibleRef" value="" class="flex-1 bg-slate-800 border border-slate-600 rounded p-2 text-white" placeholder="예: 히브리서 4:1-11 또는 히 4:1-11" onchange="lookupScripture()" onkeydown="if(event.key==='Enter'){event.preventDefault();lookupScripture();}">
+                            <button type="button" onclick="lookupScripture()" class="shrink-0 bg-slate-700 hover:bg-slate-600 border border-slate-500 text-slate-100 px-3 rounded text-xs font-semibold">본문 불러오기</button>
+                        </div>
+                        <textarea id="bibleText" rows="3" class="w-full bg-slate-800 border border-slate-600 rounded p-2 text-slate-300 text-xs" placeholder="장·절 입력 후 Enter 또는 본문 불러오기"></textarea>
+                        <p id="bibleHint" class="text-[11px] text-slate-500">교독문처럼 장·절을 넣으면 개역 본문을 자동으로 채웁니다.</p>
+                    </div>
+                    <div>
+                        <label class="block text-slate-400 mb-1">금주의 암송구절</label>
+                        <div class="flex gap-2 mb-1">
+                            <input type="text" id="memoryVerseRef" value="" class="flex-1 bg-slate-800 border border-slate-600 rounded p-2 text-white" placeholder="예: 요한복음 3:16 또는 요 3:16" onchange="lookupMemoryVerse()" onkeydown="if(event.key==='Enter'){event.preventDefault();lookupMemoryVerse();}">
+                            <button type="button" onclick="lookupMemoryVerse()" class="shrink-0 bg-slate-700 hover:bg-slate-600 border border-slate-500 text-slate-100 px-3 rounded text-xs font-semibold">한 절 불러오기</button>
+                        </div>
+                        <textarea id="memoryVerseText" rows="2" class="w-full bg-slate-800 border border-slate-600 rounded p-2 text-slate-300 text-xs" placeholder="한 절 본문 (직접 입력도 가능)"></textarea>
+                        <p id="memoryVerseHint" class="text-[11px] text-slate-500">한 절만 주보 성경 본문 아래에 들어갑니다.</p>
+                    </div>
+                    <div>
+                        <label class="block text-slate-400 mb-1">8. 생명의 말씀 (설교 제목)</label>
+                        <input type="text" id="sermonTitle" value="" class="w-full bg-slate-800 border border-slate-600 rounded p-2 text-white font-bold text-yellow-400">
+                    </div>
+                    <div>
+                        <label class="block text-slate-400 mb-1">9. 감사와 봉헌</label>
+                        <div class="flex gap-2 mb-1">
+                            <input type="text" id="hymn4Num" placeholder="장번호" class="w-24 bg-slate-800 border border-slate-600 rounded p-2 text-white" onchange="lookupHymn('hymn4')" onkeydown="if(event.key==='Enter'){event.preventDefault();lookupHymn('hymn4');}">
+                            <input type="text" id="hymn4Title" placeholder="제목 (자동)" class="flex-1 bg-slate-800 border border-slate-600 rounded p-2 text-white">
+                        </div>
+                        <p id="hymn4Hint" class="text-[11px] text-slate-500">장번호 입력 시 제목만 자동</p>
+                    </div>
+
+                    <div id="closing-section" class="pt-3 mt-2 border-t-2 border-amber-500/50 space-y-3">
+                        <p class="text-amber-400 font-bold text-xs uppercase tracking-wider">추가 입력 (10–11)</p>
+                        <div>
+                            <label class="block text-amber-200 mb-1 font-semibold">10. 축도</label>
+                            <input type="text" id="benediction" value="담임목사" class="w-full bg-slate-800 border border-amber-600/50 rounded p-2 text-white" placeholder="예: 담임목사">
+                        </div>
+                        <div>
+                            <label class="block text-amber-200 mb-1 font-semibold">11. 안내 및 광고</label>
+                            <input type="text" id="closingNote" value="다음에 또 만나요. 평안하세요." class="w-full bg-slate-800 border border-amber-600/50 rounded p-2 text-white mb-2" placeholder="안내 문구 (예: 다음에 또 만나요. 평안하세요.)">
+                            <textarea id="announcements" rows="5" class="w-full bg-slate-800 border border-amber-600/50 rounded p-2 text-slate-200 text-xs" placeholder="광고 · 소식 (한 줄에 하나씩)&#10;예: 예배 후 친교실에서 교제가 있습니다.&#10;차량 운행에 협조해 주세요."></textarea>
+                            <p class="text-[11px] text-amber-200/70 mt-1">안내 + 광고가 주보·예배화면에 함께 반영됩니다.</p>
+                        </div>
+                    </div>
+                </div>
+                </div>
+            </div>
+            <div class="shrink-0 border-t-2 border-amber-600/40 p-3 space-y-2 bg-slate-950" id="leftActionButtons">
+                <button onclick="applyChanges()" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 rounded-lg transition shadow-lg text-sm">적용하기 — 미리보기 반영</button>
+                <button onclick="regenerateAllSlides()" class="w-full bg-amber-600 hover:bg-amber-500 text-white font-bold py-2 rounded-lg transition shadow-lg text-sm">전체 슬라이드 다시 생성하기 — PPT 준비</button>
+                <button onclick="printBulletin()" class="w-full bg-emerald-700 hover:bg-emerald-600 text-white font-semibold py-2 rounded-lg transition text-sm">주보 인쇄 / 미리보기</button>
+                <button type="button" id="btnPptLibrary" onclick="togglePptLibraryPanel()" class="w-full bg-violet-700 hover:bg-violet-600 text-white font-bold py-2.5 rounded-lg transition shadow-lg border-2 border-violet-400 text-sm flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-folder-open"></i>
+                    <span>다른 PPT 자료 보관</span>
+                </button>
+                <button type="button" id="btnThisWeekPpt" onclick="toggleThisWeekPanel()" class="w-full bg-sky-700 hover:bg-sky-600 text-white font-bold py-2.5 rounded-lg transition shadow-lg border-2 border-sky-400 text-sm flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-list-ol"></i>
+                    <span>이번 주 사용할 PPT</span>
+                </button>
+                <p id="pptReadyBanner" class="hidden text-center text-sm text-amber-300 bg-amber-950/50 border border-amber-700/40 rounded-lg py-2 px-3">PPT 슬라이드가 준비되었습니다. 상단 <b>PPT 다운로드</b> 또는 전체화면으로 확인하세요.</p>
+            </div>
+        </div>
+        <!-- 우측: 슬라이드 미니 뷰어 및 썸네일 목록 -->
+        <div class="w-2/3 flex flex-col bg-slate-900">
+            <!-- 미니 미리보기 뷰어 -->
+            <div class="p-6 bg-slate-950 flex justify-center items-center border-b border-slate-800 relative shadow-inner">
+                <div class="absolute top-4 left-4 flex items-center space-x-2">
+                    <span class="bg-slate-800 text-slate-300 text-xs px-2.5 py-1 rounded border border-slate-700">실시간 미니 미리보기</span>
+                </div>
+
+                <div class="relative w-full max-w-3xl aspect-video bg-black rounded-xl overflow-hidden border-4 border-slate-800 shadow-2xl" id="mini-preview-container">
+                </div>
+            </div>
+            <!-- 슬라이드 썸네일 리스트 -->
+            <div class="flex-1 p-6 overflow-y-auto bg-slate-900">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-lg font-bold text-slate-200">생성된 슬라이드 목록 (<span id="slideCount">0</span>장)</h3>
+                    <p class="text-xs text-slate-400">썸네일을 클릭하면 해당 화면을 미리볼 수 있습니다.</p>
+                </div>
+
+                <div id="slide-list" class="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- PPT library modal (always on top — not clipped by left panel) -->
+    <div id="pptLibraryPanel" class="hidden fixed inset-0 z-[100] flex items-center justify-center p-4">
+        <div class="absolute inset-0 bg-black/70" onclick="togglePptLibraryPanel()"></div>
+        <div class="relative w-full max-w-md rounded-xl border border-slate-600 bg-slate-900 shadow-2xl p-5 space-y-3 text-sm text-slate-200">
+            <div class="flex items-center justify-between gap-2">
+                <h3 class="text-lg font-bold text-white"><i class="fa-solid fa-folder-open text-amber-400 mr-2"></i>다른 PPT 자료 보관</h3>
+                <button type="button" onclick="togglePptLibraryPanel()" class="text-slate-400 hover:text-white text-xl leading-none">&times;</button>
+            </div>
+            <p class="text-xs text-slate-400 leading-relaxed">찬송가·기타 PPT를 PC의 <code class="text-amber-300">library/ppt</code> 폴더에 보관합니다. (Chrome / Edge 권장)</p>
+            <div class="flex gap-3 text-xs">
+                <label class="flex-1 flex items-center gap-1.5 cursor-pointer bg-slate-800 rounded-lg px-3 py-2 border border-slate-700">
+                    <input type="radio" name="pptLibCat" value="hymns" checked class="accent-amber-500">
+                    <span>찬송가 PPT</span>
+                </label>
+                <label class="flex-1 flex items-center gap-1.5 cursor-pointer bg-slate-800 rounded-lg px-3 py-2 border border-slate-700">
+                    <input type="radio" name="pptLibCat" value="other" class="accent-amber-500">
+                    <span>기타 PPT</span>
+                </label>
+            </div>
+            <input type="file" id="pptLibFiles" accept=".pptx,application/vnd.openxmlformats-officedocument.presentationml.presentation" multiple class="w-full text-slate-300 file:mr-2 file:py-1.5 file:px-3 file:rounded file:border-0 file:bg-slate-700 file:text-white">
+            <button type="button" onclick="savePptLibraryFiles()" class="w-full bg-amber-700 hover:bg-amber-600 text-white font-semibold py-2.5 rounded-lg">선택한 PPT 보관함에 저장</button>
+            <p id="pptLibStatus" class="text-emerald-400 text-xs hidden"></p>
+            <p class="text-[11px] text-slate-500">폴더 선택 시 <b class="text-slate-400">library/ppt/hymns</b> 또는 <b class="text-slate-400">library/ppt/other</b> 를 고르세요.</p>
+        </div>
+    </div>
+
+    <!-- This week's ordered PPT set -->
+    <div id="thisWeekPptPanel" class="hidden fixed inset-0 z-[100] flex items-center justify-center p-4">
+        <div class="absolute inset-0 bg-black/70" onclick="toggleThisWeekPanel()"></div>
+        <div class="relative w-full max-w-md rounded-xl border border-sky-600/50 bg-slate-900 shadow-2xl p-5 space-y-3 text-sm text-slate-200">
+            <div class="flex items-center justify-between gap-2">
+                <h3 class="text-lg font-bold text-white"><i class="fa-solid fa-list-ol text-sky-400 mr-2"></i>이번 주 사용할 PPT</h3>
+                <button type="button" onclick="toggleThisWeekPanel()" class="text-slate-400 hover:text-white text-xl leading-none">&times;</button>
+            </div>
+            <p class="text-xs text-slate-400 leading-relaxed">그 주에 쓸 PPT만 <b class="text-sky-300">재생 순서</b>로 모읍니다. 폴더: <code class="text-sky-300">library/ppt/this_week</code> (파일명 01_, 02_ …)</p>
+            <input type="file" id="thisWeekFiles" accept=".pptx,application/vnd.openxmlformats-officedocument.presentationml.presentation" multiple class="w-full text-slate-300 file:mr-2 file:py-1.5 file:px-3 file:rounded file:border-0 file:bg-slate-700 file:text-white">
+            <button type="button" onclick="saveThisWeekFiles()" class="w-full bg-sky-700 hover:bg-sky-600 text-white font-semibold py-2.5 rounded-lg">선택한 PPT를 순서대로 저장</button>
+            <p id="thisWeekStatus" class="text-emerald-400 text-xs hidden"></p>
+            <p class="text-[11px] text-slate-500">폴더 선택 창에서 <b class="text-slate-400">library/ppt/this_week</b> 를 고르세요. 여러 파일을 고르면 고른 순서대로 01_, 02_ … 로 저장됩니다. Streamlit에서도 같은 목록을 ↑↓로 바꿀 수 있습니다.</p>
+        </div>
+    </div>
+
+    <div id="presentation-view">
+        <div class="slide-container" id="fs-slide-container">
+            <div class="slide-bg-decoration"></div>
+
+            <div class="absolute bottom-0 left-0 h-1 bg-slate-800 w-full z-50">
+                <div id="progress-bar" class="h-full bg-blue-500 w-0 transition-all duration-300"></div>
+            </div>
+            <div class="present-nav-hint">화면 터치/클릭으로 다음 · 왼쪽은 이전</div>
+            <button type="button" class="present-exit-btn" id="presentExitBtn" aria-label="예배 화면 종료" title="종료">×</button>
+            <div id="control-hint" class="absolute top-4 left-1/2 transform -translate-x-1/2 bg-black/50 text-white/60 text-sm py-1.5 px-5 rounded-full z-50 transition-opacity duration-1000 font-sans shadow-lg">
+                화면을 터치하거나 클릭하면 다음 슬라이드 · 왼쪽은 이전 · ESC로 종료
+            </div>
+            <div id="fs-slides-wrapper" class="w-full h-full relative"></div>
+            <div id="present-hit-layer" role="presentation" aria-hidden="true" onclick="void 0"></div>
+        </div>
+    </div>
+    <script>
+        let slidesData = [];
+        let currentPreviewIndex = 0;
+        let currentPresentationIndex = 0;
+        let isPresenting = false;
+        let usedStreamlitSlides = false;
+        let pptReady = false;
+        let artifactsStale = false;
+        let usedFullscreen = false;
+        let suppressExitUntil = 0;
+
+        function isIPadLike() {
+            try {
+                const ua = navigator.userAgent || '';
+                if (/iPad/i.test(ua)) return true;
+                // iPadOS 13+ reports a desktop Mac UA
+                return navigator.platform === 'MacIntel' && (navigator.maxTouchPoints || 0) > 1;
+            } catch (e) {
+                return false;
+            }
+        }
+
+        function isTouchWorshipDevice() {
+            try {
+                if (isIPadLike() || isIPhone()) return true;
+                const ua = navigator.userAgent || '';
+                if (/Android/i.test(ua)) return true;
+                const coarse = window.matchMedia('(pointer: coarse)').matches;
+                const compact = window.matchMedia('(max-width: 1366px)').matches;
+                const touch = ('ontouchstart' in window) || ((navigator.maxTouchPoints || 0) > 0);
+                return touch && (coarse || compact);
+            } catch (e) {
+                return false;
+            }
+        }
+
+        function wantsPresentMode() {
+            try {
+                const q = new URLSearchParams(window.location.search);
+                if (q.get('present') === '1' || q.get('present') === 'true') return true;
+            } catch (e) {}
+            return isTouchWorshipDevice();
+        }
+
+        function nextPresentationSlide() {
+            if (!isPresenting) return;
+            if (currentPresentationIndex < slidesData.length - 1) {
+                currentPresentationIndex++;
+                updatePresentationView();
+            }
+        }
+
+        function prevPresentationSlide() {
+            if (!isPresenting) return;
+            if (currentPresentationIndex > 0) {
+                currentPresentationIndex--;
+                updatePresentationView();
+            }
+        }
+
+        let lastNavAt = 0;
+        function navPresentation(dir) {
+            if (!isPresenting) return;
+            const now = Date.now();
+            if (now - lastNavAt < 280) return;
+            lastNavAt = now;
+            if (dir > 0) nextPresentationSlide();
+            else prevPresentationSlide();
+        }
+
+        function bindPresentationTouch() {
+            const layer = document.getElementById('present-hit-layer');
+            if (!layer || layer.dataset.bound === '1') return;
+            layer.dataset.bound = '1';
+            let x0 = 0;
+            let y0 = 0;
+            function pt(e) {
+                const t = (e.changedTouches && e.changedTouches[0]) || (e.touches && e.touches[0]) || e;
+                return { x: t.clientX || 0, y: t.clientY || 0 };
+            }
+            function go(x) {
+                const w = window.innerWidth || 1;
+                navPresentation(x < w * 0.28 ? -1 : 1);
+            }
+            layer.addEventListener('touchstart', (e) => {
+                const p = pt(e);
+                x0 = p.x;
+                y0 = p.y;
+            }, { passive: true });
+            layer.addEventListener('touchend', (e) => {
+                if (!isPresenting) return;
+                e.preventDefault();
+                const p = pt(e);
+                const dx = p.x - x0;
+                const dy = p.y - y0;
+                if (Math.abs(dx) >= 40 && Math.abs(dx) > Math.abs(dy)) navPresentation(dx < 0 ? 1 : -1);
+                else go(p.x);
+            }, { passive: false });
+            layer.addEventListener('click', (e) => {
+                if (!isPresenting) return;
+                go(e.clientX);
+            });
+        }
+
+        function ensurePresentationVisible() {
+            if (!isPresenting) return;
+            const view = document.getElementById('presentation-view');
+            if (!view) return;
+            view.classList.add('active');
+            document.body.classList.add('is-presenting');
+            document.documentElement.classList.add('is-presenting');
+            if (isStandaloneWorship()) document.body.classList.add('standalone-worship');
+            const gate = document.getElementById('mobile-present-gate');
+            if (gate) gate.classList.add('hidden-gate');
+            syncViewportHeight();
+            // Scroll active scripture body to top so last lines stay reachable
+            const active = document.querySelector('.slide-content.active .slide-body');
+            if (active) {
+                try { active.scrollTop = 0; } catch (e) {}
+            }
+        }
+
+        async function recoverFullscreenIfNeeded() {
+            if (!isPresenting || suppressExitUntil > Date.now()) return;
+            if (isStandaloneWorship() || isFullscreenNow()) {
+                ensurePresentationVisible();
+                return;
+            }
+            ensurePresentationVisible();
+            // Soft recovery — may fail without gesture; CSS fullscreen still keeps slides visible
+            const view = document.getElementById('presentation-view');
+            if (view && isTouchWorshipDevice()) {
+                usedFullscreen = isFullscreenNow();
+            }
+        }
+
+        function lookupData() {
+            return (window.WORSHIP_PAYLOAD && window.WORSHIP_PAYLOAD.lookup) || window.WORSHIP_LOOKUP || { hymns: {}, hymnLyrics: {}, responsive: {}, scripture: {} };
+        }
+
+        function val(id) {
+            const el = document.getElementById(id);
+            return el ? (el.value || '').trim() : '';
+        }
+
+        function setVal(id, value) {
+            const el = document.getElementById(id);
+            if (el && value != null) el.value = value;
+        }
+
+        function setHint(id, text, ok) {
+            const el = document.getElementById(id);
+            if (!el) return;
+            el.textContent = text || '';
+            el.className = ok ? 'text-[11px] text-emerald-400' : 'text-[11px] text-slate-500';
+        }
+
+        function esc(text) {
+            return String(text || '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;');
+        }
+
+        function parseNum(raw) {
+            const m = String(raw || '').match(/(\d{1,3})/);
+            return m ? String(parseInt(m[1], 10)) : '';
+        }
+
+        function hymnLabelFrom(numId, titleId) {
+            const num = parseNum(val(numId));
+            const title = val(titleId);
+            if (num && title) {
+                if (title.includes(num + '장') || title.startsWith(num)) return title;
+                return `${num}장 · ${title}`;
+            }
+            return title || (num ? `${num}장` : '—');
+        }
+
+        function hymnPairLabel(aNum, aTitle, bNum, bTitle) {
+            return [hymnLabelFrom(aNum, aTitle), hymnLabelFrom(bNum, bTitle)]
+                .filter(t => t && t !== '—')
+                .join('  /  ') || '—';
+        }
+
+        function htmlToPlain(html) {
+            return String(html || '')
+                .replace(/<br\s*\/?>/gi, '\n')
+                .replace(/<\/(p|div|li)>/gi, '\n')
+                .replace(/<[^>]+>/g, '')
+                .replace(/&nbsp;/g, ' ')
+                .replace(/&amp;/g, '&')
+                .replace(/&lt;/g, '<')
+                .replace(/&gt;/g, '>')
+                .replace(/\n{3,}/g, '\n\n')
+                .trim();
+        }
+
+        function seedHymnLyricsFromSlides(slides) {
+            // Keep Streamlit-built lyric slides available after "적용하기" rebuilds from lookup.
+            const lookup = lookupData();
+            if (!lookup.hymnLyrics) lookup.hymnLyrics = {};
+            const byNum = {};
+            (slides || []).forEach(s => {
+                if (!s || s.type !== 'lyric') return;
+                const m = String(s.title || '').match(/(\d+)\s*장/);
+                if (!m) return;
+                const num = String(parseInt(m[1], 10));
+                const text = htmlToPlain(s.content);
+                if (!text || /가사를 찾지 못했|불러오지 못했/.test(text)) return;
+                if (!byNum[num]) byNum[num] = [];
+                byNum[num].push(text);
+            });
+            Object.keys(byNum).forEach(num => {
+                const body = byNum[num].join('\n\n').trim();
+                if (!body) return;
+                const prev = lookup.hymnLyrics[num];
+                const prevBody = typeof prev === 'string' ? prev : ((prev && prev.lyrics) || '');
+                if (body.replace(/\s/g, '').length >= String(prevBody).replace(/\s/g, '').length) {
+                    const titleMatch = String((slides.find(s => s.type === 'lyric' && String(s.title || '').includes(num + '장')) || {}).title || '')
+                        .replace(/\s*\(\d+\/\d+\)\s*$/, '')
+                        .trim();
+                    lookup.hymnLyrics[num] = {
+                        title: (prev && prev.title) || titleMatch || '',
+                        lyrics: body,
+                    };
+                }
+            });
+            if (window.WORSHIP_PAYLOAD) window.WORSHIP_PAYLOAD.lookup = lookup;
+            return lookup;
+        }
+
+        function expandRefrain(linesIn) {
+            // Idempotent: strip every 후렴 block, then re-attach once after each numbered verse.
+            const verseStart = /^\d+\s*[\.．、)]\s*/;
+            const refrainStart = /^(후렴|합창|코러스|Refrain|Chorus)\s*[:：]?\s*/i;
+            const amenTail = /\s*아멘\.?\s*$/i;
+            const lines = (linesIn || []).map(l => String(l).trim());
+            const groups = [];
+            let buf = [];
+            lines.forEach(ln => {
+                if (!ln) {
+                    if (buf.length) { groups.push(buf); buf = []; }
+                    return;
+                }
+                if (verseStart.test(ln) && buf.length) {
+                    groups.push(buf);
+                    buf = [ln];
+                } else {
+                    buf.push(ln);
+                }
+            });
+            if (buf.length) groups.push(buf);
+            if (groups.length < 2) return linesIn || [];
+
+            let refrain = null;
+            for (const g of groups) {
+                const ri = g.findIndex(ln => refrainStart.test(ln));
+                if (ri >= 0) {
+                    refrain = g.slice(ri).filter(Boolean);
+                    break;
+                }
+            }
+            if (!refrain || !refrain.length) return linesIn || [];
+
+            const lastSrc = [...lines].reverse().find(Boolean) || '';
+            const hasAmen = amenTail.test(lastSrc);
+            refrain = refrain.map(ln => ln.replace(amenTail, '').trim()).filter(Boolean);
+            if (!refrain.length) return linesIn || [];
+
+            const cleaned = [];
+            groups.forEach(g => {
+                const ri = g.findIndex(ln => refrainStart.test(ln));
+                const head = (ri >= 0 ? g.slice(0, ri) : g).filter(Boolean);
+                if (head.length) cleaned.push(head);
+            });
+            const verseCount = cleaned.filter(g => verseStart.test(g[0])).length;
+            if (verseCount < 2) return linesIn || [];
+
+            const out = [];
+            cleaned.forEach(g => {
+                if (out.length) out.push('');
+                out.push(...g);
+                if (!verseStart.test(g[0])) return;
+                out.push('');
+                out.push(...refrain);
+            });
+            if (hasAmen && out.length && !amenTail.test(out[out.length - 1])) {
+                out[out.length - 1] = (out[out.length - 1] + ' 아멘').trim();
+            }
+            return out;
+        }
+
+        function hymnLyricsPages(numRaw) {
+            const num = parseNum(numRaw);
+            if (!num) return [];
+            const entry = (lookupData().hymnLyrics && lookupData().hymnLyrics[num]) || null;
+            let text = '';
+            if (typeof entry === 'string') text = entry;
+            else if (entry && typeof entry === 'object') text = entry.lyrics || entry.body || '';
+            let lines = String(text || '').split(/\n/).map(l => l.trim());
+            // keep internal blanks for grouping, drop leading/trailing
+            while (lines.length && !lines[0]) lines.shift();
+            while (lines.length && !lines[lines.length - 1]) lines.pop();
+            lines = expandRefrain(lines).map(l => String(l).trim());
+            lines = lines.filter((l, i, arr) => l || (i > 0 && arr[i + 1]));
+            if (!lines.filter(Boolean).length) return [];
+            // Prefer verse groups; otherwise chunk by 4 lines
+            const pages = [];
+            let buf = [];
+            const verseStart = /^\d+\s*[\.．、)]\s*/;
+            const flush = () => {
+                if (!buf.length) return;
+                if (buf.length <= 4) pages.push(buf.join('\n'));
+                else {
+                    for (let i = 0; i < buf.length; i += 4) pages.push(buf.slice(i, i + 4).join('\n'));
+                }
+                buf = [];
+            };
+            lines.forEach(ln => {
+                if (!ln) {
+                    flush();
+                    return;
+                }
+                if (verseStart.test(ln) && buf.length) flush();
+                buf.push(ln);
+            });
+            flush();
+            // Keep trailing Amen with previous page
+            if (pages.length >= 2 && /^(아멘\.?|Amen\.?)$/i.test(pages[pages.length - 1].trim())) {
+                pages[pages.length - 2] = pages[pages.length - 2] + '\n' + pages.pop().trim();
+            }
+            return pages;
+        }
+
+        function appendHymnLyrics(slides, header, label, numRaw) {
+            const pages = hymnLyricsPages(numRaw);
+            if (!pages.length) {
+                const num = parseNum(numRaw);
+                if (num) {
+                    // Keep a visible marker so missing lyrics are obvious in the list
+                    slides.push({
+                        type: 'lyric',
+                        header,
+                        title: label || `${num}장`,
+                        content: esc(`(찬송가 ${num}장 가사를 찾지 못했습니다. Streamlit에서 HTML을 다시 생성해 주세요.)`),
+                    });
+                }
+                return;
+            }
+            pages.forEach((page, idx) => {
+                const title = pages.length > 1 ? `${label} (${idx + 1}/${pages.length})` : label;
+                slides.push({
+                    type: 'lyric',
+                    header,
+                    title,
+                    content: page.split('\n').map(esc).join('<br>'),
+                });
+            });
+        }
+
+        function lookupHymn(prefix) {
+            const num = parseNum(val(prefix + 'Num'));
+            const hintId = prefix + 'Hint';
+            if (!num) {
+                setHint(hintId, '장번호를 입력하세요.', false);
+                return false;
+            }
+            const title = (lookupData().hymns && lookupData().hymns[num]) || '';
+            if (title) {
+                setVal(prefix + 'Num', num);
+                setVal(prefix + 'Title', `${num}장 · ${title}`);
+                setHint(hintId, `자동: ${num}장 · ${title}`, true);
+                return true;
+            }
+            setHint(hintId, `${num}장을 목록에서 찾지 못했습니다. 제목을 직접 입력하세요.`, false);
+            return false;
+        }
+
+        function lookupResponsive() {
+            const num = parseNum(val('responsiveNum') || val('responsiveTitle'));
+            if (!num) {
+                setHint('responsiveHint', '교독문 번호를 입력하세요.', false);
+                return false;
+            }
+            const entry = lookupData().responsive[num];
+            if (entry && entry.body) {
+                setVal('responsiveNum', num);
+                setVal('responsiveTitle', entry.label || `교독문 ${num}번 · ${entry.title || ''}`);
+                setVal('responsiveBody', entry.body);
+                setHint('responsiveHint', `자동 불러옴: 교독문 ${num}번`, true);
+                return true;
+            }
+            setHint('responsiveHint', `${num}번 교독문을 찾지 못했습니다.`, false);
+            return false;
+        }
+
+        // Protestant book order (Bolls KRV book id 1–66)
+        const BIBLE_BOOK_NUM = {
+            "Genesis":1,"Exodus":2,"Leviticus":3,"Numbers":4,"Deuteronomy":5,
+            "Joshua":6,"Judges":7,"Ruth":8,"1 Samuel":9,"2 Samuel":10,
+            "1 Kings":11,"2 Kings":12,"1 Chronicles":13,"2 Chronicles":14,
+            "Ezra":15,"Nehemiah":16,"Esther":17,"Job":18,"Psalms":19,"Proverbs":20,
+            "Ecclesiastes":21,"Song of Solomon":22,"Isaiah":23,"Jeremiah":24,
+            "Lamentations":25,"Ezekiel":26,"Daniel":27,"Hosea":28,"Joel":29,
+            "Amos":30,"Obadiah":31,"Jonah":32,"Micah":33,"Nahum":34,"Habakkuk":35,
+            "Zephaniah":36,"Haggai":37,"Zechariah":38,"Malachi":39,
+            "Matthew":40,"Mark":41,"Luke":42,"John":43,"Acts":44,"Romans":45,
+            "1 Corinthians":46,"2 Corinthians":47,"Galatians":48,"Ephesians":49,
+            "Philippians":50,"Colossians":51,"1 Thessalonians":52,"2 Thessalonians":53,
+            "1 Timothy":54,"2 Timothy":55,"Titus":56,"Philemon":57,"Hebrews":58,
+            "James":59,"1 Peter":60,"2 Peter":61,"1 John":62,"2 John":63,"3 John":64,
+            "Jude":65,"Revelation":66
+        };
+        const BIBLE_ALIASES = {
+            "창세기":"Genesis","창":"Genesis","출애굽기":"Exodus","출":"Exodus",
+            "레위기":"Leviticus","레":"Leviticus","민수기":"Numbers","민":"Numbers",
+            "신명기":"Deuteronomy","신":"Deuteronomy","여호수아":"Joshua","수":"Joshua",
+            "사사기":"Judges","삿":"Judges","룻기":"Ruth","룻":"Ruth",
+            "사무엘상":"1 Samuel","삼상":"1 Samuel","사무엘하":"2 Samuel","삼하":"2 Samuel",
+            "열왕기상":"1 Kings","왕상":"1 Kings","열왕기하":"2 Kings","왕하":"2 Kings",
+            "역대상":"1 Chronicles","대상":"1 Chronicles","역대하":"2 Chronicles","대하":"2 Chronicles",
+            "에스라":"Ezra","스":"Ezra","느헤미야":"Nehemiah","느":"Nehemiah",
+            "에스더":"Esther","에":"Esther","욥기":"Job","욥":"Job",
+            "시편":"Psalms","시":"Psalms","잠언":"Proverbs","잠":"Proverbs",
+            "전도서":"Ecclesiastes","전":"Ecclesiastes","아가":"Song of Solomon","아":"Song of Solomon",
+            "이사야":"Isaiah","사":"Isaiah","예레미야":"Jeremiah","렘":"Jeremiah",
+            "예레미야애가":"Lamentations","애":"Lamentations","에스겔":"Ezekiel","겔":"Ezekiel",
+            "다니엘":"Daniel","단":"Daniel","호세아":"Hosea","호":"Hosea",
+            "요엘":"Joel","욜":"Joel","아모스":"Amos","암":"Amos",
+            "오바댜":"Obadiah","옵":"Obadiah","요나":"Jonah","욘":"Jonah",
+            "미가":"Micah","미":"Micah","나훔":"Nahum","나":"Nahum",
+            "하박국":"Habakkuk","합":"Habakkuk","스바냐":"Zephaniah","습":"Zephaniah",
+            "학개":"Haggai","학":"Haggai","스가랴":"Zechariah","슥":"Zechariah",
+            "말라기":"Malachi","말":"Malachi",
+            "마태복음":"Matthew","마태":"Matthew","마":"Matthew",
+            "마가복음":"Mark","마가":"Mark","막":"Mark",
+            "누가복음":"Luke","누가":"Luke","눅":"Luke",
+            "요한복음":"John","요한":"John","요":"John",
+            "사도행전":"Acts","행":"Acts","로마서":"Romans","롬":"Romans",
+            "고린도전서":"1 Corinthians","고전":"1 Corinthians",
+            "고린도후서":"2 Corinthians","고후":"2 Corinthians",
+            "갈라디아서":"Galatians","갈":"Galatians","에베소서":"Ephesians","엡":"Ephesians",
+            "빌립보서":"Philippians","빌":"Philippians","골로새서":"Colossians","골":"Colossians",
+            "데살로니가전서":"1 Thessalonians","살전":"1 Thessalonians",
+            "데살로니가후서":"2 Thessalonians","살후":"2 Thessalonians",
+            "디모데전서":"1 Timothy","딤전":"1 Timothy","디모데후서":"2 Timothy","딤후":"2 Timothy",
+            "디도서":"Titus","딛":"Titus","빌레몬서":"Philemon","몬":"Philemon",
+            "히브리서":"Hebrews","히":"Hebrews","야고보서":"James","약":"James",
+            "베드로전서":"1 Peter","벧전":"1 Peter","베드로후서":"2 Peter","벧후":"2 Peter",
+            "요한일서":"1 John","요한1서":"1 John","요일":"1 John",
+            "요한이서":"2 John","요한2서":"2 John","요이":"2 John",
+            "요한삼서":"3 John","요한3서":"3 John","요삼":"3 John",
+            "유다서":"Jude","유":"Jude","요한계시록":"Revelation","계시록":"Revelation","계":"Revelation"
+        };
+        const BIBLE_ALIAS_KEYS = Object.keys(BIBLE_ALIASES).sort((a,b)=>b.length-a.length);
+        const BIBLE_KO_CANON = {};
+        Object.entries(BIBLE_ALIASES).forEach(([ko,en])=>{
+            if (!BIBLE_KO_CANON[en] || ko.length > BIBLE_KO_CANON[en].length) BIBLE_KO_CANON[en] = ko;
+        });
+        // Prefer full names
+        Object.assign(BIBLE_KO_CANON, {
+            Genesis:"창세기", Exodus:"출애굽기", Leviticus:"레위기", Numbers:"민수기",
+            Deuteronomy:"신명기", Joshua:"여호수아", Judges:"사사기", Ruth:"룻기",
+            "1 Samuel":"사무엘상", "2 Samuel":"사무엘하", "1 Kings":"열왕기상", "2 Kings":"열왕기하",
+            "1 Chronicles":"역대상", "2 Chronicles":"역대하", Ezra:"에스라", Nehemiah:"느헤미야",
+            Esther:"에스더", Job:"욥기", Psalms:"시편", Proverbs:"잠언", Ecclesiastes:"전도서",
+            "Song of Solomon":"아가", Isaiah:"이사야", Jeremiah:"예레미야", Lamentations:"예레미야애가",
+            Ezekiel:"에스겔", Daniel:"다니엘", Hosea:"호세아", Joel:"요엘", Amos:"아모스",
+            Obadiah:"오바댜", Jonah:"요나", Micah:"미가", Nahum:"나훔", Habakkuk:"하박국",
+            Zephaniah:"스바냐", Haggai:"학개", Zechariah:"스가랴", Malachi:"말라기",
+            Matthew:"마태복음", Mark:"마가복음", Luke:"누가복음", John:"요한복음", Acts:"사도행전",
+            Romans:"로마서", "1 Corinthians":"고린도전서", "2 Corinthians":"고린도후서",
+            Galatians:"갈라디아서", Ephesians:"에베소서", Philippians:"빌립보서", Colossians:"골로새서",
+            "1 Thessalonians":"데살로니가전서", "2 Thessalonians":"데살로니가후서",
+            "1 Timothy":"디모데전서", "2 Timothy":"디모데후서", Titus:"디도서", Philemon:"빌레몬서",
+            Hebrews:"히브리서", James:"야고보서", "1 Peter":"베드로전서", "2 Peter":"베드로후서",
+            "1 John":"요한일서", "2 John":"요한이서", "3 John":"요한삼서", Jude:"유다서",
+            Revelation:"요한계시록"
+        });
+
+        function normalizeBibleRefText(raw) {
+            return String(raw || '')
+                .replace(/\s*\((?:개역개정|새번역|KRV|NIV)\)\s*$/i, '')
+                .replace(/[：]/g, ':')
+                .replace(/[~～]/g, '-')
+                .replace(/\s+/g, ' ')
+                .trim();
+        }
+
+        function parseBibleRef(raw) {
+            let text = normalizeBibleRefText(raw);
+            if (!text) return null;
+            let bookEn = '', bookKo = '', rest = text;
+            for (const key of BIBLE_ALIAS_KEYS) {
+                if (text.startsWith(key)) {
+                    bookKo = key;
+                    bookEn = BIBLE_ALIASES[key];
+                    rest = text.slice(key.length).trim();
+                    break;
+                }
+            }
+            if (!bookEn) {
+                const mEn = text.match(/^((?:1|2|3)?\s*[A-Za-z]+(?:\s+of\s+[A-Za-z]+)?)\s+(.+)$/);
+                if (!mEn) return null;
+                bookEn = mEn[1].replace(/\s+/g, ' ').trim();
+                bookKo = BIBLE_KO_CANON[bookEn] || bookEn;
+                rest = mEn[2].trim();
+            }
+            const m = rest.match(/^(?:(\d+)\s*편(?:\s*(\d+)(?:\s*[-~]\s*(\d+))?\s*절?)?|(\d+)\s*장(?:\s*(\d+)(?:\s*[-~]\s*(\d+))?\s*절?)?|(\d+)\s*:\s*(\d+)(?:\s*[-~]\s*(\d+))?|(\d+))\s*$/);
+            if (!m) return null;
+            const chapter = parseInt(m[1] || m[4] || m[7] || m[10], 10);
+            const vsRaw = m[2] || m[5] || m[8];
+            const veRaw = m[3] || m[6] || m[9];
+            let vs = vsRaw ? parseInt(vsRaw, 10) : null;
+            let ve = veRaw ? parseInt(veRaw, 10) : vs;
+            if (vs && ve && ve < vs) { const t = vs; vs = ve; ve = t; }
+            const canonKo = BIBLE_KO_CANON[bookEn] || bookKo;
+            let display;
+            if (vs && ve && vs !== ve) display = `${canonKo} ${chapter}:${vs}-${ve}`;
+            else if (vs) display = `${canonKo} ${chapter}:${vs}`;
+            else display = `${canonKo} ${chapter}장`;
+            return {
+                bookEn, bookKo: canonKo, chapter, verseStart: vs, verseEnd: ve,
+                display, bookId: BIBLE_BOOK_NUM[bookEn] || 0
+            };
+        }
+
+        function scriptureBodyFromLocal(parsed) {
+            const table = lookupData().scripture || {};
+            const candidates = [parsed.display];
+            if (parsed.verseStart && parsed.verseEnd && parsed.verseStart !== parsed.verseEnd) {
+                candidates.push(`${parsed.bookKo} ${parsed.chapter}:${parsed.verseStart}-${parsed.verseEnd}`);
+            } else if (parsed.verseStart) {
+                candidates.push(`${parsed.bookKo} ${parsed.chapter}:${parsed.verseStart}`);
+            }
+            for (const key of candidates) {
+                if (table[key]) return table[key];
+            }
+            const bareWanted = parsed.display;
+            const hit = Object.keys(table).find(k => {
+                const kb = normalizeBibleRefText(k);
+                return kb === bareWanted || kb === parsed.display;
+            });
+            if (hit) return table[hit];
+            return '';
+        }
+
+        function sliceChapterVerses(rows, parsed) {
+            const byNum = {};
+            (rows || []).forEach(row => {
+                const n = parseInt(row.verse, 10);
+                const text = String(row.text || '').trim();
+                if (n && text) byNum[n] = `${n} ${text}`;
+            });
+            const start = parsed.verseStart || 1;
+            const end = parsed.verseEnd || (parsed.verseStart ? parsed.verseStart : Math.max(0, ...Object.keys(byNum).map(Number)));
+            const lines = [];
+            for (let n = start; n <= end; n++) {
+                if (byNum[n]) lines.push(byNum[n]);
+            }
+            return lines.join('\n');
+        }
+
+        async function fetchScriptureOnline(parsed) {
+            if (!parsed.bookId || !parsed.chapter) return '';
+            const url = `https://bolls.life/get-text/KRV/${parsed.bookId}/${parsed.chapter}/`;
+            const ctrl = typeof AbortController === 'function' ? new AbortController() : null;
+            const timer = ctrl ? setTimeout(() => { try { ctrl.abort(); } catch (e) {} }, 4000) : null;
+            try {
+                const res = await fetch(url, { method: 'GET', signal: ctrl ? ctrl.signal : undefined });
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const rows = await res.json();
+                return sliceChapterVerses(rows, parsed);
+            } finally {
+                if (timer) clearTimeout(timer);
+            }
+        }
+
+        async function lookupScripture() {
+            const ref = val('bibleRef');
+            if (!ref) {
+                setHint('bibleHint', '성경 구절을 입력하세요. 예: 히브리서 4:1-11', false);
+                return false;
+            }
+            const parsed = parseBibleRef(ref);
+            if (!parsed) {
+                setHint('bibleHint', '구절 형식을 확인해 주세요. 예: 요한복음 3:16-17 또는 요 3:16', false);
+                return false;
+            }
+            setVal('bibleRef', parsed.display);
+            let body = scriptureBodyFromLocal(parsed);
+            if (body) {
+                setVal('bibleText', body);
+                setHint('bibleHint', `자동 불러옴: ${parsed.display}`, true);
+                return true;
+            }
+            setHint('bibleHint', `온라인에서 ${parsed.display} 본문을 불러오는 중…`, false);
+            try {
+                body = await fetchScriptureOnline(parsed);
+                if (body) {
+                    setVal('bibleText', body);
+                    // cache in memory for later apply
+                    const table = lookupData().scripture || {};
+                    table[parsed.display] = body;
+                    if (window.WORSHIP_LOOKUP) window.WORSHIP_LOOKUP.scripture = table;
+                    if (window.WORSHIP_PAYLOAD) {
+                        window.WORSHIP_PAYLOAD.lookup = window.WORSHIP_PAYLOAD.lookup || {};
+                        window.WORSHIP_PAYLOAD.lookup.scripture = table;
+                    }
+                    setHint('bibleHint', `자동 불러옴: ${parsed.display}`, true);
+                    return true;
+                }
+            } catch (err) {
+                setHint('bibleHint', `온라인 조회 실패. 본문을 직접 붙여 넣거나 Streamlit에서 불러온 뒤 HTML을 다시 열어 주세요.`, false);
+                return false;
+            }
+            setHint('bibleHint', '본문을 찾지 못했습니다. 구절을 확인하거나 직접 입력해 주세요.', false);
+            return false;
+        }
+
+        function firstVerseOnly(body) {
+            const first = String(body || '').split(/\n+/).map(s => s.trim()).filter(Boolean)[0] || '';
+            return first.replace(/^\d+\s+/, '').trim();
+        }
+
+        function singleVerseDisplay(parsed) {
+            if (!parsed) return '';
+            if (parsed.bookKo && parsed.chapter && parsed.verseStart) {
+                return `${parsed.bookKo} ${parsed.chapter}:${parsed.verseStart}`;
+            }
+            return parsed.display || '';
+        }
+
+        async function lookupMemoryVerse() {
+            const ref = val('memoryVerseRef');
+            if (!ref) {
+                setHint('memoryVerseHint', '암송 구절을 입력하세요. 예: 요한복음 3:16', false);
+                return false;
+            }
+            const parsed = parseBibleRef(ref);
+            if (!parsed) {
+                setHint('memoryVerseHint', '구절 형식을 확인해 주세요. 예: 요 3:16', false);
+                return false;
+            }
+            const labeled = singleVerseDisplay(parsed) || parsed.display;
+            if (labeled) setVal('memoryVerseRef', labeled);
+            let body = scriptureBodyFromLocal(parsed);
+            if (body) {
+                setVal('memoryVerseText', firstVerseOnly(body));
+                setHint('memoryVerseHint', `암송 한 절: ${labeled}`, true);
+                return true;
+            }
+            setHint('memoryVerseHint', `온라인에서 ${labeled} 한 절을 불러오는 중…`, false);
+            try {
+                body = await fetchScriptureOnline(parsed);
+                if (body) {
+                    setVal('memoryVerseText', firstVerseOnly(body));
+                    setHint('memoryVerseHint', `암송 한 절: ${labeled}`, true);
+                    return true;
+                }
+            } catch (err) {
+                setHint('memoryVerseHint', '조회 실패. 본문을 직접 입력해 주세요.', false);
+                return false;
+            }
+            setHint('memoryVerseHint', '한 절을 찾지 못했습니다. 구절을 확인하거나 직접 입력해 주세요.', false);
+            return false;
+        }
+
+        async function autoFillAll() {
+            lookupHymn('prepHymn1');
+            lookupHymn('prepHymn2');
+            lookupHymn('hymn1');
+            lookupHymn('hymn2');
+            lookupHymn('hymn4');
+            lookupResponsive();
+            await lookupScripture();
+            await lookupMemoryVerse();
+        }
+
+        function linesHtml(text) {
+            return String(text || '')
+                .split(/\n+/)
+                .map(ln => ln.trim())
+                .filter(Boolean)
+                .map(esc)
+                .join('<br>');
+        }
+
+        function responsiveHtml(text) {
+            return String(text || '')
+                .split(/\n+/)
+                .map(ln => ln.trim())
+                .filter(Boolean)
+                .map(ln => {
+                    if (ln.startsWith('인도자')) {
+                        const body = ln.replace(/^인도자\s*[:：]\s*/, '');
+                        return `<div class="mb-5 leader-text"><span style="font-weight:700">인도자:</span> ${esc(body)}</div>`;
+                    }
+                    if (ln.startsWith('회중')) {
+                        const body = ln.replace(/^회중\s*[:：]\s*/, '');
+                        return `<div class="mb-5 congregation-text"><span style="font-weight:700">회중:</span> ${esc(body)}</div>`;
+                    }
+                    return `<div class="mb-5">${esc(ln)}</div>`;
+                })
+                .join('');
+        }
+
+        function applyPayloadForm() {
+            const payload = window.WORSHIP_PAYLOAD;
+            if (!payload || !payload.form) return;
+            const f = payload.form;
+            const map = {
+                churchName: 'churchName',
+                worshipDate: 'worshipDate',
+                prepHymn1Num: 'prepHymn1Num',
+                prepHymn1Title: 'prepHymn1Title',
+                prepHymn2Num: 'prepHymn2Num',
+                prepHymn2Title: 'prepHymn2Title',
+                hymn1Num: 'hymn1Num',
+                hymn1Title: 'hymn1Title',
+                                responsiveNum: 'responsiveNum',
+                responsiveTitle: 'responsiveTitle',
+                hymn2Num: 'hymn2Num',
+                hymn2Title: 'hymn2Title',
+                                bibleRef: 'bibleRef',
+                bibleText: 'bibleText',
+                memoryVerseRef: 'memoryVerseRef',
+                memoryVerseText: 'memoryVerseText',
+                sermonTitle: 'sermonTitle',
+                hymn4Num: 'hymn4Num',
+                hymn4Title: 'hymn4Title',
+                                worshipLeader: 'worshipLeader',
+                serviceTitle: 'serviceTitle',
+                apostlesCreed: 'apostlesCreed',
+                responsiveBody: 'responsiveBody',
+                prayerText: 'prayerText',
+                prayerLeader: 'prayerLeader',
+                benediction: 'benediction',
+                closingNote: 'closingNote',
+                announcements: 'announcements',
+            };
+            Object.keys(map).forEach(k => {
+                if (f[k] != null) setVal(map[k], f[k]);
+            });
+            refreshArtifactButtons();
+            if (payload.source === 'streamlit') {
+                const badge = document.querySelector('header p.text-xs');
+                if (badge) badge.textContent = 'Streamlit 연동 · 번호 자동 불러오기 · 적용 → PPT/주보';
+            }
+        }
+
+        function refreshArtifactButtons() {
+            const arts = (window.WORSHIP_PAYLOAD && window.WORSHIP_PAYLOAD.artifacts) || {};
+            const pdfBtn = document.getElementById('btnDownloadPdf');
+            const pptBtn = document.getElementById('btnDownloadPptx');
+            if (pdfBtn) pdfBtn.classList.toggle('hidden', !arts.pdf || artifactsStale);
+            if (pptBtn) {
+                pptBtn.classList.remove('hidden');
+                const ready = !!(arts.pptx && arts.pptx.base64) && !artifactsStale;
+                pptBtn.classList.toggle('opacity-50', !ready);
+                pptBtn.title = artifactsStale
+                    ? '화면 내용이 바뀌었습니다. Streamlit에서 「함께 만들기」로 PPT·HTML을 다시 생성하세요.'
+                    : (ready
+                        ? '이 HTML과 같은 예배 내용의 PPT 다운로드'
+                        : 'Streamlit에서 「주보 PDF + PPT + HTML 함께 만들기」 후 다시 열어 주세요.');
+            }
+        }
+
+        function markArtifactsStale(reason) {
+            artifactsStale = true;
+            pptReady = false;
+            const banner = document.getElementById('pptReadyBanner');
+            if (banner) {
+                banner.classList.remove('hidden');
+                banner.innerHTML = reason
+                    || '화면만 수정되었습니다. PPT/주보는 Streamlit에서 <b>함께 만들기</b>로 다시 생성해야 같은 내용이 됩니다.';
+            }
+            refreshArtifactButtons();
+        }
+
+        function downloadArtifact(kind) {
+            if (artifactsStale) {
+                alert('지금 화면 내용과 저장된 PPT/주보가 다릅니다.\nStreamlit에서 「주보 PDF + PPT + HTML 함께 만들기」를 누른 뒤 HTML을 다시 열어 주세요.');
+                return;
+            }
+            const arts = (window.WORSHIP_PAYLOAD && window.WORSHIP_PAYLOAD.artifacts) || {};
+            const file = arts[kind];
+            if (!file || !file.base64) {
+                alert(kind === 'pdf'
+                    ? '주보 PDF가 아직 없습니다. Streamlit에서 생성한 뒤 HTML을 다시 열어 주세요.'
+                    : 'PPT가 아직 없습니다. Streamlit에서 「주보 PDF + PPT + HTML 함께 만들기」 후 HTML을 다시 열어 주세요.');
+                return;
+            }
+            const a = document.createElement('a');
+            a.href = `data:${file.mime};base64,${file.base64}`;
+            a.download = file.name || (kind === 'pdf' ? 'bulletin.pdf' : 'worship.pptx');
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        }
+
+        function showStatus(msg) {
+            const el = document.getElementById('applyStatus');
+            if (!el) return;
+            el.textContent = msg;
+            el.classList.remove('hidden');
+        }
+
+        function scrollToClosingSection() {
+            const el = document.getElementById('closing-section');
+            if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+
+        async function applyChanges() {
+            await autoFillAll();
+            generateSlidesData();
+            renderThumbnailList();
+            showMiniPreview(0);
+            showStatus('적용 완료 — 화면 미리보기만 갱신되었습니다. PPT는 Streamlit에서 다시 만들어 주세요.');
+            markArtifactsStale();
+        }
+
+        async function regenerateAllSlides() {
+            await autoFillAll();
+            generateSlidesData();
+            renderThumbnailList();
+            showMiniPreview(0);
+            showStatus(`전체 ${slidesData.length}장 HTML 슬라이드 생성 완료 — PPT는 Streamlit에서 같은 내용으로 다시 생성하세요.`);
+            markArtifactsStale('HTML 화면만 다시 만들었습니다. PPT 다운로드는 Streamlit 「함께 만들기」 후에 맞춰집니다.');
+            refreshArtifactButtons();
+        }
+
+        function togglePptLibraryPanel() {
+            const panel = document.getElementById('pptLibraryPanel');
+            if (!panel) return;
+            panel.classList.toggle('hidden');
+        }
+
+        function pptLibSelectedCategory() {
+            const el = document.querySelector('input[name="pptLibCat"]:checked');
+            return (el && el.value) || 'hymns';
+        }
+
+        function setPptLibStatus(msg, ok) {
+            const el = document.getElementById('pptLibStatus');
+            if (!el) return;
+            el.textContent = msg || '';
+            el.classList.toggle('hidden', !msg);
+            el.classList.toggle('text-emerald-400', !!ok);
+            el.classList.toggle('text-rose-400', !ok && !!msg);
+        }
+
+        async function savePptLibraryFiles() {
+            const input = document.getElementById('pptLibFiles');
+            const files = input && input.files ? Array.from(input.files) : [];
+            if (!files.length) {
+                setPptLibStatus('먼저 PPT(.pptx) 파일을 선택해 주세요.', false);
+                return;
+            }
+            const cat = pptLibSelectedCategory();
+            const folderHint = cat === 'other' ? 'library/ppt/other' : 'library/ppt/hymns';
+
+            if (typeof window.showDirectoryPicker !== 'function') {
+                // Fallback: trigger downloads so the user can move files into the library folder
+                for (const file of files) {
+                    const url = URL.createObjectURL(file);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = file.name;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+                }
+                setPptLibStatus(
+                    `${files.length}개 다운로드됨 → 프로젝트의 ${folderHint} 폴더로 옮겨 주세요.`,
+                    true
+                );
+                return;
+            }
+
+            try {
+                setPptLibStatus(`${folderHint} 폴더를 선택해 주세요…`, true);
+                const dir = await window.showDirectoryPicker({ mode: 'readwrite' });
+                const saved = [];
+                for (const file of files) {
+                    let name = file.name || 'deck.pptx';
+                    if (!/\.pptx$/i.test(name)) name += '.pptx';
+                    const handle = await dir.getFileHandle(name, { create: true });
+                    const writable = await handle.createWritable();
+                    await writable.write(await file.arrayBuffer());
+                    await writable.close();
+                    saved.push(name);
+                }
+                setPptLibStatus(`${saved.length}개 보관 완료: ${saved.join(', ')}`, true);
+                if (input) input.value = '';
+            } catch (err) {
+                if (err && err.name === 'AbortError') {
+                    setPptLibStatus('폴더 선택이 취소되었습니다.', false);
+                } else {
+                    setPptLibStatus('보관에 실패했습니다. Streamlit 앱의 「다른 PPT 자료 보관」을 이용해 주세요.', false);
+                }
+            }
+        }
+
+        function toggleThisWeekPanel() {
+            const panel = document.getElementById('thisWeekPptPanel');
+            if (!panel) return;
+            panel.classList.toggle('hidden');
+        }
+
+        function setThisWeekStatus(msg, ok) {
+            const el = document.getElementById('thisWeekStatus');
+            if (!el) return;
+            el.textContent = msg || '';
+            el.classList.toggle('hidden', !msg);
+            el.classList.toggle('text-emerald-400', !!ok);
+            el.classList.toggle('text-rose-400', !ok && !!msg);
+        }
+
+        async function saveThisWeekFiles() {
+            const input = document.getElementById('thisWeekFiles');
+            const files = input && input.files ? Array.from(input.files) : [];
+            if (!files.length) {
+                setThisWeekStatus('먼저 PPT(.pptx) 파일을 선택해 주세요.', false);
+                return;
+            }
+            const folderHint = 'library/ppt/this_week';
+            const numbered = files.map((file, i) => {
+                let name = file.name || 'deck.pptx';
+                if (!/\.pptx$/i.test(name)) name += '.pptx';
+                name = name.replace(/^\d{2}_/, '');
+                return { file, name: `${String(i + 1).padStart(2, '0')}_${name}` };
+            });
+
+            if (typeof window.showDirectoryPicker !== 'function') {
+                for (const item of numbered) {
+                    const url = URL.createObjectURL(item.file);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = item.name;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+                }
+                setThisWeekStatus(
+                    `${numbered.length}개 다운로드됨 → ${folderHint} 폴더로 옮겨 주세요.`,
+                    true
+                );
+                return;
+            }
+
+            try {
+                setThisWeekStatus(`${folderHint} 폴더를 선택해 주세요…`, true);
+                const dir = await window.showDirectoryPicker({ mode: 'readwrite' });
+                const saved = [];
+                for (const item of numbered) {
+                    const handle = await dir.getFileHandle(item.name, { create: true });
+                    const writable = await handle.createWritable();
+                    await writable.write(await item.file.arrayBuffer());
+                    await writable.close();
+                    saved.push(item.name);
+                }
+                // Write simple order.json for Streamlit sync
+                try {
+                    const orderHandle = await dir.getFileHandle('order.json', { create: true });
+                    const w = await orderHandle.createWritable();
+                    await w.write(JSON.stringify(saved, null, 2));
+                    await w.close();
+                } catch (_) { /* optional */ }
+                setThisWeekStatus(`이번 주 순서 저장: ${saved.join(' → ')}`, true);
+                if (input) input.value = '';
+            } catch (err) {
+                if (err && err.name === 'AbortError') {
+                    setThisWeekStatus('폴더 선택이 취소되었습니다.', false);
+                } else {
+                    setThisWeekStatus('저장 실패. Streamlit 「이번 주 사용할 PPT」에서 추가해 주세요.', false);
+                }
+            }
+        }
+
+        function printBulletin() {
+            void autoFillAll();
+            const form = (window.WORSHIP_PAYLOAD && window.WORSHIP_PAYLOAD.form) || {};
+            const churchEn = val('churchName') || form.churchNameEn || '';
+            const churchKo = form.churchNameKo || '플러톤 빌라 교회';
+            const title = val('serviceTitle') || '주일 예배';
+            const date = val('worshipDate');
+            const leaderRaw = val('worshipLeader');
+            const leader = leaderRaw ? (leaderRaw.startsWith('인도자') ? leaderRaw : `인도자 ${leaderRaw}`) : '';
+            const coverImage = (window.WORSHIP_PAYLOAD && window.WORSHIP_PAYLOAD.coverImage) || '';
+            const respTitle = val('responsiveTitle') || '교독문';
+            const bibleRef = String(val('bibleRef') || '').replace(/\s*[\(\[]\s*(개역개정|새번역|개역한글|공동번역|NIV|ESV|KJV|GAE|RNKSV)\s*[\)\]]\s*$/i, '').trim();
+            const bibleText = val('bibleText');
+            const memoryVerseRef = String(val('memoryVerseRef') || '').replace(/\s*[\(\[]\s*(개역개정|새번역|개역한글|공동번역|NIV|ESV|KJV|GAE|RNKSV)\s*[\)\]]\s*$/i, '').trim();
+            const memoryVerseText = val('memoryVerseText');
+            const sermon = val('sermonTitle');
+            const prayerLeader = val('prayerLeader');
+            const benediction = val('benediction') || '담임목사';
+            const note = val('closingNote');
+            const ads = val('announcements').split(/\n+/).map(s => s.trim()).filter(Boolean);
+            const hymnRows = [
+                ['1. 예배 준비의 시간', hymnPairLabel('prepHymn1Num', 'prepHymn1Title', 'prepHymn2Num', 'prepHymn2Title')],
+                ['2. 찬양과 기도', hymnLabelFrom('hymn1Num', 'hymn1Title')],
+                ['5. 찬송가', hymnLabelFrom('hymn2Num', 'hymn2Title')],
+                ['9. 감사와 봉헌', hymnLabelFrom('hymn4Num', 'hymn4Title')],
+            ].filter(([, t]) => t && t !== '—');
+            const hymnHtml = hymnRows.length
+                ? hymnRows.map(([n, t]) => `<div class="body"><b>${esc(n)}</b> · ${esc(t)}</div>`).join('')
+                : '<div class="body muted">(찬송 미입력)</div>';
+            const order = [
+                ['1', '예배 준비의 시간', hymnPairLabel('prepHymn1Num', 'prepHymn1Title', 'prepHymn2Num', 'prepHymn2Title')],
+                ['2', '찬양과 기도', hymnLabelFrom('hymn1Num', 'hymn1Title')],
+                ['3', '사도신경', ''],
+                ['4', '교독문', respTitle],
+                ['5', '찬송가', hymnLabelFrom('hymn2Num', 'hymn2Title')],
+                ['6', '예배의 기도', prayerLeader],
+                ['7', '오늘의 말씀', bibleRef],
+                ['8', '생명의 말씀', sermon],
+                ['9', '감사와 봉헌', hymnLabelFrom('hymn4Num', 'hymn4Title')],
+                ['10', '축도', benediction],
+            ].map(([n, t, d]) => {
+                const small = n === '1' ? ' ord-prep' : '';
+                const detail = d && d !== '—' ? ` <span class="muted">— ${esc(d)}</span>` : '';
+                return `<div class="ord${small}"><b>${n}. ${esc(t)}</b>${detail}</div>`;
+            }).join('');
+            const adsHtml = (ads.length ? ads : ['주일 예배에 오신 것을 환영합니다.']).map(a => `<li>${esc(a)}</li>`).join('');
+            const linesHtml = (text) => text.split(/\n+/).map(s => s.trim()).filter(Boolean).map(esc).join('<br>');
+            const bibleLines = linesHtml(bibleText);
+            const w = window.open('', '_blank', 'width=1100,height=850');
+            if (!w) {
+                alert('팝업이 차단되었습니다. 브라우저에서 팝업을 허용해 주세요.');
+                return;
+            }
+            w.document.write(`<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8"><title>주보 — ${esc(title)}</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;600;700&family=Noto+Serif+KR:wght@500;700&family=Cormorant+Garamond:wght@500;600&display=swap" rel="stylesheet">
+<style>
+  @page { size: letter landscape; margin: 0; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: 'Noto Sans KR', 'Malgun Gothic', sans-serif; color: #1A2E28; background: #d5ddd8; }
+  .toolbar { padding: 10px 16px; background: #1F5C4B; color: #fff; }
+  .toolbar button { padding: 8px 14px; margin-right: 8px; cursor: pointer; border: 0; border-radius: 6px; background: #9A7B4F; color: #fff; font-weight: 600; }
+  .hint { font-size: 12px; color: #d2e3db; margin-left: 8px; }
+  .sheet {
+    width: 11in; height: 8.5in; margin: 14px auto; background: #F4F7F5;
+    display: grid; grid-template-columns: 1fr 1fr;
+    box-shadow: 0 4px 18px rgba(26,46,40,.18);
+    page-break-after: always;
+    border: 1.5px solid #1F5C4B; outline: 0.5px solid #9A7B4F; outline-offset: -6px;
+  }
+  .panel { padding: 0.42in 0.38in; overflow: hidden; border-right: 1px dashed #C8D6CF; position: relative; }
+  .panel:last-child { border-right: none; }
+  .panel::before {
+    content: ''; position: absolute; left: 0; right: 0; top: 0; height: 10px;
+    background: linear-gradient(180deg, #E3EEE8, transparent);
+  }
+  .kicker {
+    font-family: 'Cormorant Garamond', Georgia, serif;
+    font-size: 9pt; letter-spacing: .14em; text-transform: uppercase;
+    color: #9A7B4F; margin-bottom: 8px;
+  }
+  h1, h2, .cover-title {
+    font-family: 'Noto Serif KR', 'Batang', serif;
+    color: #1F5C4B; font-weight: 700;
+  }
+  h1 { font-size: 20pt; margin: 0 0 6px; }
+  h2 {
+    font-size: 18pt; margin: 0 0 4px; padding-bottom: 0;
+    border-bottom: none; box-shadow: none; text-align: center;
+  }
+  h3 {
+    font-family: 'Noto Serif KR', serif;
+    font-size: 11pt; margin: 10px 0 4px; color: #1F5C4B;
+  }
+  .order-foot h3 { font-size: 22pt; margin: 12px 0 6px; color: #5A6F66; }
+  .word-heading {
+    font-family: 'Noto Serif KR', serif;
+    font-size: 18pt; margin: 4px 0 8px; color: #1F5C4B;
+    text-align: center; font-weight: 700;
+  }
+  .word-ref {
+    font-size: 17pt; color: #1A2E28; text-align: center;
+    font-weight: 700; margin-bottom: 14px;
+  }
+  .word-body {
+    font-size: 11.5pt; line-height: 1.45; font-weight: 400;
+  }
+  .memory-heading {
+    font-family: 'Noto Serif KR', serif;
+    font-size: 13pt; margin: 14px 0 4px; color: #1F5C4B;
+    text-align: center; font-weight: 700;
+  }
+  .memory-ref {
+    font-size: 11pt; color: #9A7B4F; text-align: center;
+    font-weight: 700; margin-bottom: 4px;
+  }
+  .memory-body {
+    font-size: 12pt; line-height: 1.45; font-weight: 700;
+    text-align: center;
+  }
+  .sermon-body { font-size: 9pt; line-height: 1.4; }
+  .meta { font-size: 10pt; color: #5A6F66; line-height: 1.45; }
+  .cover-meta {
+    font-size: 9.5pt; color: #5A6F66; line-height: 1.35;
+    margin-top: 8px; font-weight: 400; letter-spacing: 0.02em;
+  }
+  .ord {
+    font-size: 20pt; line-height: 1.35;
+    border-bottom: 1px solid #D2E3DB; padding: 8px 6px;
+  }
+  .ord:nth-child(odd) { background: #E3EEE8; }
+  .ord-prep .muted { font-size: 7pt; line-height: 1.25; }
+  .muted { color: #5A6F66; font-weight: normal; }
+  .body { font-size: 18pt; line-height: 1.4; }
+  .body-tight { font-size: 13pt; line-height: 1.42; }
+  .sheet.inside,
+  .sheet.inside .kicker,
+  .sheet.inside h2,
+  .sheet.inside h3,
+  .sheet.inside .ord,
+  .sheet.inside .ord b,
+  .sheet.inside .muted,
+  .sheet.inside .body,
+  .sheet.inside .body-tight,
+  .sheet.inside .meta {
+    font-weight: 700;
+  }
+  .ads-panel,
+  .ads-panel .kicker,
+  .ads-panel h2,
+  .ads-panel ul,
+  .ads-panel li,
+  .ads-panel .body {
+    font-weight: 700;
+  }
+  ul { margin: 6px 0 0 1.1em; padding: 0; font-size: 21pt; line-height: 1.45; }
+  ul li::marker { color: #1F5C4B; }
+  .center { text-align: center; }
+  .cover-panel {
+    display: flex; flex-direction: column; align-items: center; justify-content: flex-start;
+    height: 100%; text-align: center; padding-top: 0.87in; padding-bottom: 0.18in;
+    gap: 0;
+  }
+  .cover-panel > .kicker { margin-bottom: 14px; opacity: 0.85; }
+  .cover-title {
+    font-size: 26pt; margin: 0; color: #1F5C4B; line-height: 1.15;
+    letter-spacing: 0.06em; font-weight: 700;
+  }
+  .cover-meta {
+    font-size: 9.5pt; color: #5A6F66; line-height: 1.35;
+    margin-top: 8px; font-weight: 400; letter-spacing: 0.02em;
+  }
+  .cover-art-wrap { margin: 4px 0 0; }
+  .leader {
+    margin-top: 44px; font-size: 8.5pt; font-weight: 700;
+    font-family: 'Noto Sans KR', 'Malgun Gothic', sans-serif; color: #5A6F66;
+    letter-spacing: 0.02em;
+  }
+  .cover-phone {
+    margin-top: 20px; font-size: 8pt; font-weight: 700;
+    font-family: 'Noto Sans KR', 'Malgun Gothic', sans-serif; color: #5A6F66;
+    letter-spacing: 0.02em;
+  }
+  .cover-verse {
+    margin-top: 12px; font-size: 9pt; font-weight: 700;
+    color: #9A7B4F; letter-spacing: 0.04em;
+  }
+  .church-logo { display: block; margin: 0 auto; width: 54px; height: 54px; }
+  .cover-art {
+    display: block; margin: 0 auto;
+    max-width: 1.85in; max-height: 2.45in;
+    width: auto; height: auto; object-fit: contain;
+  }
+  .cover-bottom {
+    margin-top: 4px; padding-top: 0; padding-bottom: 0; width: 100%;
+  }
+  .cover-bottom .ornament { margin: 14px auto 10px; width: 42%; }
+  .church-en {
+    font-family: 'Cormorant Garamond', Georgia, serif;
+    font-size: 11pt; letter-spacing: .06em; color: #5A6F66; font-weight: 700;
+    line-height: 1.25;
+  }
+  .church-ko {
+    font-family: 'Noto Serif KR', serif;
+    font-size: 15pt; color: #1F5C4B; font-weight: 700; margin-top: 3px;
+    line-height: 1.25;
+  }
+  .ornament {
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    margin: 14px auto; width: 48%; color: #9A7B4F; font-size: 7px;
+    text-align: center;
+  }
+  .ornament::before, .ornament::after {
+    content: ''; flex: 1; height: 1px;
+    background: linear-gradient(90deg, transparent, #9A7B4F 20%, #1F5C4B 50%, #9A7B4F 80%, transparent);
+  }
+  @media print {
+    body { background: #fff; }
+    .toolbar { display: none; }
+    .sheet { margin: 0; box-shadow: none; }
+  }
+</style></head><body>
+<div class="toolbar">
+  <button onclick="window.print()">인쇄 (양면 · Letter 가로)</button>
+  <span class="hint">겉면 → 안면 · 가운데 접으면 4면 주보</span>
+</div>
+<section class="sheet">
+  <div class="panel ads-panel">
+    <div class="kicker">Announcements</div>
+    <h2>소식 · 광고</h2>
+    <div class="ornament">◆</div>
+    <ul>${adsHtml}</ul>
+    ${note ? `<p class="body" style="margin-top:14px"><b>안내</b> ${esc(note)}</p>` : ''}
+  </div>
+  <div class="panel cover-panel">
+    <div class="cover-title">${esc(title)}</div>
+    <div class="cover-meta">${esc(date)}</div>
+    <div class="ornament">◆</div>
+    <div class="cover-art-wrap">
+    ${coverImage
+      ? `<img class="cover-art" src="${coverImage}" alt="십자가">`
+      : `<svg class="church-logo" viewBox="0 0 64 64" aria-label="교회 로고" role="img">
+      <circle cx="32" cy="32" r="27" fill="#fff" stroke="#1F5C4B" stroke-width="2"/>
+      <circle cx="32" cy="32" r="27" fill="none" stroke="#9A7B4F" stroke-width="1"/>
+      <circle cx="32" cy="32" r="22.5" fill="none" stroke="#3D7A68" stroke-width="0.9"/>
+      <rect x="28.2" y="14" width="7.6" height="36" rx="0.5" fill="#1F5C4B"/>
+      <rect x="17" y="26.5" width="30" height="7.6" rx="0.5" fill="#1F5C4B"/>
+    </svg>`}
+    </div>
+    <div class="cover-verse">“다 이루었다” (요 19:30)</div>
+    <div class="cover-bottom">
+      <div class="ornament">◆</div>
+      ${churchEn ? `<div class="church-en">${esc(churchEn)}</div>` : ''}
+      <div class="church-ko">${esc(churchKo)}</div>
+      ${leader ? `<div class="leader">${esc(leader)}</div>` : ''}
+      <div class="cover-phone">714) 337-0550</div>
+    </div>
+  </div>
+</section>
+<section class="sheet inside">
+  <div class="panel">
+    <div class="kicker">Order of Worship</div>
+    <h2>예배 순서</h2>
+    <div class="ornament">◆</div>
+    ${order}
+    <div class="order-foot">
+    <h3>축도 · 안내</h3>
+    <div class="body"><b>축도</b> ${esc(benediction)}<br><b>안내</b> ${esc(note || '—')}</div>
+    </div>
+  </div>
+  <div class="panel">
+    <div class="kicker">The Word</div>
+    <h2>오늘의 말씀</h2>
+    <div class="ornament">◆</div>
+    <div class="word-ref">${esc(bibleRef || '(구절 미입력)')}</div>
+    <div class="word-body">${bibleLines || '(본문 없음)'}</div>
+    ${(memoryVerseRef || memoryVerseText) ? `
+    <div class="memory-heading">금주의 암송구절</div>
+    ${memoryVerseRef ? `<div class="memory-ref">${esc(memoryVerseRef)}</div>` : ''}
+    ${memoryVerseText ? `<div class="memory-body">${esc(memoryVerseText)}</div>` : ''}
+    ` : ''}
+    <h3>생명의 말씀</h3>
+    <div class="sermon-body">${esc(sermon || '—')}</div>
+  </div>
+</section>
+</body></html>`);
+            w.document.close();
+        }
+
+        function safeSetSlideCount() {
+            const el = document.getElementById('slideCount');
+            if (el) el.innerText = String(slidesData.length || 0);
+        }
+
+        function bootWorship() {
+            if (window.__worshipBooted) return;
+            window.__worshipBooted = true;
+            try {
+                applyPayloadForm();
+            } catch (e) {}
+            // Ensure lookup catalog exists even for standalone / GitHub Pages open
+            if (!window.WORSHIP_PAYLOAD) window.WORSHIP_PAYLOAD = { lookup: window.WORSHIP_LOOKUP || { hymns: {}, hymnLyrics: {}, responsive: {}, scripture: {} } };
+            else if (!window.WORSHIP_PAYLOAD.lookup) window.WORSHIP_PAYLOAD.lookup = window.WORSHIP_LOOKUP || { hymns: {}, hymnLyrics: {}, responsive: {}, scripture: {} };
+            if (window.WORSHIP_LOOKUP && window.WORSHIP_LOOKUP.hymnLyrics) {
+                const L = lookupData();
+                if (!L.hymnLyrics) L.hymnLyrics = {};
+                Object.keys(window.WORSHIP_LOOKUP.hymnLyrics).forEach(k => {
+                    if (!L.hymnLyrics[k]) L.hymnLyrics[k] = window.WORSHIP_LOOKUP.hymnLyrics[k];
+                });
+            }
+
+            const payload = window.WORSHIP_PAYLOAD;
+            if (payload && Array.isArray(payload.slides) && payload.slides.length) {
+                slidesData = payload.slides;
+                seedHymnLyricsFromSlides(slidesData);
+                usedStreamlitSlides = true;
+                safeSetSlideCount();
+                try { renderThumbnailList(); showMiniPreview(0); } catch (e) {}
+                if (payload.artifacts && payload.artifacts.pptx) {
+                    pptReady = true;
+                    const banner = document.getElementById('pptReadyBanner');
+                    if (banner) banner.classList.remove('hidden');
+                }
+            } else {
+                // Build slides immediately — do not wait for remote scripture fetch (hangs on some mobile networks)
+                try {
+                    generateSlidesData();
+                    renderThumbnailList();
+                    showMiniPreview(0);
+                } catch (e) {}
+                void autoFillAll().then(() => {
+                    if (!usedStreamlitSlides) {
+                        try {
+                            generateSlidesData();
+                            renderThumbnailList();
+                            showMiniPreview(currentPreviewIndex || 0);
+                        } catch (e2) {}
+                    }
+                }).catch(() => {});
+            }
+            document.addEventListener('keydown', handleKeydown);
+            bindPresentationTouch();
+            document.addEventListener('fullscreenchange', () => {
+                if (!isPresenting) return;
+                if (!document.fullscreenElement) {
+                    usedFullscreen = false;
+                    ensurePresentationVisible();
+                } else {
+                    usedFullscreen = true;
+                }
+            });
+            document.addEventListener('webkitfullscreenchange', () => {
+                if (!isPresenting) return;
+                if (!document.webkitFullscreenElement) {
+                    usedFullscreen = false;
+                    ensurePresentationVisible();
+                } else {
+                    usedFullscreen = true;
+                }
+            });
+            document.addEventListener('visibilitychange', () => {
+                if (document.visibilityState === 'visible' && isPresenting) {
+                    ensurePresentationVisible();
+                    setTimeout(() => recoverFullscreenIfNeeded(), 200);
+                }
+            });
+            window.addEventListener('pageshow', () => {
+                if (isPresenting) ensurePresentationVisible();
+            });
+            window.addEventListener('resize', () => {
+                if (isPresenting) {
+                    syncViewportHeight();
+                    hideBrowserChrome();
+                }
+            });
+            if (window.visualViewport) {
+                window.visualViewport.addEventListener('resize', () => {
+                    if (isPresenting) syncViewportHeight();
+                });
+                window.visualViewport.addEventListener('scroll', () => {
+                    if (isPresenting) syncViewportHeight();
+                });
+            }
+            const exitBtn = document.getElementById('presentExitBtn');
+            if (exitBtn) {
+                exitBtn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    exitPresentation();
+                });
+            }
+            document.querySelectorAll('#btnStartFullscreen, [data-start-presentation]').forEach((btn) => {
+                btn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    startPresentation();
+                });
+            });
+
+            if (wantsPresentMode()) {
+                document.body.classList.add('touch-worship');
+                const gate = document.getElementById('mobile-present-gate');
+                if (gate) {
+                    gate.classList.remove('hidden-gate');
+                    const hint = document.getElementById('mobileSlideCountHint');
+                    if (hint && slidesData.length) hint.textContent = `슬라이드 ${slidesData.length}장`;
+                }
+                try {
+                    const q = new URLSearchParams(window.location.search);
+                    if (isStandaloneWorship() && slidesData.length) {
+                        document.body.classList.add('standalone-worship');
+                        setTimeout(() => startPresentation(), 80);
+                    } else if (q.get('present') === '1' || q.get('present') === 'true') {
+                        const btn = document.getElementById('btnStartFullscreen');
+                        if (btn) btn.focus();
+                    }
+                } catch (e) {}
+            }
+            bindPresentationTouch();
+            setTimeout(() => {
+                const hint = document.getElementById('control-hint');
+                if (hint && !isTouchWorshipDevice()) hint.style.opacity = '0';
+            }, 4000);
+        }
+
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', bootWorship);
+        } else {
+            bootWorship();
+        }
+
+        function generateSlidesData() {
+            seedHymnLyricsFromSlides(slidesData);
+            seedHymnLyricsFromSlides((window.WORSHIP_PAYLOAD && window.WORSHIP_PAYLOAD.slides) || []);
+            const churchName = val('churchName');
+            const serviceTitle = val('serviceTitle') || '주일 예배';
+            const date = val('worshipDate');
+            const leaderRaw = val('worshipLeader');
+            const leader = leaderRaw ? (leaderRaw.startsWith('인도자') ? leaderRaw : `인도자 ${leaderRaw}`) : '';
+            const prepTitle = hymnPairLabel('prepHymn1Num', 'prepHymn1Title', 'prepHymn2Num', 'prepHymn2Title');
+            const h1Title = hymnLabelFrom('hymn1Num', 'hymn1Title');
+            const creed = val('apostlesCreed');
+            const respTitle = val('responsiveTitle') || '교독문';
+            const respBody = val('responsiveBody');
+            const h2Title = hymnLabelFrom('hymn2Num', 'hymn2Title');
+            const prayerLeader = val('prayerLeader');
+            const prayerText = val('prayerText');
+            const bibleRef = val('bibleRef');
+            const bibleText = val('bibleText');
+            const sermonTitle = val('sermonTitle') || '생명의 말씀';
+            const h4Title = hymnLabelFrom('hymn4Num', 'hymn4Title');
+            const benediction = val('benediction') || '축도';
+            const closingNote = val('closingNote');
+            const announcements = val('announcements');
+
+            const orderRows = [
+                ['1', '예배 준비의 시간', prepTitle],
+                ['2', '찬양과 기도', h1Title],
+                ['3', '사도신경', ''],
+                ['4', '교독문', respTitle],
+                ['5', '찬송가', h2Title],
+                ['6', '예배의 기도', prayerLeader],
+                ['7', '오늘의 말씀', bibleRef],
+                ['8', '생명의 말씀', sermonTitle],
+                ['9', '감사와 봉헌', h4Title],
+                ['10', '축도', benediction],
+            ].map(([n, t, d]) => {
+                const label = d && d !== '—' ? `${n}. ${t}  ·  ${d}` : `${n}. ${t}`;
+                return `<div>${esc(label)}</div>`;
+            }).join('');
+
+            let newSlides = [];
+            newSlides.push({
+                type: 'cover',
+                title: serviceTitle,
+                subtitle: date,
+                footer: churchName,
+                extra: leader,
+            });
+            newSlides.push({
+                type: 'title',
+                title: '예배 순서',
+                subtitle: 'Order of Worship',
+                content: `<div class="order-list grid grid-cols-1 gap-y-4 text-left w-max max-w-full mt-2 text-2xl text-slate-200">${orderRows}</div>`,
+            });
+
+            // 1 prep hymns
+            const prepHymns = [
+                [hymnLabelFrom('prepHymn1Num', 'prepHymn1Title'), val('prepHymn1Num')],
+                [hymnLabelFrom('prepHymn2Num', 'prepHymn2Title'), val('prepHymn2Num')],
+            ].filter(([label, num]) => (label && label !== '—') || parseNum(num));
+            if (prepHymns.length) {
+                prepHymns.forEach(([label, num]) => {
+                    newSlides.push({ type: 'section', title: '1. 예배 준비의 시간', subtitle: label });
+                    appendHymnLyrics(newSlides, '1. 예배 준비의 시간', label, num);
+                });
+            } else {
+                newSlides.push({ type: 'section', title: '1. 예배 준비의 시간', subtitle: '' });
+            }
+
+            // 2 hymn intro + lyrics
+            newSlides.push({ type: 'section', title: '2. 찬양과 기도', subtitle: h1Title });
+            appendHymnLyrics(newSlides, '2. 찬양과 기도', h1Title, val('hymn1Num'));
+
+            // 3 creed
+            if (creed) {
+                const creedLines = creed.split(/\n+/).map(l => l.trim()).filter(Boolean);
+                const chunk = 4;
+                for (let i = 0; i < creedLines.length; i += chunk) {
+                    const part = creedLines.slice(i, i + chunk);
+                    const pageNo = Math.floor(i / chunk) + 1;
+                    const pages = Math.ceil(creedLines.length / chunk);
+                    newSlides.push({
+                        type: 'creed',
+                        header: '3. 사도신경',
+                        title: pages > 1 ? `사도신경 (${pageNo}/${pages})` : '사도신경',
+                        content: part.map(esc).join('<br>'),
+                    });
+                }
+            } else {
+                newSlides.push({ type: 'section', title: '3. 사도신경', subtitle: "The Apostles' Creed" });
+            }
+
+            // 4 responsive
+            newSlides.push({ type: 'section', title: '4. 교독문', subtitle: respTitle });
+            if (respBody) {
+                const pairs = [];
+                const rlines = respBody.split(/\n+/).map(l => l.trim()).filter(Boolean);
+                for (let i = 0; i < rlines.length; i += 2) {
+                    pairs.push(rlines.slice(i, i + 2).join('\n'));
+                }
+                pairs.forEach(page => {
+                    newSlides.push({
+                        type: 'responsive',
+                        header: '4. 교독문',
+                        title: respTitle,
+                        content: responsiveHtml(page),
+                    });
+                });
+            }
+
+            // 5 hymn intro + lyrics
+            newSlides.push({ type: 'section', title: '5. 찬송가', subtitle: h2Title });
+            appendHymnLyrics(newSlides, '5. 찬송가', h2Title, val('hymn2Num'));
+
+            // 6 prayer
+            newSlides.push({
+                type: 'section',
+                title: '6. 예배의 기도',
+                subtitle: prayerLeader || '다함께 마음을 모아 주님께 기도드립니다.',
+            });
+            if (prayerText) {
+                newSlides.push({
+                    type: 'scripture',
+                    header: '6. 예배의 기도',
+                    title: prayerLeader || '예배의 기도',
+                    content: `<div class="text-left w-full max-w-5xl leading-relaxed">${linesHtml(prayerText)}</div>`,
+                });
+            }
+
+            // 7 scripture
+            newSlides.push({ type: 'section', title: '7. 오늘의 말씀', subtitle: bibleRef || '성경 봉독' });
+            const verses = bibleText.split(/\n+/).map(v => v.trim()).filter(Boolean);
+            for (let i = 0; i < verses.length; i += 4) {
+                const chunk = verses.slice(i, i + 4).map(esc).join('<br><br>');
+                newSlides.push({
+                    type: 'scripture',
+                    header: '7. 오늘의 말씀',
+                    title: bibleRef,
+                    content: `<div class="text-left w-full max-w-5xl leading-relaxed">${chunk}</div>`,
+                });
+            }
+
+            // 8 sermon
+            newSlides.push({
+                type: 'sermon',
+                header: '8. 생명의 말씀',
+                title: sermonTitle,
+                subtitle: bibleRef ? `본문: ${bibleRef}` : '',
+                footer: churchName,
+            });
+
+            // 9 offering intro + lyrics
+            newSlides.push({ type: 'section', title: '9. 감사와 봉헌', subtitle: h4Title });
+            appendHymnLyrics(newSlides, '9. 감사와 봉헌', h4Title, val('hymn4Num'));
+
+            // 10 benediction + 안내
+            newSlides.push({ type: 'section', title: '10. 축도', subtitle: benediction });
+            if (closingNote) {
+                newSlides.push({
+                    type: 'title',
+                    title: benediction,
+                    subtitle: closingNote,
+                    content: '',
+                });
+            }
+
+            // 11 announcements
+            const adLines = announcements
+                ? announcements.split(/\n+/).map(l => l.trim()).filter(Boolean)
+                : ['주일 예배에 오신 모든 분들을 주님의 이름으로 환영합니다.'];
+            newSlides.push({
+                type: 'title',
+                title: '11. 안내 및 광고',
+                subtitle: 'Announcements',
+                content: `<ul class="text-left list-disc list-inside mt-8 text-3xl space-y-6 text-slate-200">${
+                    adLines.slice(0, 12).map(ln => `<li>${esc(ln)}</li>`).join('')
+                }</ul>`,
+            });
+            newSlides.push({
+                type: 'cover',
+                title: '평안히 돌아가십시오',
+                subtitle: closingNote || 'God Bless You',
+                footer: churchName,
+            });
+
+            slidesData = newSlides;
+            usedStreamlitSlides = false;
+            safeSetSlideCount();
+        }
+
+        function getSlideHTML(slide) {
+            let html = '';
+
+            if (slide.type === 'cover') {
+                const extra = slide.extra
+                    ? `<p class="cover-leader text-2xl text-slate-300 mt-6 tracking-wide">${slide.extra}</p>`
+                    : '';
+                html = `
+                    <div class="slide-body cover-body">
+                        <div class="w-24 h-1 bg-yellow-500 rounded-full mb-8"></div>
+                        <h1 class="font-serif text-huge font-bold text-white mb-6 tracking-wide drop-shadow-2xl">${slide.title}</h1>
+                        <p class="text-title text-blue-300 font-light tracking-widest">${slide.subtitle || ''}</p>
+                        ${extra}
+                    </div>
+                    <div class="cover-footer absolute bottom-10 w-full text-center text-xl text-slate-400 font-serif tracking-widest uppercase">
+                        ${slide.footer || ''}
+                    </div>
+                `;
+            }
+            else if (slide.type === 'section') {
+                html = `
+                    <div class="slide-body">
+                        <h2 class="font-serif text-huge font-bold text-yellow-500 mb-6 drop-shadow-lg">${slide.title}</h2>
+                        <p class="text-title text-white font-medium drop-shadow">${slide.subtitle || ''}</p>
+                    </div>
+                `;
+            }
+            else if (slide.type === 'lyric') {
+                html = `
+                    <div class="slide-header">
+                        <div class="text-3xl text-yellow-500 font-bold tracking-wider">${slide.header}</div>
+                        <div class="text-3xl text-slate-300">${slide.title}</div>
+                    </div>
+                    <div class="slide-body justify-center">
+                        <div class="text-lyric text-white text-center leading-tight">
+                            ${slide.content}
+                        </div>
+                    </div>
+                `;
+            }
+            else if (slide.type === 'creed') {
+                html = `
+                    <div class="slide-header">
+                        <div class="text-3xl text-yellow-500 font-bold tracking-wider">${slide.header || '3. 사도신경'}</div>
+                    </div>
+                    <div class="slide-body justify-center">
+                        <h2 class="font-serif text-huge font-bold text-yellow-500 mb-8 drop-shadow-lg">${slide.title || '사도신경'}</h2>
+                        <div class="text-body text-white w-full max-w-6xl mx-auto drop-shadow-lg">
+                            ${slide.content || ''}
+                        </div>
+                    </div>
+                `;
+            }
+            else if (slide.type === 'scripture') {
+                html = `
+                    <div class="slide-header">
+                        <div class="text-3xl text-yellow-500 font-bold tracking-wider">${slide.header || ''}</div>
+                        <div class="text-3xl text-slate-300">${slide.title || ''}</div>
+                    </div>
+                    <div class="slide-body scripture-body">
+                        <div class="text-body text-white w-full max-w-6xl mx-auto drop-shadow-lg">
+                            ${slide.content || ''}
+                        </div>
+                    </div>
+                `;
+            }
+            else if (slide.type === 'responsive') {
+                html = `
+                    <div class="slide-header">
+                        <div class="text-3xl text-yellow-500 font-bold tracking-wider">${slide.header || ''}</div>
+                        <div class="text-3xl text-slate-300">${slide.title || ''}</div>
+                    </div>
+                    <div class="slide-body">
+                        <div class="text-responsive text-white w-full max-w-6xl mx-auto drop-shadow-lg">
+                            ${slide.content || ''}
+                        </div>
+                    </div>
+                `;
+            }
+            else if (slide.type === 'sermon') {
+                html = `
+                    <div class="slide-header">
+                        <div class="text-3xl text-yellow-500 font-bold tracking-wider">${slide.header}</div>
+                        <div class="text-3xl text-slate-300">${slide.subtitle || ''}</div>
+                    </div>
+                    <div class="slide-body">
+                        <p class="text-3xl text-blue-300 mb-6 font-light tracking-wider">오늘의 말씀</p>
+                        <h1 class="font-serif text-huge font-bold text-white drop-shadow-2xl leading-tight">"${slide.title}"</h1>
+                    </div>
+                    <div class="absolute bottom-10 w-full text-center text-xl text-slate-400 font-serif tracking-widest uppercase">
+                        ${slide.footer || ''}
+                    </div>
+                `;
+            }
+            else if (slide.title === '예배 순서' || (slide.content || '').includes('order-list')) {
+                html = `
+                    <div class="slide-body order-slide-body">
+                        <div class="order-stack">
+                            <h2 class="font-serif text-title font-bold text-yellow-500 mb-2">${slide.title}</h2>
+                            <p class="text-2xl text-slate-400 mb-8 tracking-widest uppercase">${slide.subtitle || ''}</p>
+                            ${slide.content || ''}
+                        </div>
+                    </div>
+                `;
+            }
+            else {
+                html = `
+                    <div class="slide-body">
+                        <h2 class="font-serif text-title font-bold text-yellow-500 mb-2">${slide.title}</h2>
+                        <p class="text-2xl text-slate-400 mb-8 tracking-widest uppercase">${slide.subtitle || ''}</p>
+                        <div class="w-full">
+                            ${slide.content || ''}
+                        </div>
+                    </div>
+                `;
+            }
+            return html;
+        }
+        function updatePreview() {
+            applyChanges();
+        }
+        function renderThumbnailList() {
+            const list = document.getElementById('slide-list');
+            if (!list) return;
+            list.innerHTML = '';
+            slidesData.forEach((slide, index) => {
+                const div = document.createElement('div');
+                div.className = `bg-slate-800 rounded-lg p-3 cursor-pointer border-2 transition-all hover:border-blue-500 ${index === currentPreviewIndex ? 'border-blue-500 shadow-[0_0_15px_rgba(59,130,246,0.5)]' : 'border-slate-700'}`;
+                div.onclick = () => showMiniPreview(index);
+
+                let icon = 'fa-file-lines';
+                if(slide.type === 'cover') icon = 'fa-image';
+                if(slide.type === 'lyric') icon = 'fa-music';
+                if(slide.type === 'sermon') icon = 'fa-book-bible';
+                if(slide.type === 'creed' || slide.type === 'responsive' || slide.type === 'scripture') icon = 'fa-book-open';
+                div.innerHTML = `
+                    <div class="text-xs text-slate-400 mb-1 flex justify-between">
+                        <span>#${index + 1}</span>
+                        <i class="fa-solid ${icon}"></i>
+                    </div>
+                    <div class="font-bold text-sm text-slate-200 truncate">${slide.title || slide.header}</div>
+                    <div class="text-xs text-slate-500 truncate mt-1">${(slide.content || slide.subtitle || '').replace(/<[^>]*>?/gm, ' ')}</div>
+                `;
+                list.appendChild(div);
+            });
+        }
+        function showMiniPreview(index) {
+            currentPreviewIndex = index;
+            const container = document.getElementById('mini-preview-container');
+            const slide = slidesData[index];
+            if (!slide) return;
+
+            container.innerHTML = `
+                <div class="absolute inset-0 w-[1920px] h-[1080px] origin-top-left flex flex-col"
+                     style="transform: scale(${container.clientWidth / 1920}); background: radial-gradient(circle at center, #1a233a 0%, #0a0f1d 100%);">
+                    <div class="slide-bg-decoration"></div>
+                    ${getSlideHTML(slide)}
+                </div>
+            `;
+
+            window.onresize = () => {
+                if(!isPresenting) showMiniPreview(currentPreviewIndex);
+            };
+            const listItems = document.getElementById('slide-list').children;
+            for(let i=0; i<listItems.length; i++) {
+                if(i === index) {
+                    listItems[i].classList.add('border-blue-500', 'shadow-[0_0_15px_rgba(59,130,246,0.5)]');
+                    listItems[i].classList.remove('border-slate-700');
+                } else {
+                    listItems[i].classList.remove('border-blue-500', 'shadow-[0_0_15px_rgba(59,130,246,0.5)]');
+                    listItems[i].classList.add('border-slate-700');
+                }
+            }
+        }
+        function isStandaloneWorship() {
+            try {
+                if (window.navigator.standalone === true) return true;
+                if (window.matchMedia('(display-mode: standalone)').matches) return true;
+                if (window.matchMedia('(display-mode: fullscreen)').matches) return true;
+            } catch (e) {}
+            return false;
+        }
+
+        function isFullscreenNow() {
+            return !!(
+                document.fullscreenElement ||
+                document.webkitFullscreenElement ||
+                document.msFullscreenElement
+            );
+        }
+
+        function isIPhone() {
+            try {
+                if (/iPhone|iPod/i.test(navigator.userAgent || '')) return true;
+            } catch (e) {}
+            return false;
+        }
+
+        function syncViewportHeight() {
+            try {
+                const h = (window.visualViewport && window.visualViewport.height)
+                    ? window.visualViewport.height
+                    : window.innerHeight;
+                document.documentElement.style.setProperty('--vvh', `${Math.round(h)}px`);
+                const view = document.getElementById('presentation-view');
+                if (view && isPresenting) {
+                    view.style.height = `${Math.round(h)}px`;
+                }
+            } catch (e) {}
+        }
+
+        function hideBrowserChrome() {
+            syncViewportHeight();
+            try {
+                // Nudge Safari to collapse the URL bar when possible
+                const grow = Math.max(window.innerHeight, document.documentElement.clientHeight) + 80;
+                document.documentElement.style.minHeight = `${grow}px`;
+                window.scrollTo(0, 1);
+                setTimeout(() => {
+                    window.scrollTo(0, 0);
+                    document.documentElement.style.minHeight = '';
+                    syncViewportHeight();
+                }, 120);
+            } catch (e) {
+                syncViewportHeight();
+            }
+        }
+
+        async function enterTrueFullscreen(el) {
+            // iPhone: prefer documentElement; iPad/desktop: prefer the presentation node
+            const targets = isIPhone()
+                ? [document.documentElement, document.body, el]
+                : [el, document.documentElement, document.body];
+            for (const t of targets.filter(Boolean)) {
+                try {
+                    if (typeof t.requestFullscreen === 'function') {
+                        try {
+                            await t.requestFullscreen({ navigationUI: 'hide' });
+                        } catch (e0) {
+                            await t.requestFullscreen();
+                        }
+                        if (isFullscreenNow()) return true;
+                    }
+                } catch (e) {}
+                try {
+                    if (typeof t.webkitRequestFullscreen === 'function') {
+                        t.webkitRequestFullscreen();
+                        if (isFullscreenNow()) return true;
+                    }
+                } catch (e) {}
+                try {
+                    if (typeof t.webkitRequestFullScreen === 'function') {
+                        // Legacy Safari
+                        t.webkitRequestFullScreen(Element.ALLOW_KEYBOARD_INPUT || 1);
+                        if (isFullscreenNow()) return true;
+                    }
+                } catch (e) {}
+            }
+            return isFullscreenNow();
+        }
+
+        async function startPresentation() {
+            const view = document.getElementById('presentation-view');
+            const wrapper = document.getElementById('fs-slides-wrapper');
+            if (!slidesData.length) {
+                alert('표시할 슬라이드가 없습니다. Streamlit에서 HTML을 다시 생성해 주세요.');
+                return;
+            }
+
+            wrapper.innerHTML = '';
+            slidesData.forEach((slide, index) => {
+                const div = document.createElement('div');
+                div.className = 'slide-content';
+                div.id = `fs-slide-${index}`;
+                div.innerHTML = getSlideHTML(slide);
+                wrapper.appendChild(div);
+            });
+            currentPresentationIndex = 0;
+            updatePresentationView();
+
+            view.classList.add('active');
+            isPresenting = true;
+            document.body.classList.add('is-presenting');
+            document.documentElement.classList.add('is-presenting');
+            if (isStandaloneWorship()) document.body.classList.add('standalone-worship');
+            const gate = document.getElementById('mobile-present-gate');
+            if (gate) gate.classList.add('hidden-gate');
+            bindPresentationTouch();
+            hideBrowserChrome();
+
+            usedFullscreen = false;
+            suppressExitUntil = Date.now() + 1500;
+            // Same user-gesture as the button tap (required on iPhone/iPad Safari)
+            const okFs = isStandaloneWorship() ? true : await enterTrueFullscreen(view);
+            usedFullscreen = isFullscreenNow();
+            hideBrowserChrome();
+            if (!okFs && !usedFullscreen && !isStandaloneWorship() && isTouchWorshipDevice()) {
+                const note = document.getElementById('fsHelpNote');
+                if (note) {
+                    note.style.display = 'block';
+                    note.innerHTML = isIPhone()
+                        ? 'iPhone에서 주소창을 완전히 숨기려면: 하단 <b>공유</b> → <b>홈 화면에 추가</b> → 홈 화면 <b>주일예배</b> 아이콘으로 다시 여세요.'
+                        : '주소창이 남으면: Safari <b>공유</b> → <b>홈 화면에 추가</b> → 추가한 아이콘으로 다시 여세요.';
+                }
+            }
+            ensurePresentationVisible();
+            syncViewportHeight();
+            try {
+                if (screen.orientation && screen.orientation.lock) {
+                    await screen.orientation.lock('landscape').catch(() => {});
+                }
+            } catch (e) {}
+
+            const hint = document.getElementById('control-hint');
+            if (hint) {
+                hint.style.opacity = isTouchWorshipDevice() ? '0' : '1';
+                if (!isTouchWorshipDevice()) {
+                    setTimeout(() => { hint.style.opacity = '0'; }, 2500);
+                }
+            }
+        }
+        function exitPresentation() {
+            const view = document.getElementById('presentation-view');
+            view.classList.remove('active');
+            isPresenting = false;
+            document.body.classList.remove('is-presenting');
+            document.documentElement.classList.remove('is-presenting');
+            document.documentElement.style.removeProperty('--vvh');
+            if (view) view.style.height = '';
+            if (wantsPresentMode()) {
+                const gate = document.getElementById('mobile-present-gate');
+                if (gate) gate.classList.remove('hidden-gate');
+            }
+            const fs = document.fullscreenElement || document.webkitFullscreenElement;
+            if (fs) {
+                const exitFs = document.exitFullscreen || document.webkitExitFullscreen;
+                if (exitFs) {
+                    try { exitFs.call(document); } catch (err) { console.log(err); }
+                }
+            }
+            usedFullscreen = false;
+        }
+        function updatePresentationView() {
+            const slides = document.querySelectorAll('.slide-content');
+            slides.forEach(s => s.classList.remove('active'));
+
+            const currentSlide = document.getElementById(`fs-slide-${currentPresentationIndex}`);
+            if(currentSlide) {
+                currentSlide.classList.add('active');
+                const body = currentSlide.querySelector('.slide-body');
+                if (body) {
+                    try { body.scrollTop = 0; } catch (e) {}
+                }
+            }
+            const progress = ((currentPresentationIndex + 1) / Math.max(slidesData.length, 1)) * 100;
+            document.getElementById('progress-bar').style.width = `${progress}%`;
+            ensurePresentationVisible();
+        }
+        function handleKeydown(e) {
+            if (!isPresenting) return;
+            if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'PageDown') {
+                e.preventDefault();
+                nextPresentationSlide();
+            }
+            else if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
+                e.preventDefault();
+                prevPresentationSlide();
+            }
+            else if (e.key === 'Escape') {
+                exitPresentation();
+            }
+        }
+        function downloadStandaloneFile() {
+            const blob = new Blob([document.documentElement.outerHTML], { type: 'text/html;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'Fullerton_Worship_Presentation.html';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+    </script>
+</body>
+</html>
