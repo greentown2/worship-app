@@ -2,16 +2,17 @@
 
 from __future__ import annotations
 
-import base64
 import html
 import json
 import re
+import shutil
 from pathlib import Path
+from urllib.parse import quote
 
 from data_enrich import enrich_worship_data, hymn_label, hymn_pair_label
 from defaults import ORDER_LABELS
 from hymn_lookup import parse_hymn_number
-from lookup_bundle import build_lookup_bundle
+from lookup_bundle import build_lookup_bundle, slim_lookup_for_html
 from models import HymnEntry, WorshipData
 from responsive_lookup import parse_responsive_number, sanitize_responsive_body
 from text_normalize import normalize_breaks
@@ -19,9 +20,8 @@ from template_tokens import _creed_pages, _hymn_pages, _responsive_pages, _text_
 
 ROOT = Path(__file__).resolve().parent
 TEMPLATE_PATH = ROOT / "worship_presentation.html"
-COVER_IMAGE_PATH = ROOT / "assets" / "crucifix_cover.png"
 
-_HTML_VERSION = "2026-08-26-responsive-2x-v13"
+_HTML_VERSION = "2026-08-28-editor-restore-v28"
 
 
 def _esc(text: str) -> str:
@@ -29,16 +29,15 @@ def _esc(text: str) -> str:
 
 
 def _cover_image_data_uri() -> str:
-    """Embed bulletin cover crucifix as a data URI for HTML print preview."""
-    if not COVER_IMAGE_PATH.is_file():
-        return ""
-    try:
-        raw = COVER_IMAGE_PATH.read_bytes()
-    except OSError:
-        return ""
-    if not raw:
-        return ""
-    return "data:image/png;base64," + base64.b64encode(raw).decode("ascii")
+    """Tiny SVG crucifix for HTML print preview — never embed the 800KB PNG."""
+    svg = (
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 168" aria-hidden="true">'
+        '<rect width="120" height="168" fill="#fff"/>'
+        '<rect x="54" y="8" width="12" height="152" fill="#1a1a1a"/>'
+        '<rect x="22" y="36" width="76" height="12" fill="#1a1a1a"/>'
+        "</svg>"
+    )
+    return "data:image/svg+xml;charset=utf-8," + quote(svg, safe="")
 
 
 def _hymn_label(h: HymnEntry) -> str:
@@ -567,21 +566,13 @@ def generate_worship_html(
 
     slides = build_presentation_slides(data, allow_remote=bool(allow_remote))
     prefetch = build_form_prefetch(data)
-    artifacts: dict = {}
-    if pptx_bytes:
-        artifacts["pptx"] = {
-            "name": pptx_name,
-            "base64": base64.b64encode(pptx_bytes).decode("ascii"),
-            "mime": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-            "contentId": content_id or "",
-        }
-    if pdf_bytes:
-        artifacts["pdf"] = {
-            "name": pdf_name,
-            "base64": base64.b64encode(pdf_bytes).decode("ascii"),
-            "mime": "application/pdf",
-            "contentId": content_id or "",
-        }
+    # Never embed PPT/PDF bytes — that alone was ~2MB and broke mobile GitHub Pages.
+    lookup = slim_lookup_for_html(
+        _ensure_service_hymn_lyrics(
+            build_lookup_bundle(), data, allow_remote=bool(allow_remote)
+        ),
+        data,
+    )
     cover_image = _cover_image_data_uri()
     payload = {
         "version": _HTML_VERSION,
@@ -589,16 +580,14 @@ def generate_worship_html(
         "slides": slides,
         "form": prefetch,
         "source": "streamlit",
-        "artifacts": artifacts,
+        "artifacts": {},
         "coverImage": cover_image,
-        "lookup": _ensure_service_hymn_lyrics(
-            build_lookup_bundle(), data, allow_remote=bool(allow_remote)
-        ),
+        "lookup": lookup,
     }
     template = TEMPLATE_PATH.read_text(encoding="utf-8")
     injection = (
         "<script>\n"
-        f"window.WORSHIP_PAYLOAD = {json.dumps(payload, ensure_ascii=False)};\n"
+        f"window.WORSHIP_PAYLOAD = {json.dumps(payload, ensure_ascii=False, separators=(',', ':'))};\n"
         "</script>\n"
     )
     if "<!-- WORSHIP_PAYLOAD -->" in template:
@@ -624,6 +613,9 @@ def generate_worship_html(
             json.dumps(manifest, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
+        css_src = ROOT / "worship-deck.css"
+        if css_src.exists():
+            shutil.copy2(css_src, ROOT / "output" / "worship-deck.css")
     except OSError:
         pass
 

@@ -118,3 +118,68 @@ def build_lookup_bundle() -> dict:
         "responsive": responsive,
         "scripture": scripture,
     }
+
+
+def slim_lookup_for_html(bundle: dict, data=None) -> dict:
+    """Keep hymn titles plus only this week's lyrics / 교독문 / 성경 — not the full catalogs."""
+    hymns = dict(bundle.get("hymns") or {})
+    lyrics_src = bundle.get("hymnLyrics") or {}
+    resp_src = bundle.get("responsive") or {}
+    scr_src = bundle.get("scripture") or {}
+    lyrics: dict = {}
+    responsive: dict = {}
+    scripture: dict = {}
+    if data is None:
+        return {"hymns": hymns, "hymnLyrics": {}, "responsive": {}, "scripture": {}}
+
+    try:
+        from hymn_lookup import parse_hymn_number
+    except Exception:
+        parse_hymn_number = lambda raw: None  # noqa: E731
+    try:
+        from responsive_lookup import parse_responsive_number
+    except Exception:
+        parse_responsive_number = lambda raw: None  # noqa: E731
+
+    for hymn in data.iter_hymns():
+        num = parse_hymn_number(getattr(hymn, "number", "") or "")
+        if not num:
+            continue
+        key = str(num)
+        lines = list(getattr(hymn, "lyrics", None) or [])
+        if lines:
+            lyrics[key] = {
+                "title": (getattr(hymn, "title", "") or hymns.get(key) or "").strip(),
+                "lyrics": "\n".join(str(ln).rstrip() for ln in lines),
+            }
+        elif key in lyrics_src:
+            lyrics[key] = lyrics_src[key]
+
+    resp_n = parse_responsive_number(getattr(data, "responsive_reading_title", "") or "")
+    if resp_n and str(resp_n) in resp_src:
+        responsive[str(resp_n)] = resp_src[str(resp_n)]
+    elif getattr(data, "responsive_reading", ""):
+        body = str(data.responsive_reading or "").strip()
+        if body:
+            responsive["_"] = {
+                "title": (getattr(data, "responsive_reading_title", "") or "").strip(),
+                "body": body,
+            }
+
+    for ref, body in (
+        (getattr(data, "scripture_reference", "") or "", getattr(data, "scripture_text", "") or ""),
+        (getattr(data, "memory_verse_reference", "") or "", getattr(data, "memory_verse_text", "") or ""),
+    ):
+        ref = str(ref).strip()
+        body = str(body).strip()
+        if ref and body:
+            scripture[ref] = body
+        elif ref and ref in scr_src:
+            scripture[ref] = scr_src[ref]
+
+    return {
+        "hymns": hymns,
+        "hymnLyrics": lyrics,
+        "responsive": responsive,
+        "scripture": scripture,
+    }

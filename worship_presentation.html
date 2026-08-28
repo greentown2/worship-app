@@ -8,14 +8,31 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="theme-color" content="#000000">
     <meta name="apple-mobile-web-app-title" content="주일예배">
-    <link rel="manifest" href="worship.webmanifest">
+    <link rel="manifest" href="./worship.webmanifest">
     <title>주일 예배 화면</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.8/dist/web/static/pretendard.css" />
+    <!-- Tailwind Play CDN overwrites the first <style> in the document. Keep a dummy host. -->
+    <style id="tw-cdn-host"></style>
+    <script>
+    (function () {
+        var skip = false;
+        try {
+            var q = String(location.search || '');
+            var present = /(?:\?|&)present=(?:1|true)\b/.test(q);
+            var ua = navigator.userAgent || '';
+            var ios = /iPhone|iPad|iPod/i.test(ua) || (navigator.platform === 'MacIntel' && (navigator.maxTouchPoints || 0) > 1);
+            skip = present || ios;
+        } catch (e) {}
+        if (skip) return;
+        /* Parser-blocking so the Play CDN actually emits utilities.
+           Dummy #tw-cdn-host above absorbs the first-style overwrite. */
+        document.write('<script src="https://cdn.tailwindcss.com"><\/script>');
+    })();
+    </script>
+    <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.8/dist/web/static/pretendard.css">
     <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@400;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <style>
-        :root {
+    <style id="worship-deck-css">
+:root {
             --bg-primary: #0a0f1d;
             --bg-secondary: #131b2f;
             --accent-gold: #d4af37;
@@ -32,18 +49,30 @@
             -webkit-text-size-adjust: 100%;
             touch-action: manipulation;
         }
+        html {
+            box-sizing: border-box;
+        }
+        *, *::before, *::after { box-sizing: inherit; }
         html, body {
             height: 100%;
             min-height: 100%;
             min-height: -webkit-fill-available;
             min-height: 100dvh;
         }
+        .hidden { display: none !important; }
         html.is-presenting,
         body.is-presenting {
             overflow: hidden !important;
             height: var(--vvh, 100dvh);
             overscroll-behavior: none;
             background: #000;
+        }
+        body.touch-worship.is-presenting {
+            position: fixed;
+            inset: 0;
+            width: 100%;
+            height: var(--vvh, 100dvh);
+            touch-action: none;
         }
         .font-serif {
             font-family: 'Noto Serif KR', serif;
@@ -61,10 +90,38 @@
             justify-content: center;
             align-items: center;
             touch-action: none;
+            cursor: pointer;
             -webkit-user-select: none;
             user-select: none;
-            padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+            -webkit-tap-highlight-color: rgba(255,255,255,0.08);
+            padding: 0;
             box-sizing: border-box;
+        }
+        body.touch-worship #presentation-view {
+            padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+        }
+        #presentation-view,
+        #presentation-view * {
+            cursor: pointer;
+        }
+        #present-hit-layer {
+            position: absolute;
+            inset: 0;
+            z-index: 70;
+            /* iOS skips fully transparent nodes in hit-testing */
+            background: rgba(0, 0, 0, 0.02);
+            touch-action: none;
+            cursor: pointer;
+            -webkit-tap-highlight-color: rgba(255,255,255,0.08);
+            -webkit-user-select: none;
+            user-select: none;
+            pointer-events: auto;
+        }
+        /* Keep slide text from stealing taps on iPhone/iPad */
+        body.is-presenting #fs-slides-wrapper,
+        body.is-presenting .slide-content,
+        body.is-presenting .slide-content.active {
+            pointer-events: none !important;
         }
         #presentation-view.active {
             display: flex;
@@ -75,6 +132,7 @@
             height: 100%;
             background: #000;
         }
+        /* Laptop fullscreen: fill the screen like before (seamless). */
         #presentation-view:fullscreen .slide-container,
         #presentation-view:-webkit-full-screen .slide-container,
         body.standalone-worship #presentation-view.active .slide-container,
@@ -104,14 +162,20 @@
             display: flex;
             flex-direction: column;
         }
-        /* iPhone / iPad: fill the whole screen for worship projection */
-        body.touch-worship #presentation-view.active .slide-container {
+        body.touch-worship #presentation-view.active .slide-container,
+        body.standalone-worship #presentation-view.active .slide-container {
             width: 100%;
             height: 100%;
             max-width: none;
             max-height: none;
             box-shadow: none;
             border-radius: 0;
+        }
+        #fs-slides-wrapper {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
         }
         #mobile-present-gate {
             display: none;
@@ -144,23 +208,45 @@
             line-height: 1.5;
             max-width: 28rem;
         }
-        @media (max-width: 1024px) {
-            body.touch-worship header.app-chrome,
-            body.touch-worship .dashboard-layout {
-                display: none !important;
+        .hidden-gate { display: none !important; }
+        /* iPad landscape is often >1024px — do not hide the worship gate behind that breakpoint */
+        body.touch-worship header.app-chrome,
+        body.touch-worship .dashboard-layout {
+            display: none !important;
+        }
+        body.touch-worship #mobile-present-gate:not(.hidden-gate) {
+            display: flex !important;
+        }
+        body.touch-worship.is-presenting #mobile-present-gate {
+            display: none !important;
+        }
+        @media (max-width: 900px) {
+            body:not(.is-presenting):not(.touch-worship) {
+                overflow-y: auto;
+                overflow-x: hidden;
             }
-            body.touch-worship #mobile-present-gate:not(.hidden-gate) {
-                display: flex;
+            header.app-chrome {
+                height: auto;
+                min-height: 72px;
+                max-height: none;
+                flex-wrap: wrap;
+                overflow: visible;
+                gap: 10px;
+                padding: 10px 12px;
             }
-            body.touch-worship.is-presenting #mobile-present-gate {
-                display: none !important;
+            header.app-chrome .header-actions { flex-wrap: wrap; }
+            .dashboard-layout {
+                flex-direction: column;
+                height: auto;
             }
-            .text-huge { font-size: 7.2vmin; }
-            .text-title { font-size: 5.4vmin; }
-            .text-lyric { font-size: 5.8vmin; line-height: 1.45; }
-            .text-body { font-size: 4.2vmin; line-height: 1.55; }
-            .slide-header { font-size: 3.2vmin; }
-            .slide-header .text-3xl { font-size: 3.4vmin !important; }
+            .dashboard-layout > div,
+            #editor-form-col,
+            #editor-preview-col {
+                width: 100% !important;
+                flex: none !important;
+                height: auto !important;
+                max-height: none !important;
+            }
         }
         .present-nav-hint {
             display: none;
@@ -176,6 +262,7 @@
         }
         body.touch-worship.is-presenting .present-nav-hint {
             display: block;
+            bottom: max(16px, env(safe-area-inset-bottom));
         }
         .slide-bg-decoration {
             position: absolute;
@@ -221,9 +308,14 @@
             padding: 2% 8% 5.5vh;
             text-align: center;
             min-height: 0;
-            overflow-y: auto;
+            overflow: hidden;
             box-sizing: border-box;
-            -webkit-overflow-scrolling: touch;
+            touch-action: none;
+        }
+        body.is-presenting .slide-body {
+            overflow: hidden;
+            touch-action: none;
+            -webkit-overflow-scrolling: auto;
         }
         .slide-body.scripture-body {
             justify-content: flex-start;
@@ -262,36 +354,85 @@
         body.touch-worship.is-presenting .text-title {
             font-size: 5vmin;
         }
-        /* Cover (first page): slightly larger type; church footer bold 2×, raised mid-way */
-        body.touch-worship.is-presenting .cover-body .text-huge {
-            font-size: 8.2vmin;
+        .cover-main {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            width: 100%;
         }
-        body.touch-worship.is-presenting .cover-body .text-title {
-            font-size: 6.0vmin;
-        }
-        body.touch-worship.is-presenting .cover-body .cover-leader {
-            font-size: 3.4vmin;
-            margin-top: 1.8vmin;
-        }
-        body.touch-worship.is-presenting .cover-footer {
+        .cover-footer {
             position: absolute;
+            bottom: 2.5rem;
             left: 0;
             right: 0;
-            bottom: 26%;
+            width: 100%;
             text-align: center;
-            font-size: 2.3vmin;
+            font-size: 1.25rem;
             font-weight: 500;
             letter-spacing: 0.12em;
             text-transform: uppercase;
             color: #94a3b8;
             font-family: 'Noto Serif KR', serif;
+            line-height: 1.4;
             padding: 0 5%;
+        }
+        .slide-body.cover-body {
+            justify-content: center;
+            padding-top: 6%;
+            padding-bottom: 5%;
+        }
+        /* Cover: keep church name at the bottom so it never overlaps the title */
+        body.touch-worship.is-presenting .slide-body.cover-body {
+            justify-content: space-between;
+            padding-top: 7vmin;
+            padding-bottom: 12vmin;
+        }
+        body.touch-worship.is-presenting .cover-body .text-huge {
+            font-size: 7.6vmin;
+            line-height: 1.25;
+            margin-bottom: 2.2vmin;
+        }
+        body.touch-worship.is-presenting .cover-body .text-title {
+            font-size: 4.4vmin;
             line-height: 1.35;
+        }
+        body.touch-worship.is-presenting .cover-body .cover-leader {
+            font-size: 3.1vmin;
+            margin-top: 2vmin;
+            line-height: 1.4;
+        }
+        body.touch-worship.is-presenting .cover-footer {
+            position: relative;
+            bottom: auto;
+            font-size: 2.6vmin;
+            font-weight: 600;
         }
         body.touch-worship.is-presenting .order-list {
             text-align: left !important;
             margin-left: 0;
             margin-right: 0;
+            font-size: 4.7vmin !important;
+            line-height: 1.4 !important;
+            gap: 0.7vmin !important;
+            row-gap: 0.7vmin !important;
+        }
+        body.touch-worship.is-presenting .order-stack > h2 {
+            font-size: 5.8vmin;
+            margin-bottom: 0.4vmin;
+        }
+        body.touch-worship.is-presenting .order-stack > p {
+            font-size: 2.5vmin;
+            margin-bottom: 2vmin;
+        }
+        body.touch-worship.is-presenting .slide-body.order-slide-body {
+            justify-content: center;
+            padding-top: 4vmin;
+            padding-bottom: 5vmin;
+        }
+        body.touch-worship.is-presenting .text-responsive {
+            font-size: 4.3vmin;
+            line-height: 1.42;
         }
         .slide-body.order-slide-body {
             align-items: center;
@@ -356,18 +497,296 @@
         ::-webkit-scrollbar-track { background: var(--bg-primary); }
         ::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
         ::-webkit-scrollbar-thumb:hover { background: #475569; }
+        /* Editor dashboard — complete fallback so layout works if Tailwind CDN is skipped/late */
         .dashboard-layout {
+            display: flex;
+            flex-direction: row;
             height: calc(100vh - 80px);
             min-height: 0;
+            overflow: hidden;
+            background: #0f172a;
+        }
+        #editor-form-col {
+            width: 33.333%;
+            flex: 0 0 33.333%;
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+            min-height: 0;
+            height: 100%;
+            overflow: hidden;
+            background: rgba(30, 41, 59, 0.5);
+            border-right: 1px solid #334155;
+        }
+        #editor-preview-col {
+            flex: 1 1 auto;
+            width: auto;
+            min-width: 0;
+            min-height: 0;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            background: #0f172a;
+        }
+        #editor-form-col > .form-toolbar {
+            flex-shrink: 0;
+            padding: 1rem;
+            border-bottom: 1px solid #334155;
+        }
+        #editor-form-col .form-scroll {
+            flex: 1 1 auto;
+            min-height: 0;
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
+            padding: 1.5rem;
+        }
+        #editor-form-col .form-scroll.space-y-4 > * + * {
+            margin-top: 1rem;
+        }
+        #editor-form-col .form-card {
+            background: rgba(15, 23, 42, 0.8);
+            padding: 1rem;
+            border-radius: 0.75rem;
+            border: 1px solid rgba(51, 65, 85, 0.5);
+        }
+        #leftActionButtons {
+            flex: 0 0 auto;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            padding: 12px;
+            background: #020617;
+            border-top: 2px solid rgba(217, 119, 6, 0.4);
+        }
+        #leftActionButtons > * + * { margin-top: 0; }
+        #leftActionButtons button {
+            width: 100%;
+            padding: 0.5rem 0.75rem;
+            font-size: 0.875rem;
+            line-height: 1.25;
+            font-weight: 700;
+            color: #fff;
+            border: 0;
+            border-radius: 0.5rem;
+            cursor: pointer;
+            font-family: inherit;
+        }
+        #leftActionButtons button:nth-of-type(1) { background: #2563eb; }
+        #leftActionButtons button:nth-of-type(2) { background: #d97706; }
+        #leftActionButtons button:nth-of-type(3) { background: #047857; }
+        #leftActionButtons button:nth-of-type(4) { background: #6d28d9; border: 2px solid #a78bfa; }
+        #leftActionButtons button:nth-of-type(5) { background: #0369a1; border: 2px solid #38bdf8; }
+        #mini-preview-wrap {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 1.5rem;
+            background: #020617;
+            border-bottom: 1px solid #1e293b;
+            position: relative;
+            flex-shrink: 0;
+        }
+        #mini-preview-wrap .mini-preview-badge {
+            background: #1e293b;
+            color: #cbd5e1;
+            font-size: 0.75rem;
+            padding: 0.25rem 0.625rem;
+            border-radius: 0.25rem;
+            border: 1px solid #334155;
+        }
+        #mini-preview-wrap > div:first-child {
+            position: absolute;
+            top: 1rem;
+            left: 1rem;
+            z-index: 2;
+        }
+        #mini-preview-container {
+            position: relative;
+            aspect-ratio: 16 / 9;
+            width: 100%;
+            max-width: 48rem;
+            background: #000;
+            border-radius: 0.75rem;
+            overflow: hidden;
+            border: 4px solid #1e293b;
+            box-shadow: 0 25px 50px rgba(0,0,0,.5);
+        }
+        #slide-list-panel {
+            flex: 1 1 auto;
+            min-height: 0;
+            overflow-y: auto;
+            padding: 1.5rem;
+            background: #0f172a;
+        }
+        #slide-list {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 1rem;
+        }
+        @media (min-width: 1024px) {
+            #slide-list { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+        }
+        @media (min-width: 1280px) {
+            #slide-list { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+        }
+        #slide-list > div {
+            background: #1e293b;
+            border-radius: 0.5rem;
+            padding: 0.75rem;
+            cursor: pointer;
+            border: 2px solid #334155;
+            min-width: 0;
+        }
+        #slide-list > div.border-blue-500 {
+            border-color: #3b82f6;
+            box-shadow: 0 0 15px rgba(59,130,246,0.5);
         }
         .form-scroll {
             min-height: 0;
             overflow-y: auto;
             -webkit-overflow-scrolling: touch;
         }
+        header.app-chrome {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            height: 80px;
+            min-height: 80px;
+            max-height: 80px;
+            padding: 0 1.5rem;
+            background: #1e293b;
+            border-bottom: 1px solid #334155;
+            box-shadow: 0 4px 6px rgba(0,0,0,.25);
+            position: relative;
+            z-index: 20;
+            overflow: hidden;
+        }
+        header.app-chrome > div:first-child {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            min-width: 0;
+        }
+        header.app-chrome .header-actions {
+            display: flex;
+            flex-wrap: nowrap;
+            justify-content: flex-end;
+            align-items: center;
+            gap: 8px;
+            flex-shrink: 0;
+        }
+        header.app-chrome h1 { color: #fff; font-size: 1.25rem; font-weight: 700; margin: 0; }
+        header.app-chrome p { color: #94a3b8; font-size: 0.75rem; margin: 0; }
+        header.app-chrome .w-10.h-10 {
+            width: 2.5rem;
+            height: 2.5rem;
+            background: linear-gradient(135deg, #eab308, #a16207);
+            border-radius: 0.5rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #fff;
+            box-shadow: 0 4px 10px rgba(0,0,0,.35);
+            flex-shrink: 0;
+        }
+        header.app-chrome button {
+            color: #fff;
+            font-weight: 600;
+            font-size: 0.875rem;
+            padding: 0.5rem 1rem;
+            border-radius: 0.5rem;
+            cursor: pointer;
+            white-space: nowrap;
+            font-family: inherit;
+        }
+        header.app-chrome button[onclick="printBulletin()"] {
+            background: #047857;
+            border: 1px solid rgba(16, 185, 129, 0.4);
+        }
+        header.app-chrome #btnDownloadPdf,
+        header.app-chrome button[onclick="downloadStandaloneFile()"],
+        header.app-chrome button[onclick="togglePptLibraryPanel()"] {
+            background: #334155;
+            border: 1px solid #475569;
+            color: #e2e8f0;
+        }
+        header.app-chrome button[onclick="togglePptLibraryPanel()"] { color: #fde68a; border-color: rgba(245, 158, 11, 0.5); }
+        header.app-chrome #btnDownloadPptx {
+            background: #b45309;
+            border: 1px solid rgba(245, 158, 11, 0.4);
+        }
+        header.app-chrome [data-start-presentation] {
+            background: linear-gradient(90deg, #2563eb, #4f46e5);
+            border: 1px solid rgba(96, 165, 250, 0.35);
+            font-weight: 700;
+            padding: 0.625rem 1.5rem;
+            box-shadow: 0 10px 15px rgba(30, 58, 138, 0.35);
+        }
+        .dashboard-layout input,
+        .dashboard-layout textarea {
+            background: #1e293b;
+            color: #fff;
+            border: 1px solid #475569;
+            border-radius: 0.25rem;
+            padding: 0.5rem;
+            font-family: inherit;
+        }
+        .dashboard-layout h2 { color: #e2e8f0; margin: 0; }
+        .dashboard-layout h3 { margin: 0 0 0.5rem; }
+        .dashboard-layout .text-yellow-500 { color: #eab308; }
+        .dashboard-layout .text-yellow-400 { color: #facc15; }
+        .dashboard-layout .text-blue-400 { color: #60a5fa; }
+        .dashboard-layout .text-amber-200 { color: #fde68a; }
+        .dashboard-layout .text-amber-300 { color: #fcd34d; }
+        .dashboard-layout .text-amber-400 { color: #fbbf24; }
+        .dashboard-layout .text-emerald-400 { color: #34d399; }
+        .dashboard-layout .text-slate-200 { color: #e2e8f0; }
+        .dashboard-layout .text-slate-300 { color: #cbd5e1; }
+        .dashboard-layout .text-slate-400 { color: #94a3b8; }
+        .dashboard-layout .text-slate-500 { color: #64748b; }
+        .dashboard-layout .flex { display: flex; }
+        .dashboard-layout .flex-col { flex-direction: column; }
+        .dashboard-layout .items-center { align-items: center; }
+        .dashboard-layout .justify-between { justify-content: space-between; }
+        .dashboard-layout .justify-center { justify-content: center; }
+        .dashboard-layout .gap-2 { gap: 0.5rem; }
+        .dashboard-layout .w-full { width: 100%; }
+        .dashboard-layout .w-24 { width: 6rem; }
+        .dashboard-layout .flex-1 { flex: 1 1 auto; min-width: 0; }
+        .dashboard-layout .shrink-0 { flex-shrink: 0; }
+        .dashboard-layout .block { display: block; }
+        .dashboard-layout .truncate {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .dashboard-layout .text-xs { font-size: 0.75rem; }
+        .dashboard-layout .text-sm { font-size: 0.875rem; }
+        .dashboard-layout .text-lg { font-size: 1.125rem; }
+        .dashboard-layout .font-bold { font-weight: 700; }
+        .dashboard-layout .font-semibold { font-weight: 600; }
+        .dashboard-layout .mb-1 { margin-bottom: 0.25rem; }
+        .dashboard-layout .mb-2 { margin-bottom: 0.5rem; }
+        .dashboard-layout .mt-1 { margin-top: 0.25rem; }
+        .dashboard-layout .mt-2 { margin-top: 0.5rem; }
+        .dashboard-layout .space-y-2 > * + * { margin-top: 0.5rem; }
+        .dashboard-layout .space-y-3 > * + * { margin-top: 0.75rem; }
+        .dashboard-layout .space-y-4 > * + * { margin-top: 1rem; }
+        .dashboard-layout button.bg-blue-600 {
+            background: #2563eb;
+            color: #fff;
+            border: 0;
+            border-radius: 0.375rem;
+            cursor: pointer;
+            font-family: inherit;
+        }
+
     </style>
+    <link rel="stylesheet" data-worship-deck="1" href="./worship-deck.css?v=28">
     <script>
-window.WORSHIP_LOOKUP = {"hymns":{"1":"만복의 근원 하나님","2":"찬양 성부 성자 성령","3":"성부 성자와 성령","4":"성부 성자와 성령","5":"이 천지간 만물들아","6":"목소리 높여서","7":"성부 성자 성령","8":"거룩 거룩 거룩","9":"하늘에 가득 찬 영광의 하나님","10":"전능왕 오셔서","11":"홀로 한 분 하나님께","12":"다 함께 주를 경배하세","13":"영원한 하늘나라","14":"주 우리 하나님","15":"하나님의 크신 사랑","16":"은혜로신 하나님 우리 주 하나님","17":"사랑의 하나님","18":"성도들아 찬양하자","19":"찬송하는 소리 있어","20":"큰 영광 중에 계신 주","21":"다 찬양하여라","22":"만유의 주 앞에","23":"만 입이 내게 있으면","24":"왕 되신 주","25":"면류관 벗어서","26":"구세주를 아는 이들","27":"빛나고 높은 보좌와","28":"복의 근원 강림 하사","29":"성도여 다 함께","30":"전능하고 놀라우신","31":"찬양하라 복되신 구세주 예수","32":"만유의 주재","33":"영광스런 주를 보라","34":"참 놀랍도다 주 크신 이름","35":"큰 영화로신 주","36":"주 예수 이름 높이어","37":"주 예수 이름 높이어","38":"예수 우리 왕이여","39":"주 은혜를 받으려","40":"찬송으로 보답할 수 없는","41":"내 영혼아 주 찬양하여라","42":"거룩한 주님께","43":"즐겁게 안식할 날","44":"지난 이레 동안에","45":"거룩한 주의 날","46":"이 날은 주님 정하신","47":"하늘이 푸르고","48":"거룩하신 주 하나님","49":"하나님이 언약하신 그대로","50":"내게 있는 모든 것을","51":"주님 주신 거룩한 날","52":"거룩하신 나의 하나님","53":"성전을 떠나가기 전","54":"주여 복을 구하오니","55":"주 이름으로 모였던","56":"우리의 주여","57":"오늘 주신 말씀에","58":"지난밤에 보호하사","59":"하나님 아버지 어둔 밤이 지나","60":"영혼의 햇빛 예수님","61":"우리가 기다리던","62":"고요히 머리 숙여","63":"주가 세상을 다스리니","64":"기뻐하며 경배하세","65":"내 영혼아 찬양하라","66":"다 감사드리세","67":"영광의 왕께 다 경배하며","68":"오 하나님 우리의 창조주시니","69":"온 천하 만물 우러러","70":"피난처 있으니","71":"예부터 도움 되시고","72":"만왕의 왕 앞에 나오라","73":"내 눈을 들어 두루 살피니","74":"오 만세 반석이신","75":"주여 우리 무리를","76":"창조의 주 아버지께","77":"거룩하신 하나님","78":"저 높고 푸른 하늘과","79":"주 하나님 지으신 모든 세계","80":"천지에 있는 이름 중","81":"주는 귀한 보배","82":"성부의 어린 양이","83":"나의 맘에 근심 구름","84":"온 세상이 캄캄하여서","85":"구주를 생각만 해도","86":"내가 늘 의지하는 예수","87":"내 주님 입으신 그 옷은","88":"내 진정 사모하는","89":"샤론의 꽃 예수","90":"주 예수 내가 알기 전","91":"슬픈 마음 있는 사람","92":"위에 계신 나의 친구","93":"예수는 나의 힘이요","94":"주 예수보다 더 귀한 것은 없네","95":"나의 기쁨 나의 소망되시며","96":"예수님은 누구신가","97":"정혼한 처녀에게","98":"예수님 오소서","99":"주님 앞에 떨며 서서","100":"미리암과 같은 여인들이","101":"이새의 뿌리에서","102":"영원한 문아 열려라","103":"우리 주님 예수께","104":"곧 오소서 임마누엘","105":"오랫동안 기다리던","106":"아기 예수 나셨네","107":"거룩한 밤 복된 이 밤","108":"그 어린 주 예수","109":"고요한 밤 거룩한 밤","110":"고요하고 거룩한 밤","111":"귀중한 보배합을","112":"그 맑고 환한 밤중에","113":"그 아기 잠들었네","114":"그 어린 주 예수","115":"기쁘다 구주오셨네","116":"동방에서 박사들","117":"만백성 기뻐하여라","118":"영광나라 천사들아","119":"옛날 임금 다윗 성에","120":"오 베들레헴 작은 골","121":"우리 구주 나신 날","122":"참 반가운 성도여","123":"저 들 밖에 한밤중에","124":"양 지키는 목자여","125":"천사들의 노래가","126":"천사 찬송하기를","127":"그 고요한 쓸쓸한","128":"거룩하신 우리 주님","129":"마리아는 아기를","130":"찬란한 주의 영광은","131":"다 나와 찬송 부르세","132":"주의 영광 빛나니","133":"하나님의 말씀으로","134":"나 어느 날 꿈속을 헤메며","135":"어저께나 오늘이나","136":"가나의 혼인 잔치","137":"하나님의 아들이","138":"햇빛을 받는 곳마다","139":"오 영원한 내 주 예수","140":"왕되신 우리 주께","141":"호산나 호산나","142":"시온에 오시는 주","143":"웬말인가 날 위하여","144":"예수 나를 위하여","145":"오 거룩하신 주님","146":"저 멀리 푸른 언덕에","147":"거기 너 있었는가","148":"영화로운 주 예수의","149":"주 달려 죽은 십자가","150":"갈보리 산 위에","151":"만왕의 왕 내 주께서","152":"귀하신 예수","153":"가시 면류관","154":"생명의 주여 면류관","155":"십자가 지고","156":"머리에 가시관 붉은 피 흐르는","157":"겟세마네 동산에서 최후 기도","158":"서쪽 하늘 붉은 노을","159":"기뻐 찬송하세","160":"무덤에 머물러","161":"할렐루야 우리 예수","162":"부활하신 구세주","163":"할렐루야 할렐루야","164":"예수 부활했으니","165":"주님께 영광","166":"싸움은 모두 끝나고","167":"즐겁도다 이 날","168":"하늘에 찬송이 들리던 그 날","169":"사망의 권세가","170":"내 주님은 살아 계셔","171":"하나님의 독생자","172":"사망을 이긴 주","173":"다 함께 찬송 부르자","174":"대속하신 구주께서","175":"신랑되신 예수께서","176":"주 어느 때 다시 오실는지","177":"오랫동안 고대하던","178":"주 예수 믿는 자여","179":"주 예수의 강림이","180":"하나님의 나팔 소리","181":"부활 승천하신 주께서","182":"강물같이 흐르는 기쁨","183":"빈 들에 마른 풀같이","184":"불길같은 주 성령","185":"이 기쁜 소식을","186":"영화로신 주 성령","187":"비둘기같이 온유한","188":"무한하신 주 성령","189":"진실하신 주 성령","190":"성령이여 강림하사","191":"내가 매일 기쁘게","192":"임하소서 임하소서","193":"성령의 봄바람 불어오니","194":"저 하늘 거룩하신 주여","195":"성령이여 우리 찬송 부를 때","196":"성령의 은사를","197":"은혜가 풍성한 하나님은","198":"주 예수 해변서","199":"나의 사랑하는 책","200":"달고 오묘한 그 말씀","201":"참 사람 되신 말씀","202":"하나님 아버지 주신 책은","203":"하나님의 말씀은","204":"주의 말씀 듣고서","205":"주 예수 크신 사랑","206":"주님의 귀한 말씀은","207":"귀하신 주님 계신 곳","208":"내 주의 나라와","209":"이 세상 풍파 심하고","210":"시온성과 같은 교회","211":"값비싼 향유를 주께 드린","212":"겸손히 주를 섬길 때","213":"나의 생명 드리니","214":"나 주의 도움 받고자","215":"내 죄 속해 주신 주께","216":"성자의 귀한 몸","217":"하나님이 말씀 하시기를","218":"네 맘과 정성을 다하여서","219":"주 하나님의 사랑은","220":"사랑하는 주님 앞에","221":"주 믿는 형제들","222":"우리 다시 만날 때까지","223":"하나님은 우리들의","224":"정한 물로 우리 죄를","225":"실로암 샘물가에 핀","226":"성령으로 세례 받아","227":"주 앞에 성찬받기 위하여","228":"오 나의 주님 친히 뵈오니","229":"아무 흠도 없고","230":"우리의 참되신 구주시니","231":"우리 다 같이 무릎 꿇고서","232":"유월절 때가 이르러","233":"자비로 그 몸을 찢기시고","234":"구주 예수 그리스도","235":"보아라 즐거운 우리 집","236":"우리 모든 수고 끝나","237":"저 건너편 강 언덕에","238":"해 지는 저편","239":"저 뵈는 본향 집","240":"주가 맡긴 모든 역사","241":"아름다운 본향","242":"황무지가 장미꽃같이","243":"저 요단강 건너편에","244":"구원 받은 천국의 성도들","245":"저 좋은 낙원 이르니","246":"나 가나안 땅 귀한 성에","247":"보아라 저 하늘에","248":"언약의 주 하나님","249":"주 사랑하는 자 다 찬송할 때에","250":"구주의 십자가 보혈로","251":"놀랍다 주님의 큰 은혜","252":"나의 죄를 씻기는","253":"그 자비하신 주님","254":"내 주의 보혈은","255":"너희 죄 흉악하나","256":"나의 죄 모두 지신 주님","257":"마음에 가득한 의심을 깨치고","258":"샘물과 같은 보혈은","259":"예수 십자가에 흘린 피로써","260":"우리를 죄에서 구하시려","261":"이 세상의 모든 죄를","262":"날 구원하신 예수님","263":"이 세상 험하고","264":"정결하게 하는 샘이","265":"주 십자가를 지심으로","266":"주의 피로 이룬 샘물","267":"주의 확실한 약속의 말씀 듣고","268":"죄에서 자유를 얻게 함은","269":"그 참혹한 십자가에","270":"변찮는 주님의 사랑과","271":"나와 같은 죄인 위해","272":"고통의 멍에 벗으려고","273":"나 주를 멀리 떠났다","274":"나 행한 것 죄뿐이니","275":"날마다 주와 멀어져","276":"아버지여 이 죄인을","277":"양떼를 떠나서","278":"여러 해 동안 주 떠나","279":"인애하신 구세주여","280":"천부여 의지 없어서","281":"요나처럼 순종않고","282":"큰 죄에 빠진 날 위해","283":"나 속죄함을 받은 후","284":"오랫동안 모든 죄 가운데 빠져","285":"주의 말씀 받은 그 날","286":"주 예수님 내 맘에 오사","287":"예수 앞에 나오면","288":"예수를 나의 구주삼고","289":"주 예수 내 맘에 들어와","290":"우리는 주님을 늘 배반하나","291":"외롭게 사는 이 그 누군가","292":"주 없이 살 수 없네","293":"주의 사랑 비칠 때에","294":"하나님은 외아들을","295":"큰 죄에 빠진 나를","296":"죄인 구원하시려고","297":"양 아흔아홉 마리는","298":"속죄하신 구세주를","299":"하나님 사랑은","300":"내 맘이 낙심되며","301":"지금까지 지내온 것","302":"내 주 하나님 넓고 큰 은혜는","303":"날 위하여 십자가의","304":"그 크신 하나님의 사랑","305":"나 같은 죄인 살리신","306":"죽을 죄인 살려주신","307":"소리없이 보슬보슬","308":"내 평생 살아온 길","309":"목마른 내 영혼","310":"아 하나님의 은혜로","311":"내 너를 위하여","312":"너 하나님께 이끌리어","313":"내 임금 예수 내 주여","314":"내 구주 예수를 더욱 사랑","315":"내 주 되신 주를 참 사랑하고","316":"주여 나의 생명","317":"내 주 예수 주신 은혜","318":"순교자의 흘린 피가","319":"말씀으로 이 세상을","320":"나의 죄를 정케하사","321":"날 대속하신 예수께","322":"세상의 헛된 신을 버리고","323":"부름받아 나선 이 몸","324":"예수 나를 오라 하네","325":"예수가 함께 계시니","326":"내 죄를 회개하고","327":"주님 주실 화평","328":"너 주의 사람아","329":"주 날 불러 이르소서","330":"어둔 밤 쉬 되리니","331":"영광을 받으신 만유의 주여","332":"우리는 부지런한","333":"충성하라 죽도록","334":"위대하신 주를","335":"크고 놀라운 평화가","336":"환난과 핍박 중에도","337":"내 모든 시험 무거운 짐을","338":"내 주를 가까이 하게 함은","339":"내 주님 지신 십자가","340":"어지러운 세상 중에","341":"십자가를 내가 지고","342":"너 시험을 당해","343":"시험 받을 때에","344":"믿음으로 가리라","345":"캄캄한 밤 사나운 바람 불 때","346":"주 예수 우리 구하려","347":"허락하신 새 땅에","348":"마귀들과 싸울지라","349":"나는 예수 따라가는","350":"우리들이 싸울 것은","351":"믿는 사람들은 주의 군사니","352":"십자가 군병들아","353":"십자가 군병되어서","354":"주를 앙모하는 자","355":"다 같이 일어나","356":"주 예수 이름 소리 높여","357":"주 믿는 사람 일어나","358":"주의 진리 위해 십자가 군기","359":"천성을 향해 가는 성도들아","360":"행군 나팔 소리에","361":"기도하는 이 시간","362":"주여 복을 주시기를","363":"내가 깊은 곳에서","364":"내 기도하는 그 시간","365":"마음 속에 근심 있는 사람","366":"어두운 내 눈 밝히사","367":"인내하게 하소서 주여 우리를","368":"주 예수여 은혜를","369":"죄짐맡은 우리 구주","370":"주 안에 있는 나에게","371":"구주여 광풍이 불어","372":"그 누가 나의 괴롬 알며","373":"고요한 바다로","374":"나의 믿음 약할 때","375":"나는 갈 길 모르니","376":"나그네와 같은 내가","377":"전능하신 주 하나님","378":"내 선한 목자","379":"내 갈 길 멀고 밤은 깊은데","380":"나의 생명되신 주","381":"나 캄캄한 밤 죄의 길에","382":"너 근심 걱정 말아라","383":"눈을 들어 산을 보니","384":"나의 갈 길 다 가도록","385":"못 박혀 죽으신","386":"만세반석 열린 곳에","387":"멀리멀리 갔더니","388":"비바람이 칠 때와","389":"내게로 오라 하신 주님의","390":"예수가 거느리시니","391":"오 놀라운 구세주","392":"주여 어린 사슴이","393":"오 신실하신 주","394":"이 세상의 친구들","395":"자비하신 예수여","396":"우리 주님 밤새워","397":"주 사랑 안에 살면","398":"어둠의 권세에서","399":"어린 양들아 두려워 말아라","400":"험한 시험 물 속에서","401":"주의 곁에 있을 때","402":"나의 반석 나의 방패","403":"영원하신 주님의","404":"바다에 놀이 일 때에","405":"주의 친절한 팔에 안기세","406":"곤한 내 영혼 편히 쉴 곳과","407":"구주와 함께 나 죽었으니","408":"나 어느 곳에 있든지","409":"나의 기쁨은 사랑의 주님께","410":"내 맘에 한 노래있어","411":"아 내 맘속에","412":"내 영혼의 그윽히 깊은 데서","413":"내 평생에 가는 길","414":"이 세상은 요란하나","415":"십자가 그늘 아래","416":"너희 근심 걱정을","417":"주 예수 넓은 품에","418":"기쁠 때나 슬플 때나","419":"주 날개 밑 내가 편안히 쉬네","420":"너 성결키 위해","421":"내가 예수 믿고서","422":"거룩하게 하소서","423":"먹보다도 더 검은","424":"아버지여 나의 맘을","425":"주님의 뜻을 이루소서","426":"이 죄인을 완전케 하시옵고","427":"맘 가난한 사람","428":"내 영혼에 햇빛 비치니","429":"세상 모든 풍파 너를 흔들어","430":"주와 같이 길 가는 것","431":"주 안에 기쁨 있네","432":"큰 물결이 설레는 어둔 바다","433":"귀하신 주여 날 붙드사","434":"귀하신 친구 내게 계시니","435":"나의 영원하신 기업","436":"나 이제 주님의 새 생명 얻은 몸","437":"하늘 보좌 떠나서","438":"내 영혼이 은총 입어","439":"십자가로 가까이","440":"어디든지 예수 나를 이끌면","441":"은혜 구한 내게 은혜의 주님","442":"저 장미꽃 위에 이슬","443":"아침 햇살 비칠 때","444":"겟세마네 동산에서","445":"태산을 넘어 험곡에 가도","446":"주 음성 외에는","447":"이 세상 끝날까지","448":"주님 가신 길을 따라","449":"예수 따라가며","450":"내 평생 소원 이것뿐","451":"예수 영광 버리사","452":"내 모든 소원 기도의 제목","453":"예수 더 알기 원하네","454":"주와 같이 되기를","455":"주님의 마음을 본받는 자","456":"거친 세상에서 실패하거든","457":"겟세마네 동산의","458":"너희 마음에 슬픔이 가득할 때","459":"누가 주를 따라","460":"뜻 없이 무릎 꿇는","461":"십자가를 질 수 있나","462":"생명 진리 은혜 되신","463":"신자 되기 원합니다","464":"믿음의 새 빛을","465":"주 믿는 나 남 위해","466":"죽기까지 사랑하신 주","467":"높으신 주께서 낮아지심은","468":"큰 사랑의 새 계명을","469":"내 주 하나님","470":"나의 몸이 상하여","471":"주여 나의 병든 몸을","472":"네 병든 손 내밀라고","473":"괴로움과 고통을","474":"의원되신 예수님의","475":"인류는 하나 되게","476":"꽃이 피고 새가 우는","477":"하나님이 창조하신","478":"참 아름다워라","479":"괴로운 인생길 가는 몸이","480":"천국에서 만나보자","481":"때 저물어서 날이 어두니","482":"참 즐거운 노래를","483":"구름같은 이 세상","484":"내 맘의 주여 소망되소서","485":"세월이 흘러가는데","486":"이 세상에 근심된 일이 많고","487":"어두움 후에 빛이 오며","488":"이 몸의 소망 무언가","489":"저 요단강 건너편에 찬란하게","490":"주여 지난밤 내 꿈에","491":"저 높은 곳을 향하여","492":"잠시 세상에 내가 살면서","493":"하늘가는 밝은 길이","494":"만세 반석 열리니","495":"익은 곡식 거둘 자가","496":"새벽부터 우리","497":"주 예수 넓은 사랑","498":"저 죽어가는 자 다 구원하고","499":"흑암에 사는 백성들을 보라","500":"물 위에 생명줄 던지어라","501":"너 시온아 이 소식 전파하라","502":"빛의 사자들이여","503":"세상 모두 사랑 없어","504":"주님의 명령 전할 사자여","505":"온 세상 위하여","506":"땅 끝까지 복음을","507":"저 북방 얼음 산과","508":"우리가 지금은 나그네 되어도","509":"기쁜 일이 있어 천국 종치네","510":"하나님의 진리 등대","511":"예수 말씀 하시기를","512":"천성 길을 버리고","513":"헛된 욕망 길을 가며","514":"먼동 튼다 일어나라","515":"눈을 들어 하늘 보라","516":"옳은 길 따르라 의의 길을","517":"가난한 자 돌봐주며","518":"기쁜 소리 들리니","519":"구주께서 부르되","520":"듣는 사람마다 복음 전하여","521":"구원으로 인도하는","522":"웬일인가 내 형제여","523":"어둔 죄악 길에서","524":"갈 길을 밝히 보이시니","525":"돌아와 돌아와","526":"목마른 자들아","527":"어서 돌아오오","528":"예수가 우리를 부르는 소리","529":"온유한 주님의 음성","530":"주께서 문에 오셔서","531":"자비한 주께서 부르시네","532":"주께로 한 걸음씩","533":"우리 주 십자가","534":"주님 찾아 오셨네","535":"주 예수 대문 밖에","536":"죄짐에 눌린 사람은","537":"형제여 지체말라","538":"죄짐을 지고서 곤하거든","539":"너 예수께 조용히 나가","540":"주의 음성을 내가 들으니","541":"꽃이 피는 봄날에만","542":"구주 예수 의지함이","543":"어려운 일 당할 때","544":"울어도 못하네","545":"이 눈에 아무 증거 아니 뵈어도","546":"주님 약속 하신 말씀 위에 서","547":"나 같은 죄인까지도","548":"날 구속하신","549":"내 주여 뜻대로","550":"시온의 영광이 빛나는 아침","551":"오늘까지 복과 은혜","552":"아침 해가 돋을 때","553":"새해 아침 환히 밝았네","554":"종소리 크게 울려라","555":"우리 주님 모신 가정","556":"날마다 주님을 의지하는","557":"에덴의 동산처럼","558":"미더워라 주의 가정","559":"사철에 봄바람 불어 잇고","560":"주의 발자취를 따름이","561":"예수님의 사랑은","562":"예루살렘 아이들","563":"예수 사랑하심을","564":"예수께서 오실 때에","565":"예수께로 가면","566":"사랑의 하나님 귀하신 이름은","567":"다정하신 목자 예수","568":"하나님은 나의 목자시니","569":"선한 목자 되신 우리 주","570":"주는 나를 기르시는 목자","571":"역사 속에 보냄 받아","572":"바다같이 넓은 은혜","573":"말씀에 순종하여","574":"가슴마다 파도친다","575":"주님께 귀한 것 드려","576":"하나님의 뜻을 따라","577":"낳으시고 길러주신","578":"언제나 바라봐도","579":"어머니의 넓은 사랑","580":"삼천리 반도 금수강산","581":"주 하나님 이 나라를 지켜주시고","582":"어둔 밤 마음에 잠겨","583":"이 민족에 복음을","584":"우리나라 지켜주신","585":"내 주는 강한 성이요","586":"어느 민족 누구게나","587":"감사하는 성도여","588":"공중 나는 새를 보라","589":"넓은 들에 익은 곡식","590":"논밭에 오곡백과","591":"저 밭에 농부 나가","592":"산마다 불이 탄다 고운 단풍에","593":"아름다운 하늘과","594":"감사하세 찬양하세","595":"나 맡은 본분은","596":"영광은 주님 홀로","597":"이전에 주님을 내가 몰라","598":"천지 주관하는 주님","599":"우리의 기도 들어주시옵소서","600":"교회의 참된 터는","601":"하나님이 정하시고","602":"성부님께 빕니다","603":"태초에 하나님이","604":"완전한 사랑","605":"오늘 모여 찬송함은","606":"해보다 더 밝은 천국","607":"내 본향 가는 길","608":"후일에 생명 그칠 때","609":"이 세상 살 때에","610":"고생과 수고가 다 지난 후","611":"주님 오라 부르시어","612":"이 땅에서 주를 위해","613":"사랑의 주 하나님","614":"얼마나 아프셨나","615":"그 큰 일을 행하신","616":"주를 경배하리","617":"주님을 찬양합니다","618":"나 주님을 사랑합니다","619":"놀라운 그 이름","620":"여기에 모인 우리","621":"찬양하라 내 영혼아","622":"거룩한 밤","623":"주님의 시간에","624":"우리 모두 찬양해","625":"거룩 거룩 거룩한 하나님","626":"만민들아 다 경배하라","627":"할렐루야 할렐루야 다 함께","628":"아멘 아멘 아멘 영광과 존귀를","629":"거룩 거룩 거룩","630":"진리와 생명 되신 주","631":"우리 기도를","632":"주여 주여 우리를","633":"나의 하나님 받으소서","634":"모든 것이 주께로부터","635":"하늘에 계신 아버지","636":"하늘에 계신 우리 아버지여","637":"주님 우리 마음을 여시어","638":"주 너를 지키시고","639":"주 함께하소서","640":"아멘","641":"아멘","642":"아멘","643":"아멘","644":"아멘","645":"아멘"},"hymnLyrics":{"1":{"title":"만복의 근원 하나님","lyrics":"만복의 근원 하나님\n온 백성 찬송 드리고\n저 천사여 찬송하세\n찬송 성부 성자 성령. 아멘"},"8":{"title":"거룩 거룩 거룩","lyrics":"거룩 거룩 거룩 전능하신 주여\n이른 아침 우리 주를 찬송합니다\n거룩 거룩 거룩 자비하신 주여\n하나님 우리 주여 영광 돌림받으소서"},"79":{"title":"주 하나님 지으신 모든 세계","lyrics":"주 하나님 지으신 모든 세계\n내 마음 속에 그리어 볼 때\n하늘의 별과 높은 산 깊은 바다\n주님의 권능을 우주에 봤도다\n주님의 높고 위대하심을\n내 영혼이 찬양하네"},"109":{"title":"고요한 밤 거룩한 밤","lyrics":"고요한 밤 거룩한 밤\n어둠에 묻힌 밤\n주의 부모 앉아서\n감사 기도 드릴 때\n아기 잘도 잔다\n아기 잘도 잔다"},"150":{"title":"갈보리 산 위에","lyrics":"갈보리 산 위에 십자가 섰으니\n주가 못 박힌 것은 죄인 위해\n날 위해 날 위해\n날 위해 못 박혀\n갈보리 산 위에 십자가 섰네"},"200":{"title":"달고 오묘한 그 말씀","lyrics":"달고 오묘한 그 말씀\n생명의 말씀 믿으며\n날 위해 죽으신 주님\n나의 구주 되시네"},"258":{"title":"샘물과 같은 보혈은","lyrics":"샘물과 같은 보혈은\n임마누엘 피로다\n이 샘에 죄를 씻으면\n정하게 되겠네"},"288":{"title":"예수를 나의 구주삼고","lyrics":"예수를 나의 구주삼고\n성령과 피로서 거듭나니\n이 세상에서 내 영혼이\n하늘의 영광 누리도다\n이것이 나의 간증이요\n이것이 나의 찬송일세\n나사는 동안 끊임없이\n구주를 찬송하리로다"},"301":{"title":"지금까지 지내온 것","lyrics":"지금까지 지내온 것\n주의 크신 은혜라\n한이 없는 주의 사랑\n어찌 이루 말하랴\n자나깨나 주의 손이\n항상 살펴 주시고\n모든 일을 주 안에서\n형통하게 하시네"},"304":{"title":"그 크신 하나님의 사랑","lyrics":"그 크신 하나님의 사랑\n말로다 형용 못하네\n저 높고 높은 별을 넘어\n이 낮고 낮은 땅 위에\n죄 범한 영혼 구하려\n그 아들 보내사\n온 인류 방생케 하시니\n오 사랑 놀라운 사랑"},"305":{"title":"나 같은 죄인 살리신","lyrics":"나 같은 죄인 살리신\n주 은혜 놀라와\n잃었던 생명 찾았고\n광명을 얻었네"},"310":{"title":"아 하나님의 은혜로","lyrics":"주 언제 강림 하실지 혹 밤에 혹 낮에\n또 주님 만날 그 곳도 난 알 수 없도다\n내가 믿고 또 의지함은 내 모든 형편 아시는 주님\n늘 보호해 주실 것을 나는 확실히 아네"},"370":{"title":"주 안에 있는 나에게","lyrics":"주 안에 있는 나에게\n딴 걱정 있으랴\n십자가 밑에 엎드려\n내 짐을 풀었네"},"405":{"title":"주의 친절한 팔에 안기세","lyrics":"날이 갈수록 주의 사랑이\n두루 광명하게 비치고\n천성 가는 길 편히 가리니\n영원하신 팔에 안기세\n주의 팔에 그 크신 팔에 안기세\n주의 팔에 영원하신 팔에 안기세"},"412":{"title":"내 영혼의 그윽히 깊은 데서","lyrics":"내 영혼의 그윽히 깊은 데서\n맑은 가락이 울려나네\n하늘 위에서 메아리 같이\n이 기쁜 노래 주 찬양하네"},"438":{"title":"내 영혼이 은총 입어","lyrics":"내 영혼이 은총 입어\n귀한 주님 뵙도다\n이 세상도 동산같이\n주의 얼굴 뵙도다"},"460":{"title":"뜻 없이 무릎 꿇는","lyrics":"뜻 없이 무릎 꿇는\n그 맘을 주여 치소서\n참되고 진실한 맘으로\n주님만 따르게 하소서"},"493":{"title":"하늘가는 밝은 길이","lyrics":"하늘가는 밝은 길이\n내 앞에 있으니\n하나님이 불러 주신\n그 나라 가리라"},"505":{"title":"온 세상 위하여","lyrics":"온 세상 위하여 나 십자가 졌네\n온 세상 위하여 내 피 흘렸네\n온 세상 위하여 나 부르심 받네\n온 세상 위하여 일하러 가네"},"545":{"title":"이 눈에 아무 증거 아니 뵈어도","lyrics":"이 눈에 아무 증거 아니 뵈어도\n믿음만을 가지고서 늘 걸으며\n이 맘에 의심 없이 살아갈 때에\n우리 주님 친히 인도하시리"},"563":{"title":"예수 사랑하심을","lyrics":"예수 사랑하심을\n성경에서 배웠네\n우리들은 약하나\n예수 권세 많도다\n날 사랑하심\n날 사랑하심\n날 사랑하심\n성경에서 배웠네"},"585":{"title":"내 주는 강한 성이요","lyrics":"내 주는 강한 성이요\n방패와 병기되시니\n큰 환난에서 우리를\n구하여 내시리로다"},"7":{"title":"성부 성자 성령","lyrics":"성부 성자 성령\n삼위일체께\n입을 모아\n찬양 경배 드리세\n태초부터 지금까지\n또 영원토록\n영광 영광\n아멘"},"30":{"title":"전능하고 놀라우신","lyrics":"1. 전능하고 놀라우신\n나의 주님 구세주\n거룩하신 은혜의 왕\n주를 경배합니다\n영광 영광 주의 이름 찬양해\n영광 영광 귀한 이름 찬양해\n\n2. 하늘 위에 계신 주님\n참된 빛이 되시니\n이 세상의 모든 나라\n주께 영광 돌리네\n영광 영광 주의 이름 찬양해\n영광 영광 귀한 이름 찬양해\n\n3. 하늘나라 보좌에서\n죄악 많은 세상에\n우리 구원하시려고\n주님 세상 오셨네\n영광 영광 주의 이름 찬양해\n영광 영광 귀한 이름 찬양해\n\n4. 영원하신 우리 주님\n어서 속히 오셔서\n주의 모든 성도들을\n천국 인도하소서\n영광 영광 주의 이름 찬양해\n영광 영광 귀한 이름 찬양해\n아멘"},"35":{"title":"큰 영화로신 주","lyrics":"1. 큰 영화로신 주\n이 곳에 오셔서\n이 모인 자들로\n주 백성 삼으사\n그 중에 항상 계시고\n그 중에 항상 계시고\n큰 영광 나타내소서\n\n2. 이 백성 기도와\n또 예물 드림이\n향내와 같으니\n곧 받으옵소서\n주 예수 크신 복음을\n주 예수 크신 복음을\n만백성 듣게 하소서\n\n3. 또 우리 자손들\n다 주를 기리고\n저 성전 돌같이\n견고하게 하소서\n주 구원하신 능력을\n주 구원하신 능력을\n늘 끝날까지 주소서\n\n4. 주 믿는 만민이\n참 진리 지키며\n옛 성도들 같이\n주 찬송하다가\n저 천국 보좌 앞에서\n저 천국 보좌 앞에서\n늘 찬송하게 하소서\n아멘"},"36":{"title":"주 예수 이름 높이어","lyrics":"1. 주 예수\n이름 높이어\n\n2. 믿음으로 주를 따르며\n감사 찬송 부르세\n\n3. 주님이 함께 하시니\n늘 찬양하며 살리라\n\n아멘"},"50":{"title":"내게 있는 모든 것을","lyrics":"1. 내게 있는\n모든 것을\n\n2. 믿음으로 주를 따르며\n감사 찬송 부르세\n\n3. 주님이 함께 하시니\n늘 찬양하며 살리라\n\n아멘"},"70":{"title":"피난처 있으니","lyrics":"1. 피난처\n있으니\n\n2. 믿음으로 주를 따르며\n감사 찬송 부르세\n\n3. 주님이 함께 하시니\n늘 찬양하며 살리라\n\n아멘"},"86":{"title":"내가 늘 의지하는 예수","lyrics":"1. 내가 늘\n의지하는 예수\n\n2. 믿음으로 주를 따르며\n감사 찬송 부르세\n\n3. 주님이 함께 하시니\n늘 찬양하며 살리라\n\n아멘"},"91":{"title":"슬픈 마음 있는 사람","lyrics":"1. 슬픈 마음\n있는 사람\n\n2. 믿음으로 주를 따르며\n감사 찬송 부르세\n\n3. 주님이 함께 하시니\n늘 찬양하며 살리라\n\n아멘"},"144":{"title":"예수 나를 위하여","lyrics":"1. 예수 나를\n위하여\n\n2. 믿음으로 주를 따르며\n감사 찬송 부르세\n\n3. 주님이 함께 하시니\n늘 찬양하며 살리라\n\n아멘"},"191":{"title":"내가 매일 기쁘게","lyrics":"1. 내가 매일\n기쁘게\n\n2. 믿음으로 주를 따르며\n감사 찬송 부르세\n\n3. 주님이 함께 하시니\n늘 찬양하며 살리라\n\n아멘"},"205":{"title":"주 예수 크신 사랑","lyrics":"1. 주 예수\n크신 사랑\n\n2. 주의 은혜 감사하며\n평안함으로 찬양해\n\n3. 날마다 주만 바라보며\n주님 사랑 전하리라\n\n아멘"},"250":{"title":"구주의 십자가 보혈로","lyrics":"1. 구주의 십자가\n보혈로\n\n2. 십자가 사랑 감사하며\n구원하신 주님 찬양해\n\n3. 주님 보혈 의지하여\n새 생명 얻어 살리라\n\n아멘"},"259":{"title":"예수 십자가에 흘린 피로써","lyrics":"1. 예수 십자가에\n흘린 피로써\n\n2. 십자가 사랑 감사하며\n구원하신 주님 찬양해\n\n3. 주님 보혈 의지하여\n새 생명 얻어 살리라\n\n아멘"},"286":{"title":"주 예수님 내 맘에 오사","lyrics":"1. 주 예수님\n내 맘에 오사\n\n2. 믿음으로 주를 따르며\n감사 찬송 부르세\n\n3. 주님이 함께 하시니\n늘 찬양하며 살리라\n\n아멘"},"292":{"title":"주 없이 살 수 없네","lyrics":"1. 주 없이\n살 수 없네\n\n2. 믿음으로 주를 따르며\n감사 찬송 부르세\n\n3. 주님이 함께 하시니\n늘 찬양하며 살리라\n\n아멘"},"312":{"title":"너 하나님께 이끌리어","lyrics":"1. 너 하나님께\n이끌리어\n\n2. 믿음으로 주를 따르며\n감사 찬송 부르세\n\n3. 주님이 함께 하시니\n늘 찬양하며 살리라\n\n아멘"},"325":{"title":"예수가 함께 계시니","lyrics":"1. 예수가 함께\n계시니\n\n2. 믿음으로 주를 따르며\n감사 찬송 부르세\n\n3. 주님이 함께 하시니\n늘 찬양하며 살리라\n\n아멘"},"341":{"title":"십자가를 내가 지고","lyrics":"1. 십자가를 내가\n지고\n\n2. 십자가 사랑 감사하며\n구원하신 주님 찬양해\n\n3. 주님 보혈 의지하여\n새 생명 얻어 살리라\n\n아멘"},"365":{"title":"마음 속에 근심 있는 사람","lyrics":"1. 마음 속에\n근심 있는 사람\n\n2. 믿음으로 주를 따르며\n감사 찬송 부르세\n\n3. 주님이 함께 하시니\n늘 찬양하며 살리라\n\n아멘"},"379":{"title":"내 갈 길 멀고 밤은 깊은데","lyrics":"1. 내 갈 길\n멀고 밤은 깊은데\n\n2. 믿음으로 주를 따르며\n감사 찬송 부르세\n\n3. 주님이 함께 하시니\n늘 찬양하며 살리라\n\n아멘"},"384":{"title":"나의 갈 길 다 가도록","lyrics":"1. 나의 갈\n길 다 가도록\n\n2. 믿음으로 주를 따르며\n감사 찬송 부르세\n\n3. 주님이 함께 하시니\n늘 찬양하며 살리라\n\n아멘"},"410":{"title":"내 맘에 한 노래있어","lyrics":"1. 내 맘에\n한 노래있어\n\n2. 믿음으로 주를 따르며\n감사 찬송 부르세\n\n3. 주님이 함께 하시니\n늘 찬양하며 살리라\n\n아멘"},"488":{"title":"이 몸의 소망 무언가","lyrics":"1. 이 몸의\n소망 무언가\n\n2. 믿음으로 주를 따르며\n감사 찬송 부르세\n\n3. 주님이 함께 하시니\n늘 찬양하며 살리라\n\n아멘"},"502":{"title":"빛의 사자들이여","lyrics":"1. 빛의\n사자들이여\n\n2. 믿음으로 주를 따르며\n감사 찬송 부르세\n\n3. 주님이 함께 하시니\n늘 찬양하며 살리라\n\n아멘"},"546":{"title":"주님 약속 하신 말씀 위에 서","lyrics":"1. 주님 약속 하신\n말씀 위에 서\n\n2. 믿음으로 주를 따르며\n감사 찬송 부르세\n\n3. 주님이 함께 하시니\n늘 찬양하며 살리라\n\n아멘"},"550":{"title":"시온의 영광이 빛나는 아침","lyrics":"1. 시온의 영광이\n빛나는 아침\n\n2. 높으신 이름 찬양하며\n영광 돌려 드리세\n\n3. 성부와 성자와 성령께\n영원히 찬송하리라\n\n아멘"},"570":{"title":"주는 나를 기르시는 목자","lyrics":"1. 주는 나를\n기르시는 목자\n\n2. 주의 은혜 감사하며\n평안함으로 찬양해\n\n3. 날마다 주만 바라보며\n주님 사랑 전하리라\n\n아멘"}},"responsive":{"1":{"title":"시편 1편","body":"인도자: 복 있는 사람은 악인들의 꾀를 따르지 아니하며 죄인들의 길에 서지 아니하며\n회중: 오만한 자들의 자리에 앉지 아니하고\n인도자: 오직 여호와의 율법을 즐거워하여그의 율법을 주야로 묵상하는도다\n회중: 그는 시냇가에 심은 나무가 철을 따라 열매를 맺으며\n인도자: 그 잎사귀가 마르지 아니함 같으니 그가 하는 모든 일이 다 형통하리로다\n회중: 악인들은 그렇지 아니함이여오직 바람에 나는 겨와 같도다\n인도자: 그러므로 악인들은 심판을 견디지 못하며\n회중: 죄인들이 의인들의 모임에 들지 못하리로다","label":"교독문 1번  ·  시편 1편"},"2":{"title":"시편 2편","body":"인도자: 어찌하여 이방 나라들이 분노하며 민족들이 헛된 일을 꾸미는가세상 군왕들이 나서며 관원들이 서로 꾀하여 여호와와 그의 기름 부음 받은 자를 대적하며\n회중: 우리가 그들의 맨 것을 끊고 그의 결박을 벗어 버리자 하는도다\n인도자: 하늘에 계신 이가 웃으심이여 주께서 그들을 비웃으시리로다\n회중: 그 때에 분을 발하며 진노핫 그들을 놀라게 하여 이르시기를내가나의왕을내 거룩한 산 시온에 세웠다 하시리로다\n인도자: 내가 여호와의 명령을 전하노라 여호와께서 내게 이르시되너는내 아들이라 오늘 내가 너를 낳았도다\n회중: 내게 구하라 내가 이방 나라를 네 유업으로 주리니\n인도자: 네 소유가 땅 끝까지 이르리로다","label":"교독문 2번  ·  시편 2편"},"3":{"title":"시편 4편","body":"인도자: 내 의의 하나님이여 내가 부를 때에 응답하노서 곤란 중에 나를 너그럽게 하셨사오니내게 은혜를 베푸사 나의 기도를 들으소서\n회중: 인생들아 어느 때까지 나의 영광을 바꾸어 욕되게 하며\n인도자: 헛된 일을 좋아하고 거짓을 구하려는가 여호와께서 자기를 위하여 경건한 자를 택하신 줄 너희가 알지어다\n회중: 내가 그를 부를 때에 여호와께서 들으시리로다\n인도자: 너희는 떨며 범죄하지 말지어다 자리에 누워 심중에 말하고 잠잠할지어다\n회중: 의의 제사를 드리고 여호와를 의지할지어다\n인도자: 여러 사람의 말이 우리에게 선을 보일 자 누구뇨 하오니 여호와여 주의 얼굴을 들어 우리에게 비추소서\n회중: 주께서 내 마음에 두신 기쁨은 그들의 곡식과 새 포도주가 풍성할 때보다 더하니이다\n인도자: 내가 평안히 눕고 자기도 하리니\n회중: 나를 안전히 살게 하시는 이는 오직 여호와이시니이다","label":"교독문 3번  ·  시편 4편"},"4":{"title":"시편 5편","body":"인도자: 여호와여 나의 말에 귀를 기울이사 나의 심정을 헤아려 주소서\n회중: 나의 왕, 나의 하나님이여 내가 부르짖는 소리를 들으소서 내가 주께 기도하나이 다\n인도자: 여호와여 아침에 주께서 나의 소리를 들으시리니 아침에 내가 주께 기도하고 바라리이다\n회중: 주는 죄악을 기뻐하는 신이 아니시니 악이 주와 함께 머물지 못하며\n인도자: 오만한 자들이 주의 목전에 서지 못하리이다 주는 모든 행악자를 미워하시며\n회중: 거짓말하는 자들을 멸망시키시리이다 여호와께서는 피 흘리기를 즐기는 자와 속이 는 자를 싫어하시나이다\n인도자: 오직 나는 주의 풍성한 사랑을 힘입어 주의 집에 들어가 주를 경외함으로 성전을 향하여 예배하리이다\n회중: 여호와여 나의 원수들로 말미암아 주의 의로 나를 인도하시고 주의 길을 내 목전 에 곧게 하소서","label":"교독문 4번  ·  시편 5편"},"5":{"title":"시편 8편","body":"인도자: 여호와 우리 주여 주의 이름이 온 땅에 어찌 그리 아름다운지요\n회중: 주의 영광이 하늘을 덮었나이다\n인도자: 주의 대적으로 말미암아 어린 아이들과 젖먹이들의 입으로 권능을 세우심이여이는 원수들과 보복자들을 잠잠하게 하려 하심이니이다\n회중: 주의 손가락으로 만드신 주의 하늘과 주께서 베풀어 두신 달과 별들을 내가 보오니 사람이 무엇이기에 주께서 그를 생각하시며\n인도자: 인자가 무엇이기에 주께서 그를 돌보시나이까\n회중: 그를 하나님보다 조금 못하게 하시고\n인도자: 영화와 존귀로 관을 씌우셨나이다\n회중: 주의 손으로 만드신 것을 다스리게 하시고 만물을 그의 발 아래 두셨으니\n인도자: 곧 모든 소와 양과 들짐승이며 공중의 새와 바다의 물고기와 바닷길에 다니는 것이니이다","label":"교독문 5번  ·  시편 8편"},"6":{"title":"시편 10편","body":"인도자: 여호와여 일어나옵소서 하나님이여 손을 드옵소서 가난한 자들을 잊지 마옵소서\n회중: 어찌하여 악인이 하나님을 멸시하여 그의 마음에 이르기를 주는 감찰하지 아니하 리라 하나이까\n인도자: 주께서는 보셨나이다 주는 재앙과 원한을 감찰하시고 주의 손으로 갚으려 하시오니 외로운 자가 주를 의지하나이다 주는 벌써부터 고아를 도우시는 이시니이다\n회중: 악인의 팔을 꺽으소서 악한 자의 악을 더 이상 찾아낼 수 없을 때까지 찾으소서\n인도자: 여호와께서는 영원무궁토록 왕이시니 이방 나라들이 주의 땅에서 멸망하였나이다\n회중: 여호와여 주는 겸손한 자의 소원을 들으셨사오니 그들의 마음을 준비하시며 귀를 귀울여 들으시고\n인도자: 고아와 압제당하는 자를 위하여 심판하사 세상에 속한 자가 다시는 위협하지 못하게 하시리이다","label":"교독문 6번  ·  시편 10편"},"7":{"title":"시편 13편","body":"인도자: 여호와여 어느 때까지니이까 나를 영원히 잊으시나이까\n회중: 주의 얼굴을 나에게서 어느 때까지 숨기시겠나이까\n인도자: 나의 영혼이 번민하고 종일토록 마음에 근심하기를 어느 때까지 하오며\n회중: 내 원수가 나를 치며 자랑하기를 어느 때까지 하리이까\n인도자: 여호와 내 하나님이여 나를 생각하사 응답하시고 나의 눈을 밝히소서\n회중: 두렵건대 내가 사망의 잠을 잘까 하오며\n인도자: 두렵건대 나의 원수가 이르기를 내가 그를 이겼다 할까 하오며\n회중: 내가 흔들릴 때에 나의 대적들이 기뻐할까 하나이다\n인도자: 나는 오직 주의 사랑을 의지하였사오니나의 마음은 주의 구원을 기뻐하리이다","label":"교독문 7번  ·  시편 13편"},"8":{"title":"시편 14편","body":"인도자: 어리석은 자는 그의 마음에 이르기를 하나님이 없다 하는도다\n회중: 그들은 부패하고 그 행실이 가증하니 선을 행하는 자가 없도다\n인도자: 여호와께서 하늘에서 인생을 굽어살피사 지각이 있어 하나님을 찾는 자가 있는가 보려하신즉다\n회중: 치우쳐 함께 더러운 자가 되고 선을 행하는 자가 없으니 하나도 없도다\n인도자: 죄악을 행하는 자는 다 무지하냐 그들이 떡 먹듯이 내 백성을 먹으면서 여호와를 부르지 아니하는도다\n회중: 그러나 거기서 그들은 두려워하고 두려워하였으니 하나님이 의인의 세대에 계심이로다\n인도자: 너희가 가난한 자의 계획을 부끄럽게 하나 오직 여호와는 그의 피난처가 되시도다\n회중: 이스라엘의 구원이 시온에서 나오기를 원하도다","label":"교독문 8번  ·  시편 14편"},"9":{"title":"시편 15편","body":"인도자: 여호와여 주의 장막에 머무를 자 누구오며\n회중: 주의 성산에 사는 자 누구오니이까\n인도자: 정직하게 행하며 공의를 실천하며\n회중: 그의 마음에 진실을 말하며\n인도자: 그의 혀로 남을 허물하지 아니하고 그의 이웃에게 악을 행하지 아니하며\n회중: 그의 이웃을 비방하지 아니하며\n인도자: 그의 눈은 망령된 자를 멸시하며\n회중: 여호와를 두려워하는 자들을 존대하며\n인도자: 그의 마음에 서원한 것은 해로울지라도 변하지 아니하며\n회중: 이자를 받으려고 돈을 꾸어 주지 아니하며\n인도자: 뇌물을 받고 무죄한 자를 해하지 아니하는 자이니\n회중: 이런 일을 행하는 자는 영원히 흔들리지 아니하리이다","label":"교독문 9번  ·  시편 15편"},"10":{"title":"시편 16편","body":"인도자: 하나님이여 나를 지켜 주소서 내가 주께 피하나이다\n회중: 내가 여호와께 아뢰되 주는 나의 주님이시오니 주 밖에는 나의 복이 없다\n인도자: 하였나이다\n회중: 땅에 있는 성도들은 존귀한 자들이니 나의 모든 즐거움이 그들에게 있도다\n인도자: 다른 신에게 예물을 드리는 자는 괴로움이 더할 것이라\n회중: 나는 그들이 드리는 피의 전제를 드리지 아니하며\n인도자: 내 입술로 그 이름도 부르지 아니하리로다\n회중: 여호와는 나의 산업과 나의 잔의 소득이시니 나의 분깃을 지키시나이다\n인도자: 내게 줄로 재어 준 구역은 아름다운 곳에 있음이여 나의 기업이 실로 아름답도다\n회중: 나를 훈계하신 여호와를 송축할지라\n인도자: 밤마다 내 양심이 나를 교훈하도다\n회중: 내가 여호와를 항상 내 앞에 모심이여그가나의 오른쪽에 계시므로 내가 흔들리지 아니하리로다","label":"교독문 10번  ·  시편 16편"},"11":{"title":"시편 17편","body":"인도자: 여호와여 의의 호소를 들으소서 나의 울부짖음에 주의하소서\n회중: 거짓 되지 아니한 입술에서 나오는 나의 기도에 귀를 기울이소서\n인도자: 주께서 나를 판단하시며 주의 눈으로 공평함을 살피소서\n회중: 주께서 내 마음을 시험하시고 밤에 내게 오시어서 나를 감찰하셨으나흠을찾지 못하셨사오니 내가 결심하고 입으로 범죄하지 아니하리이다\n인도자: 사람의 행사로 논하면 나의 주의 입술의 말씀을 따라 스스로 삼가서 포악한 자의 길을 가지 아니하였사오며\n회중: 나의 걸음이 주의 길을 굳게 지키고 실족하지 아니하였나이다\n인도자: 하나님이여 내게 응답하시겠으므로 내가 불렀사오니내게귀를 기울여 내 말을 들으소서\n회중: 주께 피하는 자들을 그 일어나 치는 자들에게서 오른손으로 구원하시는 주여주의 기이한 사랑을 나타내소서","label":"교독문 11번  ·  시편 17편"},"12":{"title":"시편 19편","body":"인도자: 하늘이 하나님의 영광을 선포하고\n회중: 궁창이 그의 손으로 하신 일을 나타내는도다\n인도자: 날은 날에게 말하고 밤은 밤에게 지식을 전하니 언어도 없고 말씀도 없으며 들리는 소리도 없으나그의 소리가 온 땅에 통하고 그의 말씀이 세상 끝까지 이르도다\n회중: 여호와의 율법은 완전하여 영혼을 소성시키며\n인도자: 여호와의 증거는 확실하여 우둔한 자를 지혜롭게 하며\n회중: 여호와의 교훈은 정직하여 마음을 기쁘게 하고\n인도자: 여호와의 계명은 순결하여 눈을 밝게 하시도다\n회중: 여호와를 경외하는 도는 정결하여 영원까지 이르고\n인도자: 여호와의 법도 진실하여 다 의로우니금곧많은 순금보다 더 사모할 것이며 꿀과 송이꿀보다 더 달도다","label":"교독문 12번  ·  시편 19편"},"13":{"title":"시편 23편","body":"인도자: 여호와는 나의 목자시니\n회중: 내게 부족함이 없으리로다\n인도자: 그가 나를 푸른 풀밭에 누이시며\n회중: 쉴 만한 물 가로 인도하시는도다\n인도자: 내 영혼을 소생시키시고\n회중: 자기 이름을 위하여 의의 길로 인도하시는도다\n인도자: 내가 사망의 음침한 골짜기로 다닐지라도 해를 두려워하지 않을 것은 주께서 나와 함께 하심이라 주의 지팡이와 막대기가 나를 안위하시나이다\n회중: 주께서 내 원수의 목전에서 내게 상을 차려 주시고\n인도자: 기름을 내 머리에 부으셨으니 내 잔이 넘치나이다\n회중: 내 평생에 선하심과 인자하심이 반드시 나를 따르리니\n인도자: 내가 여호와의 집에 영원히 살리로다","label":"교독문 13번  ·  시편 23편"},"14":{"title":"시편 24편","body":"인도자: 땅과 거기에 충만한 것과 세계와 그 가운데에 사는 자들은 다 여호와의 것이로다\n회중: 여호와께서 그 터를 바다 위에 세우심이여 강들 위에 건설하셨도다\n인도자: 여호와의 산에 오를 자가 누구며 그의 거룩한 곳에 설 자가 누구인가\n회중: 곧 손이 깨끗하며 마음이 청결하며 뜻을 허탄한 데에 두지 아니하며 거짓 맹세하지 아니하는 자로다\n인도자: 그는 여호와께 복을 받고 구원의 하나님께 의를 얻으리니\n회중: 이는 여호와를 찾는 족속이요 야곱의 하나님의 얼굴을 구하는 자로다\n인도자: 문들아 너희 머리를 들지어다 영원한 문들아 들릴지어다 영광의 왕이 들어가리로다\n회중: 영광의 왕이 누구시냐 강하고 능한 여호와시오 전쟁에 능한 여호와시로다\n인도자: 문들아 너희 머리를 들지어다 영원한 문들아 들릴지어다 영광의 왕이 들어가시리로다\n회중: 영광의 왕이 누구시냐 만군의 여호와께서 곧 영광의 왕이시로다","label":"교독문 14번  ·  시편 24편"},"15":{"title":"시편 27편","body":"인도자: 여호와는 나의 빛이요 나의 구원이시니 내가 누구를 두려워하리요\n회중: 여호와는 내 생명의 능력이시니 내가 누구를 무서워하리요\n인도자: 악인들이 내 살을 먹으려고 내게로 왔으나나의 대적들, 나의 원수들인 그들은 실족하여 넘어졌도다\n회중: 군대가 나를 대적하여 진 칠지라도 내 마음이 두렵지 아니하며\n인도자: 전쟁이 일어나 나를 치려 할지라도 나는 여전히 태연하리로다\n회중: 내가 여호와께 바라는 한 가지 일 그것을 구하리니 곧 내가 내 평생에 여호와의 집에 살면서 여호와의 아름다움을 바라보며 그의 성전에서 사모하는 그것이라\n인도자: 여호와께서 환난 날에 나를 그의 초막 속에 비밀히 지키시고\n회중: 그의 장막 은밀한 곳에 나를 숨기시며 높은 바위 위에 두시리로다\n인도자: 이제 내 머리가 나를 둘러싼 내 원수 위에 들리리니\n회중: 내가 그의 장막에서 즐거운 제사를 드리겠고 노래하며 여호와를 찬송하리로다","label":"교독문 15번  ·  시편 27편"},"16":{"title":"시편 28편","body":"인도자: 여호와여 내가 주께 부르짖으오니 나의 반석이여 내게 귀를 막지 마소서\n회중: 주께서 내게 잠잠하시면 내가 무덤에 내려가는 자와 같을까 하나이다\n인도자: 내가 주의 지성소를 향하여 나의 손을 들고 주께 부르짖을 때에나의 간구하는 소리를 들으소서\n회중: 악인과 악을 행하는 자들과 함께 나를 끌어내지 마옵소서\n인도자: 그들은 그 이웃에게 화평을 말하나 그들의 마음에는 악독이 있나이다\n회중: 그들은 여호와께서 행하신 일과 손으로 지으신 것을 생각하지 아니하므로 여호와께서 그들을 파괴하고 건설하지 아니하시리로다\n인도자: 여호와를 찬송함이여내 간구하는 소리를 들으심이로다\n회중: 여호와는 나의 힘과 나의 방패이시니\n인도자: 내 마음이 그를 의지하여 도움을 얻었도다","label":"교독문 16번  ·  시편 28편"},"17":{"title":"시편 29편","body":"인도자: 너희 권능 있는 자들아 영광과 능력을 여호와께 돌리고 돌릴지어다\n회중: 여호와께 그의 이름에 합당한 영광을 돌리며 거룩한 옷을 입고 여호와께 예배할지어다\n인도자: 여호와의 소리가 물 위에 있도다 영광의 하나님이 우렛소리를 내시니 여호와는많은 물 위에 계시도다\n회중: 여호와의 소리가 힘 있음이여 여호와의 소리가 위엄차도다\n인도자: 여호와의 소리가 백향목을 꺾으심이여 여호와께서 레바논 백향목을 꺾어 부수시도다\n회중: 그 나무를 송아지같이 뛰게 하심이여 레바논과 시룐으로 들송아지같이 뛰게 하시도다\n인도자: 여호와의 소리가 화염을 가르시도다\n회중: 여호와의 소리가 광야를 진동하심이여 여호와께서 가데스 광야를 진동시키시도다\n인도자: 여호와의 소리가 암사슴을 낙태하게 하시고 삼림을 말갛게 벗기시니\n회중: 그의 성전에서 그의 모든 것들이 말하기를 영광이라 하도다\n인도자: 여호와께서 홍수 때에 좌정하셨음이여 여호와께서 영원하도록 왕으로 좌정하시도다\n회중: 여호와께서 자기 백성에게 힘을 주심이여 여호와께서 자기 백성에게 평강의 복을 주시리로다","label":"교독문 17번  ·  시편 29편"},"18":{"title":"시편 31편","body":"인도자: 여호와여 내가 주께 피하오니 나를 영원히 부끄럽게 하지 마시고 주의 공의로 나를 건지소서\n회중: 내가 귀를 기울여 속히 건지시고 내게 견고한 바위와 구원하는 산성이 되소서\n인도자: 주는 나의 반석과 산성이시니 그러므로 주의 이름을 생각하셔서 나를 인도하시고\n회중: 지도하소서\n인도자: 그들이 나를 위하여 비밀히 친 그물에서 빼내소서 주는 나의 산성이시니이다\n회중: 내가 나의 영을 주의 손에 부탁하나이다 진리의 하나님 여호와여 나를 속량하셨나이다\n인도자: 내가 허탄한 거짓을 숭상하는 자들을 미워하고 여호와를 의지하나이다\n회중: 내가 주의 인자하심을 기뻐하며 즐거워할 것은 주께서 나의 고난을 보시고 환난중에있는내 영혼을 아셨으며\n인도자: 나를 원수의 수중에 가두지 아니하셨고 내 발을 넓은 곳에 세우셨음이니이다","label":"교독문 18번  ·  시편 31편"},"19":{"title":"시편 32편","body":"인도자: 허물의 사함을 받고 자신의 죄가 가려진 자는 복이 있도다\n회중: 마음에 간사함이 없고 여호와께 정죄를 당하지 아니하는 자는 복이 있도다\n인도자: 내가 입을 열지 아니할 때에 종일 신음하므로 내 뼈가 쇠하였도다\n회중: 주의 손이 주야로 나를 누르시오니 내 진액이 빠져서 여름 가뭄에 마름같이 되었나이다\n인도자: 주께 내 죄를 아뢰고 내 죄악을 숨기지 아니하였더니곧 주께서 내 죄악을 사하셨나이다\n회중: 이로 말미암아 모든 경건한 자는 주를 만날 기회를 얻어서 주께 기도할지라\n인도자: 진실로 홍수가 범람할지라도 그에게 미치지 못하리이다\n회중: 주는 나의 은신처이오니 환난에서 나를 보호하시고\n인도자: 구원의 노래로 나를 두르시리이다\n회중: 너희 의인들아 여호와를 기뻐하며 즐거워할지어다\n인도자: 마음이 정직한 너희들아 다 즐거이 외칠지어다","label":"교독문 19번  ·  시편 32편"},"20":{"title":"시편 33편","body":"인도자: 너희 의인들아 여호와를 즐거워하라 찬송은 정직한 자들이 마땅히 할 바로다\n회중: 수금으로 여호와께 감사하고 열 줄 비파로 찬송할지어다\n인도자: 새 노래로 그를 노래하며 즐거운 소리로 아름답게 연주할지어다\n회중: 여호와의 말씀은 정직하며 그가 행하시는 일은 다 진실하시도다\n인도자: 그는 공의와 정의를 사랑하심이여 세상에는 여호와의 인자하심이 충만하도다\n회중: 여호와의 말씀으로 하늘이 지음이 되었으며 그 만상을 그의 입 기운으로 이루었도다\n인도자: 그가 바닷물을 모아 무더기같이 쌓으시며 깊은 물을 곳간에 두시도다\n회중: 온 땅은 여호와를 두려워하며 세상의 모든 거민들은 그를 경외할지어다","label":"교독문 20번  ·  시편 33편"},"21":{"title":"시편 34편","body":"인도자: 내가 여호와를 항상 송축함이여 내 입술로 항상 주를 찬양하리이다\n회중: 내 영혼이 여호와를 자랑하리니 곤고한 자들이 이를 듣고 기뻐하리로다\n인도자: 나와 함께 여호와를 광대하시다 하며 함께 그의 이름을 높이세내가 여호와께 간구하매 내게 응답하시고 내 모든 두려움에서 나를 건지셨도다\n회중: 이 곤고한 자가 부르짖으매 여호와께서 들으시고 그의 모든 환난에서 구원하셨도다\n인도자: 여호와의 천사가 주를 경외하는 자를 둘러 진 치고 그들을 건지시는도다\n회중: 너희는 여호와의 선하심을 맛보아 알지어다 그에게 피하는 자는 복이 있도다\n인도자: 너희 성도들아 여호와를 경외하라 그를 경외하는 자에게는 부족함이 없도다\n회중: 젊은 사자는 궁핍하여 주릴지라도 여호와를 찾는 자는 모든 좋은 것에 부족함이 없으리로다","label":"교독문 21번  ·  시편 34편"},"22":{"title":"시편 37편","body":"인도자: 악을 행하는 자들 때문에 불평하지 말며 불의를 행하는 자들을 시기하지 말지어다\n회중: 그들은 풀과 같이 속히 베임을 당할 것이며 푸른 채소같이 쇠잩할 것임이로다\n인도자: 여호와를 의뢰하고 선을 행하라 땅에 머무는 동안 그의 성실을 먹을 거리로 삼을지어다\n회중: 또 여호와를 기뻐하라 그가 네 마음의 소원을 네게 이루어 주시리로다\n인도자: 네 길을 여호와께 맡기라 그를 의지하면 그가 이루시고\n회중: 네 의를 빛같이 나타내시며 네 공의를 정오의 빛같이 하시리로다\n인도자: 여호와 앞에 잠잠하고 참고 기다리라\n회중: 자기 길이 형통하며 악한 꾀를 이루는 자 때문에 불평하지 말지어다\n인도자: 분을 그치고 노를 버리며 불평하지 말라 오히려 악을 만들 뿐이라","label":"교독문 22번  ·  시편 37편"},"23":{"title":"시편 43편","body":"인도자: 하나님이여 나를 판단하시되 경건하지 아니한 나라에 대하여 내 송사를 변호하시며\n회중: 간사하고 불의한 자에게서 나를 건지소서\n인도자: 주는 나의 힘이 되신 하나님이시거늘 어찌하여 나를 버리셨나이까\n회중: 내가 어찌하여 원수의 억압으로 말미암아 슬프게 다니나이까\n인도자: 주의 빛과 주의 진리를 보내시어 나를 인도하시고\n회중: 주의 거룩한 산과 주께서 계시는 곳에 이르게 하소서\n인도자: 그런즉 내가 하나님의 제단에 나아가 나의 큰 기쁨의 하나님께 이르리이다\n회중: 하나님이여 나의 하나님이여 내가 수금으로 주를 찬양하리이다\n인도자: 내 영혼아 네가 어찌하여 낙심하며 어찌하여 내 속에서 불안해 하는가너는 하나님께 소망을 두라 그가 나타나 도우심으로 말미암아 내 하나님을 여전히 찬송하리로다","label":"교독문 23번  ·  시편 43편"},"24":{"title":"시편 46편","body":"인도자: 하나님은 우리의 피난처시오 힘이시니\n회중: 환난 중에 만날 큰 도움이시라\n인도자: 그러므로 땅이 변하든지 산이 흔들려 바다 가운데에 빠지든지 바닷물이 솟아나고 뛰놀든지 그것이 넘침으로 산이 흔들릴지라도 우리는 두려워하지 아니하리로다\n회중: 한 시내가 있어 나뉘어 흘러 하나님의 성 곧 지존하신 이의 성소를 기쁘게 하도다\n인도자: 하나님이 그 성 중에 계시매 성이 흔들리지 아니할 것이라 새벽에 하나님이 도우시리로다\n회중: 그가 땅 끝까지 전쟁을 쉬게 하심이여활을꺾고\n인도자: 창을 끊으며 수레를 불사르시는도다\n회중: 이르시기를 너희는 가만히 있어 내가 하나님 됨을 알지어다\n인도자: 내가 뭇 나라 중에서 높임을 받으리라 내가 세계 중에서 높임을 받으리라\n회중: 하시도다\n인도자: 만군의 여호와께서 우리와 함께하시니\n회중: 야곱의 하나님은 우리의 피난처시로다","label":"교독문 24번  ·  시편 46편"},"25":{"title":"시편 47편","body":"인도자: 너희 만민들아 손바닥을 치고 즐거운 소리로 하나님께 외칠지어다\n회중: 지존하신 여호와는 두려우시고 온 땅에 큰 왕이 되심이로다\n인도자: 여호와께서 만민을 우리에게, 나라들을 우리 발 아래에 복종하게 하시며\n회중: 우리를 위하여 기업을 택하시나니 곧 사랑하신 야곱의 영화로다\n인도자: 하나님께서 즐거운 함성 중에 올라가심이여 여호와께서 나팔 소리 중에 올라가시도다\n회중: 찬송하라 하나님을 찬송하라 찬송하라 우리 왕을 찬송하라\n인도자: 하나님은 온 땅의 왕이심이라 지혜의 시로 찬송할지어다\n회중: 하나님은 뭇 백성을 다스리시며 하나님이 그의 거룩한 보좌에 앉으셨도다\n인도자: 뭇 나라의 고관들이 모임이여 아브라함의 하나님의 백성이 되도다\n회중: 세상의 모든 방패는 하나님의 것임이여 그는 높임을 받으시리로다","label":"교독문 25번  ·  시편 47편"},"26":{"title":"시편 50편","body":"인도자: 내 백성아 들을지어다 내가 말하리라 이스라엘아 내가 네게 증언하리라 나는 하나님 곧 네 하나님이로다\n회중: 나는 네 제물 때문에 너를 책망하지는 아니하리니 네 번제가 항상 내 앞에 있음이로다\n인도자: 내가 네 집에서 수소나 네 우리에서 숫염소를 가져가지 아니하리니\n회중: 이는 삼림의 짐승들과 뭇 산의 가축이 다 내 것이며\n인도자: 산의 모든 새들도 내가 아는 것이며 들의 짐승도 내 것임이로다\n회중: 내가 가령 주려도 네게 이르지 아니할 것은 세계와 거기에 충만한 것이 내 것임이로다\n인도자: 내가 수소의 고기를 먹으며 염소의 피를 마시겠느냐\n회중: 감사로 하나님께 제사를 드리며 지존하신 이게게 네 서원을 갚으며\n인도자: 환난 날에 나를 부르라 내가 너를 건지리니 네가 나를 영화롭게 하리로다","label":"교독문 26번  ·  시편 50편"},"27":{"title":"시편 51편","body":"인도자: 하나님이여 주의 인자를 따라 내게 은혜를 베푸시며\n회중: 주의 많은 긍휼을 따라 내 죄악을 지워 주소서\n인도자: 나의 죄악을 말갛게 씻으시며 나의 죄를 깨끗이 제하소서\n회중: 무릇 나는 내 죄과를 아오니 내 죄가 항상 내 앞에 있나이다\n인도자: 내가 주께만 범죄하여 주의 목전에 악을 행하였사오니 주께서 말씀하실 때에 의로우시다 하고 주께서 심판하실 때에 순전하시다\n회중: 하리이다\n인도자: 내가 죄악 중에서 출생하였음이여 어머니가 죄 중에서 나를 잉태하였나이다\n회중: 우슬초로 나를 정결하게 하소서 내가 정하리이다\n인도자: 나의 죄를 씻어 주소서 내가 눈보다 희리이다\n회중: 하나님이여 내 속에 정한 마음을 창조하시고\n인도자: 내 안에 정직한 영을 새롭게 하소서","label":"교독문 27번  ·  시편 51편"},"28":{"title":"시편 63편","body":"인도자: 하나님이여 주는 나의 하나님이시라 내가 간절히 주를 찾되물이없어 마르고 황폐한 땅에서 내 영혼이 주를 갈망하며 내 육체가 주를 앙모하나이다\n회중: 내가 주의 권능과 영광을 보기 위하여이와같이 성소에서 주를 바라보았나이다\n인도자: 주의 인자하심이 생명보다 나으므로내 입술이 주를 찬양할 것이라\n회중: 이러므로 나의 평생에 주를 송축하며\n인도자: 주의 이름으로 말미암아 나의 손을 들리이다\n회중: 골수와 기름진 것을 먹음과 같이나의 영혼이 만족할 것이라\n인도자: 나의 입이 기쁜 입술로 주를 찬송하되 내가 나의 침상에서 주를 기억하며\n회중: 새벽에 주의 말씀을 작은 소리로 읊조릴 때에 하오리니 주는 나의 도움이 되셨음이라","label":"교독문 28번  ·  시편 63편"},"29":{"title":"시편 65편","body":"인도자: 하나님이여 찬송이 시온에서 주를 기다리오며\n회중: 사람이 서원을 주께 이행하리이다\n인도자: 기도를 들으시는 주여 모든 육체가 주께 나아오리이다\n회중: 죄악이 나를 이겼사오니 우리의 허물을 주께서 사하시리이다\n인도자: 주께서 택하시고 가까이 오게 하사주의뜰에살게하신 사람은 복이 있나이다\n회중: 우리가 주의 집 곧 주의 성전의 아름다움으로 만족하리이다\n인도자: 땅을 돌보사 물을 대어 심히 윤택하게 하시며\n회중: 하나님의 강에 물이 가득하게 하시고\n인도자: 이같이 땅을 예비하신 후에 그들에게 곡식을 주시나이다\n회중: 초장은 양 떼로 옷 입었고 골짜기는 곡식으로 덮였으매 그들이 다 즐거이 외치고 또 노래하나이다","label":"교독문 29번  ·  시편 65편"},"30":{"title":"시편 67편","body":"인도자: 하나님은 우리에게 은혜를 베푸사 복을 주시고 그의 얼굴 빛을 우리에게 비추사주의도를땅 위에, 주의 구원을 모든 나라에게 알리소서\n회중: 하나님이여 민족들이 주를 찬송하게 하시며\n인도자: 모든 민족들이 주를 찬송하게 하소서\n회중: 온 백성은 기쁘고 즐겁게 노래할지니주는 민족들을 공평히 심판하시며 땅 위의 나라들을 다스리실 것임이니이다\n인도자: 하나님이여 민족들이 주를 찬송하게 하시며 모든 민족으로 주를 찬송하게 하소서\n회중: 땅이 그의 소산을 내어 주었으니 하나님 곧 우리 하나님이 우리에게 복을 주시리로다\n인도자: 하나님이 우리에게 복을 주시리니\n회중: 땅의 모든 끝이 하나님을 경외하리로다","label":"교독문 30번  ·  시편 67편"},"31":{"title":"시편 68편","body":"인도자: 하나님이 일어나시니 원수들은 흩어지며\n회중: 주를 미워하는 자들은 주 앞에서 도망하리이다\n인도자: 연기가 불려 가듯이 그들을 몰아내소서\n회중: 불 앞에서 밀이 녹음같이 악인이 하나님 앞에서 망하게 하소서\n인도자: 의인은 기뻐하여 하나님 앞에서 뛰놀며 기뻐하고 즐거워할지어다\n회중: 하나님께 노래하며 그의 이름을 찬양하라\n인도자: 하늘을 타고 광야에서 행하시던 이를 위하여 대로를 수축하라\n회중: 그의 이름은 여호와이시니 그의 앞에서 뛰놀지어다\n인도자: 그의 거룩한 처소에 계신 하나님은 고아의 아버지시며 과부의 재판장이시라\n회중: 하나님이 고독한 자들은 가족과 함께 살게 하시며\n인도자: 갇힌 자들은 이끌어 내사 형통하게 하시느니라\n회중: 오직 거역하는 자들의 거처는 메마른 땅이로다","label":"교독문 31번  ·  시편 68편"},"32":{"title":"시편 71편","body":"인도자: 여호와여 내가 주께 피하오니 내가 영원히 수치를 당하게 하지 마소서\n회중: 주의 의로 나를 건지시며 나를 풀어 주시며 주의 귀를 내게 기울이사 나를 구원하소서\n인도자: 주는 내가 항상 피하여 숨을 바위가 되소서 주께서 나를 구원하라 명령하셨으니\n회중: 이는 주게서 나의 반석이시오 나의 요새이심이니이다\n인도자: 나의 하나님이여 나를 악인의 손 곧 불의한 자와 흉악한 자의 장중에서 피하게 하소서\n회중: 주 여호와여 주는 나의 소망이시오 내가 어릴 때부터 신뢰한 이시라\n인도자: 내가 모태에서부터 주를 의지하였으며 나의 어머니의 배에서부터 주께서 나를 택하셨사오니나는항상 주를 찬송하리이다","label":"교독문 32번  ·  시편 71편"},"33":{"title":"시편 72편","body":"인도자: 하나님이여 주의 판단력을 왕에게 주시고 주의 공의를 왕의 아들에게 주소서\n회중: 그가 주의 백성을 공의로 재판하며 주의 가난한 자를 정의로 재판하리니\n인도자: 의로 말미암아 신들이 백성에게 평강을 주며 작은 산들도 그리하리로다\n회중: 그가 가난한 백성의 억울함을 풀어 주며 궁핍한 자의 자손을 구원하며 압박하는 자를 꺾으리로다\n인도자: 그들이 해가 있을 동안에도 주를 두려워하며 달이 있을 동안에도 대대로 그리하리로다\n회중: 그는 벤 풀 위에 내리는 비같이, 땅을 적시는 소낙비같이 내리리니\n인도자: 그의 날에 의인이 흥왕하여 평강의 풍성함이 달이 다할 때까지 이르리로다\n회중: 그가 바다에서부터 바다까지와 강에서부터 땅 끝까지 다스리리니\n인도자: 모든 왕이 그의 앞에 부복하며 모든 민족이 다 그를 섬기리로다","label":"교독문 33번  ·  시편 72편"},"34":{"title":"시편 81편","body":"인도자: 우리의 능력이 되시는 하나님을 향하여 기쁘게 노래하며 야곱의 하나님을 향하여 즐거이 소리칠지어다\n회중: 시를 읊으며 소고를 치고 아름다운 수금에 비파를 아우를지어다\n인도자: 초하루와 보름과 우리의 명절에 나팔을 불지어다\n회중: 이는 이스라엘의 율례요 야곱의 하나님의 규례로다\n인도자: 하나님이 애굽 땅을 치러 나아가시던 때에 요셉의 족속중에 이를 증거로 세우셨도다\n회중: 거기서 내가 알지 못하던 말씀을 들었나니 이르시되 내가 그의 어깨에서 짐을 벗기고\n인도자: 그의 손에서 광주리를 놓게 하였도다\n회중: 네가 고난 중에 부르짖으매 내가 너를 건졌고\n인도자: 우렛소리의 은밀한 곳에서 네게 응답하며 므리바 물 가에서 너를 시험하였도다\n회중: 내 백성이여 들으라 내가 네게 증언하리라 이스라엘이여 내게 듣기를 원하노라\n인도자: 너희 중에 다른 신을 두지 말며 이방 신에게 절하지 말지어다\n회중: 나는 너를 애굽 땅에서 인도하여 낸 여호와 네 하나님이니 네 입을 크게 열라 내가 채우리라 하였으나내 백성이 내 소리를 듣지 아니하며 이스라엘이 나를 원하지 아니하였도다","label":"교독문 34번  ·  시편 81편"},"35":{"title":"시편 84편","body":"인도자: 만군의 여호와여 주의 장막이 어찌 그리 사랑스러운지요\n회중: 내 영혼이 여호와의 궁전을 사모하여 쇠약함이여내 마음과 육체가 살아 계시는 하나님께 부르짖나이다\n인도자: 나의 왕, 나의 하나님, 만군의 여호와여주의 제단에서 참새도 제 집을 얻고 제비도 새끼 둘 보금자리를 얻었나이다\n회중: 주의 집에 사는 자들은 복이 있나니 그들이 항상 주를 찬송하리이다\n인도자: 주께 힘을 얻고 그 마음에 시온의 대로가 있는 자는 복이 있나이다\n회중: 그들이 눈물 골짜기로 지나갈 때에그곳에많은샘이있을 것이며 이른 비가 복을 채워 주나이다\n인도자: 주의 궁정에서의 한 날이 다른 곳에서의 천 날보다 나은즉 악인의 장막에 사는 것보다 내 하나님의 성전 문지로 있는 것이 좋사오니 만군의 여호와여 주께 의지하는 자는 복이 있나이다","label":"교독문 35번  ·  시편 84편"},"36":{"title":"시편 90편","body":"인도자: 주여 주는 대대에 우리의 거처가 되셨나이다\n회중: 산이 생기기 전, 땅과 세계도 주께서 조성하시기 전 곧 영원부터 영원까지 주는 하나님이시니이다\n인도자: 주께서 사람을 티끌로 돌아가게 하시고 말씀하시기를 너희 인생들은 돌아가라\n회중: 하셨사오니주의 목전에는 천 년이 지나간 어제 같으며 밤의 한 순간 같을 뿐임이니이다\n인도자: 주께서 그들을 홍수처럼 쓸어가시나이다 그들은 잠깐 자는 것 같으며 아침에 돋는 풀 같으니이다\n회중: 풀은 아침에 꽃이 피어 자라다가 저녁에는 시들어 마르나이다\n인도자: 우리는 주의 노에 소멸되며 주의 분내심에 놀라나이다\n회중: 주께서 우리의 죄악을 주의 앞에 놓으시며 우리의 은밀한 죄를 주의 얼굴 빛 가운데에 두셨사오니 우리의 모든 날이 주의 분노 중에 지나가며 우리의 평생이 순식간에 다하였나이다\n인도자: 우리의 연수가 칠십이요 강건하면 팔십이라도 그 연수의 자랑은 수고와 슬픔뿐이요 신속히 가니 우리가 날아가나이다\n회중: 누가 주의 능력을 아며 누가 주의 진노의 두려움을 알리이까\n인도자: 우리에게 우리 날 계수함을 가르치사 지혜로운 마음을 얻게 하소서","label":"교독문 36번  ·  시편 90편"},"37":{"title":"시편 91편","body":"인도자: 지존자의 은밀한 곳에 거주하며\n회중: 전능자의 그늘 아래에 사는 자여나는 여호와를 향하여 말하기를 그는 나의 피난처요 나의 요새요 내가 의뢰하는 하나님이라 하리니\n인도자: 이는 그가 너를 새 사냥꾼의 올무에서와 심한 전염병에서 건지실 것임이로다\n회중: 그가 너를 그의 깃으로 덮으시리니 네가 그의 날개 아래에 피하리로다\n인도자: 그의 진실함은 방패와 손 방패가 되시나니천명이네 왼쪽에서, 만 명이 네 오른쪽에서 엎드러지나이 재앙이 네게 가까이 하지 못하리로다\n회중: 그가 너를 위하여 그의 천사들을 명령하사네모든 길에서 너를 지키게 하심이라\n인도자: 하나님이 이르시되 그가 나를 사랑한즉 내가 그를 건지리라 그가 내 이름을 안즉 내가 그를 높이리라","label":"교독문 37번  ·  시편 91편"},"38":{"title":"시편 92편","body":"인도자: 지존자여 십현금과 비파와 수금으로 여호와께 감사하며 주의 이름을 찬양하고\n회중: 아침마다 주의 인자하심을 알리며 밤마다 주의 성실하심을 베풂이 좋으니이다\n인도자: 여호와여 주께서 행하신 일로 나를 기쁘게 하셨으니\n회중: 주의 손이 행하신 일로 말미암아 내가 높이 외치리이다\n인도자: 의인은 종려나무같이 번성하며 래바논의 백향목같이 성장하리로다\n회중: 이는 여호와의 집에 심겼음이여 우리 하나님의 뜰 안에서 번성하리로다\n인도자: 그는 늙어도 여전히 결실하며 진액이 풍족하고 빛이 청청하니\n회중: 여호와의 정직하심과 나의 바위 되심과 그에게는 불의가 없음이 선포되리로다","label":"교독문 38번  ·  시편 92편"},"39":{"title":"시편 95편","body":"인도자: 오라 우리가 여호와께 노래하며\n회중: 우리의 구원의 반석을 향하여 즐거이 외치자 우리가 감사함으로 그 앞에 나아가며\n인도자: 시를 지어 즐거이 그를 노래하자 여호와는 크신 하나님이시오모든 신들보다 크신 왕이시기 때문이로다\n회중: 땅의 깊은 곳이 그의 손 안에 있으며\n인도자: 산들의 높은 곳도 그의 것이로다\n회중: 바다도 그의 것이라 그가 만드셨고\n인도자: 육지도 그의 손이 지으셨도다\n회중: 오라 우리가 굽혀 경배하며\n인도자: 우리를 지으신 여호와 앞에 무릎을 꿇자","label":"교독문 39번  ·  시편 95편"},"40":{"title":"시편 96편","body":"인도자: 새 노래로 여호와께 노래하라 온 땅이여 여호와께 노래할지어다\n회중: 여호와께 노래하여 그의 이름을 송축하며 그의 구원을 날마다 전파할지어다\n인도자: 그의 영광을 백성들 가운데에, 그의 기이한 행적을 만민 가운데 선포할지어다\n회중: 만국의 모든 신들은 우상들이지만 여호와께서는 하늘을 지으셨음이로다\n인도자: 존귀와 위엄이 그의 앞에 있으며\n회중: 능력과 아름다움이 그의 성소에 있도다\n인도자: 아름답고 거룩한 것으로 여호와께 예배할지어다\n회중: 온 땅이여 그 앞에서 떨지어다\n인도자: 하늘은 기뻐하고 땅은 즐거워하며 바다와 거기에 충만한 것이 외치고\n회중: 밭과 그 가운데에 있는 모든 것은 즐거워할지로다\n인도자: 그 때 숲의 모든 나무들이 여호와 앞에서 즐거이 노래하리니\n회중: 그가 임하시되 땅을 심판하러 임하실 것임이라\n인도자: 그가 의로 세계를 심판하시며 그의 진실하심으로 백성을 심판하시리로다","label":"교독문 40번  ·  시편 96편"},"41":{"title":"시편 97편","body":"인도자: 여호와께서 다스리시나니 땅은 즐거워하며 허다한 섬은 기뻐할지어다\n회중: 구름과 흑암이 그를 둘렀고 의와 공평이 그의 보좌의 기초로다\n인도자: 불이 그의 앞에서 나와 사방의 대적들을 불사르시는도다\n회중: 그의 번개가 세계를 비추니 땅이 보고 떨었도다\n인도자: 산들이 여호와의 앞 곧 온 땅의 주 앞에서 밀랍같이 녹았도다\n회중: 하늘이 그의 의를 선포하니 모든 백성이 그의 영광을 보았도다\n인도자: 조각한 신상을 섬기며 허무한 것으로 자랑하는 자는 다 수치를 당할 것이라 너희 산들아 여호와께 경배할지어다\n회중: 여호와여 시온이 주의 심판을 듣고 기뻐하며 유다의 딸들이 즐거워하였나이다\n인도자: 여호와여 주는 온 땅 위에 지존하시고 모든 신들보다 위에 계시니이다\n회중: 여호와를 사랑하는 너희여 악을 미워하라 그가 그의 성도의 영혼을 보전하사 악인의 손에서 건지시느니라\n인도자: 의인을 위하여 빛을 뿌리고 마음이 정직한 자를 위하여 기쁨을 뿌리시는도다\n회중: 의인이여 너희는 여호와로 말미암아 기뻐하며 그의 거룩한 이름에 감사할지어다","label":"교독문 41번  ·  시편 97편"},"42":{"title":"시편 98편","body":"인도자: 새 노래로 여호와께 찬송하라 그는 기이한 일을 행하사그의 오른손과 거룩한 팔로 자기를 위하여 구원을 베푸셨음이로다\n회중: 여호와께서 그의 구원을 알게 하시며\n인도자: 그의 공의를 뭇 나라의 목전에서 맹백히 나타내셨도다\n회중: 그가 이스라엘의 집에 베푸신 인자와 성실을 기억하셨으므로땅 끝까지 이르는 모든 것이 우리 하나님의 구원을 보았도다\n인도자: 온 땅이여 여호와께 즐거이 소리칠지어다\n회중: 소리 내어 즐겁게 노래하며 찬송할지어다\n인도자: 수금으로 여호와를 노래하라\n회중: 수금과 음성으로 노래할지어다\n인도자: 나팔과 호각 소리로 왕이신 여호와 앞에 즐겁게 소리칠지어다\n회중: 바다와 거기 충만한 것과 세계와 그 중에 거주하는 자는 다 외칠지어다","label":"교독문 42번  ·  시편 98편"},"43":{"title":"시편 99편","body":"인도자: 여호와께서 다스리시니 만민이 떨 것이요\n회중: 여호와께서 그룹 사이에 좌정하시니 땅이 흔들릴 것이로다\n인도자: 시온에 계시는 여호와는 위대하시고 모든 민족보다 높으시도다\n회중: 주의 크고 두려운 이름을 찬송할지니 그는 거룩하심이로다\n인도자: 능력 있는 왕은 정의를 사랑하느니라 주께서 공의를 견고하게 세우시고\n회중: 주께서 야곱에게 정의와 공의를 행하시나이다\n인도자: 너희는 여호와 우리 하나님을 높여 그의 발등상 앞에서 경배할지어다\n회중: 그는 거룩하시도다\n인도자: 그의 제사장들 중에는 모세와 아론이 있고 그의 이름을 부르는 자들 중에는 사무엘이 있도다\n회중: 그들이 여호와께 간구하매 응답하셨도다\n인도자: 여호와께서 구름 기둥 가운데서 그들에게 말씀하시니\n회중: 그들은 그가 그들에게 주신 증거와 율례를 지켰도다\n인도자: 여호와 우리 하나님이여 주께서는 그들에게 응답하셨고\n회중: 그들의 행한 대로 갚기는 하셨으나 그들을 용서하신 하나님이시니이다\n인도자: 너희는 여호와 우리 하나님을 높이고 그 성산에서 예배할지어다\n회중: 여호와 우리 하나님은 거룩하심이로다","label":"교독문 43번  ·  시편 99편"},"44":{"title":"시편 100편","body":"인도자: 온 땅이여 여호와께 즐거운 찬송을 부를지어다\n회중: 기쁨으로 여호와를 섬기며 노래하면서 그의 앞에 나아갈지어다\n인도자: 여호와가 우리 하나님이신 줄 너희는 알지어다\n회중: 그는 우리를 지으신 이요 우리는 그의 것이니 그의 백성이요 그의 기르시는 양이로다\n인도자: 감사함으로 그의 문에 들어가며 찬송함으로 그의 궁정에 들어가서 그에게 감사하며 그의 이름을 송축할지어다\n회중: 여호와는 선하시니 그의 인자하심이 영원하고\n인도자: 그의 성실하심이 대대에 이르리로다","label":"교독문 44번  ·  시편 100편"},"45":{"title":"시편 103편","body":"인도자: 하나님이여 내 마음을 정하였사오니내가 노래하며 나의 마음을 다하여 찬양하리로다\n회중: 비파야, 수금아, 깰지어다\n인도자: 내가 새벽을 깨우리로다\n회중: 여호와여 내가 만민 중에서 주께 감사하고\n인도자: 뭇 나라 중에서 주를 찬양하오리니\n회중: 주의 인자하심이 하늘보다 높으시며\n인도자: 주의 진실은 궁창에까지 이르나이다\n회중: 하나님이여 주는 하늘 위에 높이 들리시며\n인도자: 주의 영광이 온 땅에서 높임 받으시기를 원하나이다","label":"교독문 45번  ·  시편 103편"},"46":{"title":"시편 104편","body":"인도자: 내 영혼아 여호와를 송축하라 여호와 나의 하나님이여주는심히 위대하시며 존귀와 권위로 옷 입으셨나이다\n회중: 주께서 옷을 입음같이 빛을 입으시며 하늘을 휘장같이 치시며\n인도자: 물에 자기 누각의 들보를 얹으시며 구름으로 자기 수레를 삼으시고\n회중: 바람 날개로 다니시며 바람을 자기 사신으로 삼으시고 불꽃으로 자기 사역자를 삼으시며\n인도자: 땅에 기초를 놓으사 영원히 흔들리지 아니하게 하셨나이다\n회중: 주께서 물의 경계를 정하여 넘치지 못하게 하시며\n인도자: 다시 돌아와 땅을 덮지 못하게 하셨나이다\n회중: 여호와께서 샘을 골짜기에서 솟아나게 하시고 산 사이에 흐르게 하사각종 들짐승에게 마시게 하시니 들나귀들도 해갈하며\n인도자: 공중의 새들도 그 가에서 깃들이며\n회중: 나뭇가지 사이에서 지저귀는도다\n인도자: 그가 그의 누각에서부터 산에 물을 부어 주시니\n회중: 주께서 하시는 일의 결실이 땅을 만족시켜 주는도다","label":"교독문 46번  ·  시편 104편"},"47":{"title":"시편 105편","body":"인도자: 여호와께 감사하고 그의 이름을 불러 아뢰며 그가 하는 일을 만민 중에 알게 할지어다\n회중: 그에게 노래하며 그를 찬양하며 그의 모든 기이한 일들을 말할지어다\n인도자: 그의 거룩한 이름을 자랑하라 여호와를 구하는 자들은 마음이 즐거울지로다\n회중: 여호와와 그의 능력을 구할지어다 그의 얼굴을 항상 구할지어다\n인도자: 그의 종 아브라함의 후손 곧 택하신 야곱의 자손 너희는 그가 행하신 기적과 그의 이적과 그의 입의 판단을 기억할지어다\n회중: 그는 여호와 우리 하나님이시라 그의 판단이 온 땅에 있도다\n인도자: 그는 그의 언약 곧 천 대에 걸쳐 명령하신 말씀을 영원히 기억하셨으니\n회중: 이것은 아브라함과 맺은 언약이고 이삭에게 하신 맹세이며\n인도자: 야곱에게 세우신 율례 곧 이스라엘에게 하신 영원한 언약이라\n회중: 이르시기를 내가 가나안 땅을 네게 주어 너희에게 할당된 소유가 되게 하리라\n인도자: 하셨도다","label":"교독문 47번  ·  시편 105편"},"48":{"title":"시편 106편","body":"인도자: 여호와여 주의 백성에게 베푸시는 은혜로 나를 기억하시며\n회중: 주의 구원으로 나를 돌보사내가주의 택하신 자가 형통함을 보고 주의 나라의 기쁨을 나누어 가지게 하사주의 유산을 자랑하게 하소서\n인도자: 우리가 우리의 조상들처럼 범죄하여 사악을 행하며 악을 지었나이다\n회중: 우리의 조상들이 애굽에 있을 때 주의 기이한 일들을 깨닫지 못하며\n인도자: 주의 크신 인자를 기억하지 아니하고 바다 곧 홍해에서 거역하였나이다\n회중: 그러나 여호와께서는 자기의 이름을 위하여 그들을 구원하셨으니\n인도자: 그의 큰 권능을 만인이 알게 하려 하심이로다\n회중: 이에 홍해를 꾸짖으시니 곧 마르니 그들을 인도하여 바다 건너가기를 마치 광야를 지나감 같게 하사 그들을 그 미워하는 자의 손에서 구원하시며 그 원수의 손에서 구원하셨고\n인도자: 그들의 대적들은 물로 덮으시매 그들 중에서 하나도 살아 남지 못하였도다\n회중: 이에 그들이 그의 말씀을 믿고 그를 찬양하는 노래를 불렀도다","label":"교독문 48번  ·  시편 106편"},"50":{"title":"시편 116편","body":"인도자: 여호와께서 내 음성과 간구를 들으시므로 내가 그를 사랑하는도다\n회중: 그의 귀를 내게 기울이셨으므로 내가 평생에 기도하리로다\n인도자: 사망의 줄이 나를 두르고 스올의 고통이 내게 이르므로 내가 환난과 슬픔을 만났을 때에내가 여호와의 이름으로 기도하기를 여호와여 주께 구하오니 내 영혼을 건지소서 하였도다\n회중: 여호와는 은혜로우시며 의로우시며 우리 하나님은 긍휼이 많으시도다\n인도자: 여호와께서는 순진한 자를 지키시나니 내가 어렸을 때에 나를 구원하셨도다\n회중: 내 영혼아 네 평안함으로 돌아갈지어다 여호와께서 너를 후대하심이로다\n인도자: 주께서 내 영혼을 사망에서, 내 눈을 눈물에서, 내 발을 넘어짐에서 건지셨나이다\n회중: 내게 주신 모든 은혜를 내가 여호와께 무엇으로 보답할까\n인도자: 내가 구원의 잔을 들고 여호와의 이름을 부르며\n회중: 여호와의 모든 백성 앞에서 나는 나의 서원을 여호와께 갚으리로다\n인도자: 그의 경건한 자들의 죽음은 여호와께서 보시기에 귀중한 것이로다","label":"교독문 50번  ·  시편 116편"},"51":{"title":"시편 118편","body":"인도자: 여호와께 감사하라 그는 선하시며 그의 인자하심이 영원함이로다\n회중: 이제 이스라엘은 말하기를 그의 인자하심이 영원하다 할지로다\n인도자: 이제 아론의 집은 말하기를 그의 인자하심이 영원하다 할지로다\n회중: 이제 여호와를 경외하는 자는 말하기를 그의 인자하심이 영원하다 할지로다\n인도자: 내가 고통 중에 여호와께 부르짖었더니 여호와께서 응답하시고 나를 넓은 곳에 세우셨도다\n회중: 여호와는 내 편이시라 내가 두려워하지 아니하리니 사람이 내게 어찌할까\n인도자: 여호와께서 내 편이 되사 나를 돕는 자들 중에 계시니\n회중: 그러므로 나를 미워하는 자들에게 보응하시는 것을 내가 보리로다\n인도자: 여호와게서 피하는 것이 사람을 신뢰하는 것보다 나으며 여호와께 피하는 것이 고관들을 신뢰하는 것보다 낫도다\n회중: 뭇 나라가 나를 에워쌌으니 내가 여호와의 이름으로 그들을 끊으리로다\n인도자: 너는 나를 밀쳐 넘어뜨리려 하였으나 여호와께서는 나를 도우셨도다\n회중: 여호와는 나의 능력과 찬송이시오 도 나의 구원이 되셨도다","label":"교독문 51번  ·  시편 118편"},"52":{"title":"시편 119편","body":"인도자: 청년이 무엇으로 그의 행실을 깨끗하게 하리이까 주의 말씀만 지킬 따름이니이다\n회중: 내가 전심으로 주를 찾았사오니 주의 계명에서 떠나지 말게 하소서\n인도자: 내가 주께 범죄하지 아니하려 하여 주의 말씀을 내 마음에 두었나이다\n회중: 찬송을 받으실 주 여호와여 주의 율례들을 내게 가르치소서\n인도자: 내가 주의 법도들을 작ㅇ든 소리로 읊조리며 주의 길들에 주의하며\n회중: 주의 율례들을 즐거워하며 주의 말씀을 잊지 아니하리이다\n인도자: 주의 법이 나의 즐거움이 되지 아니하였더면 내가 내 고난 중에 멸망하였으리이다\n회중: 내가 주의 법도들을 영원히 잊지 아니하오니 주께서 이것들 대문에 나를 살게 하심이니이다\n인도자: 나는 주의 것이오니 나를 구원하소서 내가 주의 법도들만을 찾았나이다\n회중: 악인들이 나를 멸하려고 엿보오나 나는 주의 증거들만을 생각하겠나이다\n인도자: 내가 보니 모든 완전한 것이 다 끝이 있어도 주의 계명들은 심히 넓으니이다\n회중: 내가 주의 법을 어찌 그리 사랑하는지요 내가 그것을 종일 작은 소리로 읊조리나이다","label":"교독문 52번  ·  시편 119편"},"53":{"title":"시편 121편","body":"인도자: 내가 산을 향하여 눈을 들리라 나의 도움이 어디서 올까\n회중: 나의 도움은 천지를 지으신 여호와에게서로다\n인도자: 여호와께서 너를 실족하지 아니하게 하시며 너를 지키시는 이가 졸지 아니하시리로다\n회중: 이스라엘을 지키시는 이는 졸지도 아니하시고 주무시지도 아니하시리로다\n인도자: 여호와는 너를 지키시는 이시라 여호와께서 네 오른쪽에서 네 그늘이 되시나니낮의해가너를 상하게 하지 아니하며 밤의 달도 너를 해치지 아니하리로다\n회중: 여호와께서 너를 지켜 모든 환난을 면하게 하시며 또 네영혼을 지키시리로다\n인도자: 여호와게서 너의 출입을 지금부터 영원가지 지키시리로다","label":"교독문 53번  ·  시편 121편"},"54":{"title":"시편 126편","body":"인도자: 여호와께서 시온의 포로를 돌려 보내실 때에 우리는 꿈꾸는 것 같았도다\n회중: 그 때에 우리 입에는 웃음이 가득하고 우리 혀에는 찬양이 찼었도다\n인도자: 그 때에 뭇 나라 가운데에서 말하기를 여호와께서 그들을 위하여 큰 일을 행하셨다\n회중: 하였도다\n인도자: 여호와께서 우리를 위하여 큰 일을 행하셨으니 우리는 기쁘도다\n회중: 여호와여 우리의 포로를 남방 시내들같이 돌려 보내소서\n인도자: 눈물을 흘리며 시를 뿌리는 자는 기쁨으로 거두리로다\n회중: 울며 씨를 뿌리러 나가는 자는 반드시 기쁨으로 그 곡식 단을 가지고\n인도자: 돌아오리로다","label":"교독문 54번  ·  시편 126편"},"55":{"title":"시편 127편","body":"인도자: 여호와께서 집을 세우지 아니하시면 세우는 자의 수고가 헛되며\n회중: 여호와께서 성을 지키지 아니하시면 파수꾼의 깨어 있음이 헛되도다\n인도자: 너희가 일찍이 일어나고 늦게 누우며 수고의 떡을 먹음이 헛되도다\n회중: 그러므로 여호와께서 그의 사랑하시는 자에게는 잠을 주시는도다\n인도자: 보라 자식들은 여호와의 기업이요\n회중: 태의 열매는 그의 상급이로다\n인도자: 젊은 자의 자식은 장사의 수중의 화살 같으니\n회중: 이것이 그의 화살통에 가득한 자는 복되도다","label":"교독문 55번  ·  시편 127편"},"56":{"title":"시편 128편","body":"인도자: 여호와를 경외하며 그의 길을 걷는 자마다 복이 있도다\n회중: 네가 네 손이 수고한 대로 먹을 것이라 네가 복되고 형통하리로다\n인도자: 네 집 안방에 있는 네 아내는 결실한 포도나무 같으며\n회중: 네 식탁에 둘러 앉은 자들은 어린 감람나무 같으리로다\n인도자: 여호와를 경외하는 자는 이같이 복을 얻으리로다\n회중: 여호와께서 시온에서 네게 복을 주실지어다\n인도자: 너는 평생에 예루살렘의 번영을 보며 네 자식의 자식을 볼지어다\n회중: 이스라엘에게 평강이 있을지로다","label":"교독문 56번  ·  시편 128편"},"57":{"title":"시편 130편","body":"인도자: 여호와여 내가 깊은 곳에서 주께 부르짖었나이다\n회중: 주여 내 소리를 들으시며 나의 부르짖는 소리에 귀를 기울이소서\n인도자: 여호와여 주께서 죄악을 지켜보실진대 주여 누가 서리이까\n회중: 그러나 사유하심이 주께 있음은주를 경외하게 하심이니이다\n인도자: 나 곧 내 영혼은 여호와를 기다리며\n회중: 나는 주의 말씀을 바라는도다\n인도자: 파수꾼이 아침을 기다림보다 내 영혼이 주를 더 기다리나니 참으로 파수꾼이 아침을 기다림보다 더하도다\n회중: 이스라엘아 여호와를 바랄지어다\n인도자: 여호와께서는 인자하심과 풍성한 속량이 있음이라","label":"교독문 57번  ·  시편 130편"},"58":{"title":"시편 133편","body":"인도자: 보라 형제가 연합하여 동거함이어찌그리 선하고 아름다운고\n회중: 머리에 있는 보배로운 기름이수염곧 아론의 수염에서 흘러서 그의 옷깃까지 내림 같고\n인도자: 헐몬의 이슬이 시온의 산들에 내림 같도다\n회중: 거기서 여호와께서 복을 명령하셨나니 곧 영생이로다","label":"교독문 58번  ·  시편 133편"},"59":{"title":"시편 136편","body":"인도자: 여호와께 감사하라 그는 선하시며 그 인자하심이 영원함이로다\n회중: 신들 중에 뛰어난 하나님께 감사하라 그 인자하심이 영원함이로다\n인도자: 주들 중에 뛰어난 주께 감사하라 그 인자하심이 영원함이로다\n회중: 홀로 큰 기이한 일들을 행하시는 이에게 감사하라 그 인자하심이 영원함이로다\n인도자: 지혜로 하늘을 지으신 이에게 감사하라 그 인자하심이 영원함이로다\n회중: 땅을 물 위에 펴신 이에게 감사하라 그 인자하심이 영원함이로다\n인도자: 큰 빛들을 지으신 이에게 감사하라 그 인자하심이 영원함이로다\n회중: 해로 낮을 주관하게 하신 이에게 감사하라 그 인자하심이 영원함이로다\n인도자: 달과 별들로 밤을 주관하게 하신 이에게 감사하라 그 인자하심이 영원함이로다\n회중: 애굽의 장자를 치신 이에게 감사하라 그 인자하심이 영원함이로다\n인도자: 이스라엘을 그들 중에서 인도하여 내신 이에게 감사하라 그 인자하심이 영원함이로다\n회중: 강한 손과 펴신 팔로 인도하여 내신 이게게 감사하라 그 인자하심이 영원함이로다","label":"교독문 59번  ·  시편 136편"},"60":{"title":"시편 139편","body":"인도자: 여호와여 주께서 나를 살펴보셨으므로 나를 아시나이다\n회중: 주께서 내가 앉고 일어섬을 아시고 멀리서도 나의 생각을 밝히 아시오며\n인도자: 나의 모든 길과 내가 눕는 것을 살펴보셨으므로 나의 모든 행위를 익히 아시오니 여호와여 내 혀의 말을 알지 못하시는 것이 하나도 없으시니이다\n회중: 내가 주의 영을 떠나 어디로 가며 주의 앞에서 어디로 피하리이까\n인도자: 내가 하늘에 올라갈지라고 거기 계시며 스올에 내 자리를 펼지라도 거기 계시니이 다\n회중: 내가 새벽 날개를 치며 바다 끝에 가서 거주할지라도 거기서도 주의 손이 나를 인도하시며 주의 오른손이 나를 붙드시리이다\n인도자: 하나님이여 나를 살피사 내 마음을 아시며 나를 시험하사 내 뜻을 아옵소서\n회중: 내게 무슨 악한 행위가 있나 보시고 나를 영원한 길로 인도하소서","label":"교독문 60번  ·  시편 139편"},"61":{"title":"시편 142편","body":"인도자: 내가 소리 내어 여호와께 부르짖으며\n회중: 소리 내어 여호와께 간구하는도다\n인도자: 내가 내 원통함을 그의 앞에 토로하며\n회중: 내 우환을 그의 앞에 진술하는도다\n인도자: 내 영이 내 속에서 상할 때에도 주께서 내 길을 아셨나이다\n회중: 내가 가는 길에 그들이 나를 잡으려고 올무를 숨겼나이다\n인도자: 오른쪽을 살펴보소서 나를 아는 이도 없고 나의 파난처도 없고\n회중: 내 영혼을 돌보는 이도 없나이다\n인도자: 여호와여 내가 주께 부르짖어 말하기를주는나의 피난처시오 살아 있는 사람들의 땅에서 나의 분깃이시라 하였나이다\n회중: 나의 부르짖음을 들으소서 나는 심히 비천하니이다\n인도자: 나를 핍박하는 자들에게서 나를 건지소서 그들은 나보다 강하니이다\n회중: 내 영혼을 옥에서 이끌어 내사 주의 이름을 감사하게 하소서\n인도자: 주께서 나에게 갚아 주시리니 의인들이 나를 두르리이다","label":"교독문 61번  ·  시편 142편"},"62":{"title":"시편 143편","body":"인도자: 여호와여 내 기도를 들으시며 내 간구에 귀를 기울이시고\n회중: 주의 진실과 의로 내게 응답하소서\n인도자: 주의 종에게 심판을 행하지 마소서\n회중: 주의 눈 앞에는 의로운 인생이 하나도 없나이다\n인도자: 원수가 내 영혼을 핍박하며 내 생명을 땅에 엎어서 나로 죽은 지 오랜 자같이 나를암흑 속에 두었나이다\n회중: 그러므로 내 심령이 속에서 상하며 내 마음이 내 속에서 참담하니이다\n인도자: 내가 옛날을 기억하고 주의 모든 행하신 것을 읊조리며 주의 손이 행하는 일을 생각하고\n회중: 주를 향하여 손을 펴고 내 영혼이 마른 땅같이 주를 사모하나이다\n인도자: 여호와여 속히 내게 응답하소서 내 영이 피곤하니이다\n회중: 여호와여 주의 이름을 위하여 나를 살리시고 주의 의로 내 영혼을 환난에서 끌어내소서\n인도자: 주의 인자하심으로 나의 원수들을 끊으시고\n회중: 내 영혼을 괴롭게 하는 자를 다 멸하소서 나는 주의 종이니이다","label":"교독문 62번  ·  시편 143편"},"63":{"title":"시편 145편","body":"인도자: 왕이신 나의 하나님이여 내가 주를 높이고 영원히 주의 이름을 송축하리이다\n회중: 내가 날마다 주를 송축하며 영원히 주의 이름을 송축하리이다\n인도자: 여호와는 위대하시니 크게 찬양할 것이라 그의 위대하심을 측량하지 못하리로다\n회중: 대대로 주께서 행하시는 일을 크게 찬양하며 주의 능한 일을 선포하리로다\n인도자: 주의 존귀하고 영광스러운 위엄과 주의 기이한 일들을 나는 작은 소리로 읊조리리이다\n회중: 사람들은 주의 두려운 일의 권능을 말할 것이요 나도 주의 위대하심을 선포하리이다\n인도자: 그들이 주의 크신 은혜를 기념하여 말하며 주의 의를 노래하리이다\n회중: 여호와는 은혜로우시며 긍휼이 많으시며 노하기를 더디 하시며 인자하심이 크시도다\n인도자: 여호와께서는 모든 것을 선대하시며 그 지으신 모든 것에 긍휼을 베푸시는도다\n회중: 여호와여 주께서 지으신 모든 것들이 주께 감사하며 주의 성도들이 주를 송축하리이다","label":"교독문 63번  ·  시편 145편"},"64":{"title":"시편 148편","body":"인도자: 할렐루야 하늘에서 여호와를 찬양하며 높은 데서 그를 찬양할지어다\n회중: 그의 모든 천사여 찬양하며 모든 군대여 그를 찬양할지어다\n인도자: 해와 달아 그를 찬양하며 밝은 별들아 다 그를 찬양할지어다\n회중: 하늘의 하늘도 그를 찬양하며 하늘 위에 있는 물들도 그를 찬양할지어다\n인도자: 그것들이 여호와의 이름을 찬양함은 그가 명령하시므로 지음을 받았음이로다\n회중: 그가 또 그것들을 영원히 세우시고 폐하지 못할 명령을 정하셨도다\n인도자: 여호와의 이름을 찬양할지어다 그의 이름이 홀로 높으시며 그의 영광이 땅과 하늘 위에 뛰어나심이로다\n회중: 그가 그의 백성의 뿔을 높이셨으니 그는 모든 성도 곧 그를 가까이 하는 백성 이스라엘 자손의 찬양 받을 이시로다 할렐루야","label":"교독문 64번  ·  시편 148편"},"65":{"title":"시편 149편","body":"인도자: 할렐루야 새 노래로 여호와께 노래하며 성도의 모임 가운데에서 찬양할지어다\n회중: 이스라엘은 자기를 지으신 이로 말미암아 즐거워하며 시온의 주민은 그들의 왕으로 말미암아 즐거워할지어다\n인도자: 춤 추며 그의 이름을 찬양하며 소고와 수금으로 그를 찬양할지어다\n회중: 여호와께서는 자기 백성을 기뻐하시며 겸손한 자를 구원으로 아름답게 하심이로다\n인도자: 성도들은 영광 중에 즐거워하며 그들의 침상에서 기쁨으로 노래할지어다\n회중: 그들의 입에는 하나님에 대한 찬양이 있고 그들의 손에는 두 날 가진 칼이 있도다\n인도자: 이것으로 뭇 나라에 보수하며 민족들을 벌하며\n회중: 그들의 왕들은 사슬로, 그들의 귀인은 철고랑으로 결박하고","label":"교독문 65번  ·  시편 149편"},"66":{"title":"시편 150편","body":"인도자: 할렐루야 그의 성소에서 하나님을 찬양하며\n회중: 그의 권능의 궁창에서 그를 찬양할지어다\n인도자: 그의 능하신 행동을 찬양하며\n회중: 그의 지극히 위대하심을 따라 찬양할지어다\n인도자: 나팔 소리로 찬양하며\n회중: 비파와 수금으로 찬양할지어다\n인도자: 소고 치며 춤 추어 찬양하며\n회중: 현악과 퉁소로 찬양할지어다\n인도자: 큰 소리 나는 제금으로 찬양하며\n회중: 높은 소리 나는 제금으로 찬양할지어다","label":"교독문 66번  ·  시편 150편"},"67":{"title":"잠언 3장","body":"인도자: 지혜를 얻은 자와 명철을 얻은 자는 복이 있나니이는 지혜를 얻는 것이 은을 얻는 것보다 낫고 그 이익이 정금보다 나음이니라\n회중: 지혜는 진주보다 귀하니 네가 사모하는 모든 것으로도 이에 비교할 수 없도다\n인도자: 그의 오른손에는 장수가 있고 그의 왼손에는 부귀가 있나니그길은 즐거운 길이요 그의 지름길은 다 평강이니라\n회중: 지혜는 그 얻은 자에게 생명 나무라 지혜를 가진 자는 복되도다\n인도자: 여호와께서는 지혜로 땅에 터를 놓으셨으며 명철로 하늘을 견고히 세우셨고\n회중: 그의 지식으로 깊은 바다를 갈라지게 하셨으며 공중에서 이슬에 내리게 하셨느니라\n인도자: 내 아들아 완전한 지혜와 근신을 지키고 이것들이 네 눈 앞에서 떠나지 말게 하라\n회중: 대저 여호와는 네가 의지할 이시니라 네 발을 지켜 걸리지 않게 하시리라","label":"교독문 67번  ·  잠언 3장"},"68":{"title":"이사야 40장(1)","body":"인도자: 외치는 자의 소리여 이르되 너희는 광야에서 여호와의 길을 예비하라\n회중: 사막에서 우리 하나님의 대로를 평탄하게 하라\n인도자: 골짜기마다 돋우어지며 산마다, 언덕마다 낮아지며 고르지 아니한 곳이 평탄하게 되며\n회중: 험한 곳이 평지가 될 것이여 여호와의 영광이 나타나고 모든 육체가 그것을 함께 보리라\n인도자: 이는 여호와의 입이 말씀하셨느니라\n회중: 말하는 자의 소리여 이르되 외치라 대답하되 내가 무엇이라 외치리이까 하니\n인도자: 이르되 모든 육체는 풀이요 그의 모든 아름다움은 들의 꽃과 같으니\n회중: 풀은 마르고 꽃이 시듦은 여호와의 기운이 그 위에 붊이라 이 백성은 실로 풀이로다\n인도자: 풀은 마르고 꽃은 시드나 우리 하나님의 말씀은 영원히 서리라 하라","label":"교독문 68번  ·  이사야 40장(1)"},"69":{"title":"이사야 40장(2)","body":"인도자: 너희는 눈을 높이 들어 누가 이 모든 것을 창조하였나 보라\n회중: 주께서는 수효대로 만상을 이끌어 내시고\n인도자: 그들의 모든 이름을 부르시나니그의 권세가 크고 그의 능력이 강하므로 하나도 빠짐이 없느니라\n회중: 야곱아 어찌하여 네가 말하며 이스라엘아 네가 이르기를 내 길은 여호와께 숨겨졌으며\n인도자: 내 송사는 내 하나님에게서 벗어난다 하느냐\n회중: 너는 알지 못하였느냐 듣지 못하였느냐 영원하신 하나님 여호와, 땅 끝까지 창조하신 이는 피곤하지 않으시며 곤비하지 않으시며 명철이 한이 없으시며\n인도자: 피곤한 자에게는 능력을 주시며 무능한 자에게는 힘을 더하시나니 소년이라도 피곤하며 곤비하며 장정이라도 넘어지며 쓰러지되오직 여호와를 앙망하는 자는 새 힘을 얻으리니\n회중: 독수리가 날개치며 올라감 같을 것이요","label":"교독문 69번  ·  이사야 40장(2)"},"70":{"title":"이사야 42장","body":"인도자: 내가 붙드는 나의 종, 내 마음에 기뻐하는 자 곧 내가 택한 사람을 보라\n회중: 내가 나의 영을 그에게 주었은즉 그가 이방에 정의를 베풀리라\n인도자: 그는 외치지 아니하며 목소리를 높이지 아니하며 그 소리를 거리에 들리게 하지 아니하며\n회중: 상한 갈대를 꺾지 아니하며 꺼져가는 등불을 끄지 아니하고 진실로 정의를 시행할 것이며\n인도자: 그는 쇠하지 아니하며 낙담하지 아니하고 세상에 정의를 세우기에 이르리니\n회중: 섬들이 그 교훈을 앙망하리라\n인도자: 나 여호와가 의로 너를 불렀은즉 내가 네 손을 잡아 너를 보호하며\n회중: 너를 세워 백성의 언약과 이방의 빛이 되게 하리니\n인도자: 네가 눈먼 자들의 눈을 밝히며 갇힌 자를 감옥에서 이끌어 내며\n회중: 흑암에 앉은 자를 감방에서 나오게 하리라","label":"교독문 70번  ·  이사야 42장"},"71":{"title":"이사야 55장","body":"인도자: 오호라 너희 모든 목마른 자들아 물로 나아오라 돈 없는 자도 오라\n회중: 너희는 와서 사 먹되 돈 없이, 값 없이 와서 포도주와 젖을 사라\n인도자: 너희가 어찌하여 양식이 아닌 것을 위하여 은을 달아 주며\n회중: 배부르게 하지 못할 것을 위하여 수고하느냐\n인도자: 내게 듣고 들을지어다 그리하면 너희가 좋은 것을 먹을 것이며\n회중: 너희 자신들이 기름진 것으로 즐거움을 얻으리라\n인도자: 너희는 귀를 기울이고 내게로 나아와 들으라\n회중: 그리하면 너희의 영혼이 살리라\n인도자: 내가 너희를 위하여 영원한 언약을 맺으리니\n회중: 곧 다윗에게 허락한 확실한 은혜이니라\n인도자: 너희는 여호와를 만날 만한 때에 찾으라\n회중: 가까이 계실 때에 그를 부르라\n인도자: 악인은 그의 길을, 불의한 자는 그의 생각을 버리고 여호와께로 돌아오라\n회중: 그리하면 그가 긍휼히 여기시리라","label":"교독문 71번  ·  이사야 55장"},"72":{"title":"이사야 58장","body":"인도자: 내가 기뻐하는 금식은 흉악의 결박을 풀어 주며 멍에의 줄을 끌러 주며\n회중: 압제 당하는 자를 자유하게 하며 모든 멍에를 꺾는 것이 아니겠느냐\n인도자: 또 주린 자에게 네 양식을 나누어 주며 유리하는 빈민을 집에 들이며\n회중: 헐벗은 자를 보면 입히며 또 네 골육을 피하여 스스로 숨지 아니하는 것이 아니겠느냐\n인도자: 그리하면 네 빛이 새벽같이 비 칠 것이며 네 치유가 급속할 것이며\n회중: 네 공의가 네 앞에 행하고 여호와의 영광이 네 뒤에 호위하리니\n인도자: 네가 부를 때에는 나 여호와가 응답하겠고\n회중: 네가 부르짖을 때에는 내가 여기 있다 하리라\n인도자: 만일 네가 너희 중에서 멍에와 손가락질과 허망한 말을 제하여 버리고\n회중: 주린 자에게 네 심정이 동하며 괴로워하는 자의 심정을 만족하게 하면네빛이흑암 중에서 떠올라 네 어둠이 낮과 같이 될 것이며\n인도자: 여호와가 너를 항상 인도하여 메마른 곳에서도 네 영혼을 만족하게 하며\n회중: 네 뼈를 견고하게 하리니","label":"교독문 72번  ·  이사야 58장"},"73":{"title":"이사야 65장","body":"인도자: 보라 내가 새 하늘과 새 땅을 창조하나니이전것은 기억되거나 마음에 생각나지 아니할 것이라\n회중: 너희는 내가 창조하는 것으로 말미암아 영원히 기뻐하며 즐거워할지니라\n인도자: 보라 내가 예루살렘을 즐거운 성으로 창조하며 그 백성을 기쁨으로 삼고\n회중: 내가 예루살렘을 즐거워하며 나의 백성을 기뻐하리니\n인도자: 우는 소리와 부르짖는 소리가 그 가운데에서 다시는 들리지 아니할 것이며\n회중: 이리와 어린 양이 함께 먹을 것이며\n인도자: 사자가 소처럼 짚을 먹을 것이며 뱀은 흙을 양식으로 삼을 것이니\n회중: 나의 성산에서는 해함도 없겠고 상함도 없으리라 여호와께서 말씀하시니라","label":"교독문 73번  ·  이사야 65장"},"74":{"title":"마태복음 5장","body":"인도자: 심령이 가난한 자는 복이 있나니 천국이 그들의 것임이요\n회중: 애통하는 자는 복이 있나니 그들이 위로를 받을 것임이요\n인도자: 온유한 자는 복이 있나니 그들이 땅을 기업으로 받을 것임이요\n회중: 의에 주리고 목마른 자는 복이 있나니 그들이 배부를 것임이요\n인도자: 긍휼히 여기는 자는 복이 있나니 그들이 긍휼히 여김을 받을 것임이요\n회중: 마음이 청결한 자는 복이 있나니 그들이 하나님을 볼 것임이요\n인도자: 화평하게 하는 자는 복이 있나니 그들이 하나님의 아들이라 일컬음을 받을 것임이요\n회중: 의를 위하여 박해를 받는 자는 복이 있나니 천국이 그들의 것임이라\n인도자: 나로 말미암아 너희를 욕하고 박해하고 거짓으로 너희를 거슬러 모든 악한 말을할 때에는 너희에게 복이 있나니 기뻐하고 즐거워하라 하늘에서 너희의 상이 큼이라 너희 전에 있던 선지자들도 이같이 박해하였느니라","label":"교독문 74번  ·  마태복음 5장"},"75":{"title":"마태복음 6장","body":"인도자: 그러므로 내가 너희에게 이르노니 목숨을 위하여 무엇을 먹을까 무엇을 마실까\n회중: 몸을 위하여 무엇을 입을까 염려하지 말라\n인도자: 목숨이 음식보다 중하지 아니하며 몸이 의복보다 중하지 아니하냐\n회중: 공중의 새를 보라 심지도 않고 거두지도 않고 창고에 모아들이지도 아니하되너희하늘 아버지께서 기르시나니 너희는 이것들보다 귀하지 아니하냐\n인도자: 너희 중에 누가 염려함으로 그 키를 한 자라도 더할 수 있겠느냐\n회중: 또 너희가 어찌 의복을 위하여 염려하느냐\n인도자: 들의 백합화가 어떻게 자라는가 생각하여 보라\n회중: 수고도 아니하고 길쌈도 아니하느니라\n인도자: 그러므로 염려하여 이르기를 무엇을 먹을까 무엇을 마실까 무엇을 입을까 하지 말라\n회중: 이는 다 이방인들이 구하는 것이라 너희 하늘 아버지께서 이 모든 것이 너희에게 있어야 할 줄을 아시느니라\n인도자: 그런즉 너희는 먼저 그의 나라와 그의 의를 구하라\n회중: 그리하면 이 모든 것을 너희에게 더하시리라","label":"교독문 75번  ·  마태복음 6장"},"76":{"title":"요한복음 1장","body":"인도자: 태초에 말씀이 계시니라 이 말씀이 하나님과 함께 계셨으니\n회중: 이 말씀은 곧 하나님이시니라\n인도자: 그가 태초에 하나님과 함께 계셨고 만물이 그로 말미암아 지은 바 되었으니\n회중: 지은 것이 하나도 그가 없이는 된 것이 없느니라\n인도자: 그 안에 생명이 있었으니 이 생명은 사람들의 빛이라\n회중: 빛이 어둠에 비치되 어둠이 깨닫지 못하더라\n인도자: 참 빛 곧 세상에 와서 각 사람에게 비추는 빛이 있었나니그가 세상에 계셨으며 세상은 그로 말미암아 지은 바 되었으되 세상이 그를 알지 못하였고 자기 땅에 오매 자기 백성이 영접하지 아니하였으나\n회중: 영접하는 자 곧 그 이름을 믿는 자들에게는 하나님의 자녀가 되는 권세를 주셨으니\n인도자: 이는 혈통으로나 육정으로나 사람의 뜻으로 나지 아니하고\n회중: 오직 하나님께로부터 난 자들이라\n인도자: 말씀이 육신이 되어 우리 가운데 거하시매 우리가 그의 영광을 보니 아버지의 독생자의 영광이요 은혜와 진리가 충만하더라","label":"교독문 76번  ·  요한복음 1장"},"77":{"title":"요한복음 3장","body":"인도자: 하나님이 세상을 이처럼 사랑하사 독생자를 주셨으니\n회중: 이는 그를 믿는 자마다 멸망하지 않고 영생을 얻게 하려 하심이라\n인도자: 하나님이 그 아들을 세상에 보내신 것은 세상을 심판하려 하심이 아니요\n회중: 그로 말미암아 세상이 구원을 받게 하려 하심이라\n인도자: 그를 믿는 자는 심판을 받지 아니하는 것이요\n회중: 믿지 아니하는 자는 하나님의 독생자의 이름을 믿지 아니하므로벌써 심판을 받은 것이니라\n인도자: 그 정죄는 이것이니 곧 빛이 세상에 왔으되 사람들이 자기 행위가 악하므로 빛보다 어둠을 더 사랑한 것이니라\n회중: 악을 행하는 자마다 빛을 미워하여 빛으로 오지 아니하나니이는그 행위가 드러날까 함이요\n인도자: 진리를 따르는 자는 빛으로 오나니이는그 행위가 하나님 안에서 행한 것임을 나타내려 함이라 하시니라","label":"교독문 77번  ·  요한복음 3장"},"78":{"title":"요한복음 14장","body":"인도자: 너희는 마음에 근심하지 말라 하나님을 믿으니 또 나를 믿으라\n회중: 내 아버지 집에 거할 곳이 많도다 그렇지 않으면 너희에게 일렀으리라\n인도자: 내가 너희를 위하여 거처를 예비하러 가노니 가서 너희를 위하여 거처를 예비하면내가다시와서 너희를 내게로 영접하여 나 있는 곳에 너희도 있게 하리라\n회중: 내가 어디로 가는지 그 길을 너희가 아느니라\n인도자: 도마가 이르되 주여 주께서 어디로 가시는지 우리가 알지 못하거늘 그 길을 어찌 알겠사옵나이까\n회중: 예수께서 이르시되 내가 곧 길이요 진리요 생명이니\n인도자: 나로 말미암지 않고는 아버지께로 올 자가 없느니라","label":"교독문 78번  ·  요한복음 14장"},"79":{"title":"요한복음 15장","body":"인도자: 나는 포도나무요 너희는 가지라 그가 내 안에, 내가 그 안에 거하면\n회중: 사람이 열매를 많이 맺나니 나를 떠나서는 너희가 아무 것도 할 수 없음이라\n인도자: 사람이 내 안에 거하지 아니하면 가지처럼 밖에 버려져 마르나니 사람들이 그것을 모아다가 불에 던져 사르느니라\n회중: 너희가 내 안에 거하고 내 말이 너희 안에 거하면 무엇이든지 원하는 대로 구하라\n인도자: 그리하면 이루리라\n회중: 너희가 열매를 많이 맺으면 내 아버지께서 영광을 받으실 것이요\n인도자: 너희는 내 제자가 되리라\n회중: 아버지께서 나를 사랑하신 것같이 나도 너희를 사랑하였으니\n인도자: 나의 사랑 안에 거하라\n회중: 내가 아버지의 계명을 지켜 그의 사랑 안에 거하는 것같이 너희도 내 계명을 지키면 내 사랑 안에 거하리라","label":"교독문 79번  ·  요한복음 15장"},"80":{"title":"고린도후서 4장","body":"인도자: 우리가 이 보배를 질그릇에 가졌으니\n회중: 이는 심히 큰 능력은 하나님께 있고 우리에게 있지 아니함을 알게 하려 함이라\n인도자: 우리가 사방으로 우겨쌈을 당하여도 싸이지 아니하며\n회중: 답답한 일을 당하여도 낙심하지 아니하며\n인도자: 박해를 받아도 버린 바 되지 아니하며\n회중: 거꾸러뜨림을 당하여도 망하지 아니하고\n인도자: 우리가 항상 예수의 죽음을 몸에 짊어짐은 예수의 생명이 또한 우리 몸에 나타나게 하려 함이라\n회중: 우리 살아 있는 자가 항상 예수를 위하여 죽음에 넘겨짐은 예수의 생명이 또한 우리 죽을 육체에 나타나게 하려 함이라","label":"교독문 80번  ·  고린도후서 4장"},"81":{"title":"에베소서 4장","body":"인도자: 그러므로 주 안에서 갇힌 내가 너희를 권하노니 너희가 부르심을 받은 일에 합당하게 행하여모든 겸손과 온유로 하고 오래 참음으로 사랑 가운데서 서로 용납하고\n회중: 평안의 매는 줄로 성령이 하나 되게 하신 것을 힘써 지키라\n인도자: 몸이 하나요 성령도 한 분이시니\n회중: 이와 같이 너희가 부르심의 한 소망 안에서 부르심을 받았느니라\n인도자: 주도 한 분이시요 믿음도 하나요 세례도 하나요\n회중: 하나님도 한 분이시니 곧 만유의 아버지시라","label":"교독문 81번  ·  에베소서 4장"},"82":{"title":"빌립보서 2장","body":"인도자: 너희 안에 이 마음을 품으라\n회중: 곧 그리스도 예수의 마음이니\n인도자: 그는 근본 하나님의 본체시나 하나님과 동등됨을 취할 것으로 여기지 아니하시고\n회중: 오히려 자기를 비워 종의 형체를 가지사 사람들과 같이 되셨고 사람의 모양으로 나타나사 자기를 낮추시고 죽기까지 복종하셨으니 곧 십자가에 죽으심이라\n인도자: 이러므로 하나님이 그를 지극히 높여 모든 이름 위에 뛰어난 이름을 주사 하늘에 있는 자들과 땅에 있는 자들과 땅 아래에 있는 자들로모든 무릎을 예수의 이름에 꿇게 하시고","label":"교독문 82번  ·  빌립보서 2장"},"83":{"title":"빌립보서 4장","body":"인도자: 주 안에서 항상 기뻐하라 내가 다시 말하노니 기뻐하라\n회중: 너희 관용을 모든 사람에게 알게 하라 주께서 가까우시니라\n인도자: 아무 것도 염려하지 말고 다만 모든 일에 기도와 간구로너희구할것을 감사함으로 하나님께 아뢰라\n회중: 그리하면 모든 지각에 뛰어난 하나님의 평강이그리스도 예수 안에서 너희 마음과 생각을 지키시리라\n인도자: 끝으로 형제들아 무엇에든지 참되며 무엇에든지 경건하며 무엇에든지 옳으며\n회중: 무엇에든지 정결하며 무엇에든지 사랑 받을 만하며 무엇에든지 칭찬 받을 만하며\n인도자: 무슨 덕이 있든지 무슨 기림이 있든지 이것들을 생각하라\n회중: 너희는 내게 배우고 받고 듣고 본 바를 행하라\n인도자: 그리하면 평강의 하나님이 너희와 함께 계시리라","label":"교독문 83번  ·  빌립보서 4장"},"84":{"title":"히브리서 11장","body":"인도자: 믿음은 바라는 것들의 실상이요 보이지 않는 것들의 증거니 선진들이 이로써 증거를 얻었느니라\n회중: 믿음으로 모든 세계가 하나님의 말씀으로 지어진 줄을 우리가 아나니 보이는 것은 나타난 것으로 말미암아 된 것이 아니니라\n인도자: 믿음으로 아벨은 가인보다 더 나은 제사를 하나님께 드림으로 의로운 자라 하시는 증거를 얻었으니\n회중: 하나님이 그 예물에 대하여 증언하심이라 그가 죽었으나 그 믿음으로써 지금도 말하느니라\n인도자: 믿음으로 에녹은 죽음을 보지 않고 옮겨졌으니 하나님이 그를 옮기심이로 다시 보이지 아니하였느니라\n회중: 그는 옮겨지기 전에 하나님을 기쁘시게 하는 자라 하는 증거를 받았느니라\n인도자: 믿음이 없이는 하나님을 기쁘시게 하지 못하나니\n회중: 하나님께 나아가는 자는 반드시 그가 계신 것과 또한 그가 자기를 찾는 자들에게상 주시는 이심을 믿어야 할지니라","label":"교독문 84번  ·  히브리서 11장"},"85":{"title":"요한1서 4장","body":"인도자: 사랑하는 자들아 우리가 서로 사랑하자 사랑은 하나님께 속한 것이니\n회중: 사랑하는 자마다 하나님으로부터 나서 하나님을 알고\n인도자: 사랑하지 아니하는 자는 하나님을 알지 못하나니\n회중: 이는 하나님은 사랑이심이라\n인도자: 하나님의 사랑이 우리에게 이렇게 나타난 바 되었으니\n회중: 하나님이 자기의 독생자를 세상에 보내심은 그로 말미암아 우리를 살리려 하심이라\n인도자: 사랑은 여기 있으니 우리가 하나님을 사랑한 것이 아니요\n회중: 하나님이 우리를 사랑하사 우리 죄를 속하기 위하여 화목 제물로 그 아들을 보내셨음이라\n인도자: 사랑하는 자들아 하나님이 이같이 우리를 사랑하셨은즉\n회중: 우리도 서로 사랑하는 것이 마땅하도다\n인도자: 어느 때나 하나님을 본 사람이 없으되 만일 우리가 서로 사랑하면\n회중: 하나님이 우리 안에 거하시고 그의 사랑이 우리 안에 온전히 이루어지느니라","label":"교독문 85번  ·  요한1서 4장"},"86":{"title":"요한계시록 14장","body":"인도자: 또 내가 보니 보라 어린 양이 시온 산에 섰고 그와 함께 십사만 사천이 서있는데 그들의 이마에는 어린 양의 이름과 그 아버지의 이름을 쓴 것이 있더라\n회중: 내가 하늘에서 나는 소리를 들으니 많은 물 소리와도 같고 큰 우렛소리와도 같은데내가들은 소리는 거문고 타는 자들이 그 거문고를 타는 것 같더라\n인도자: 그들이 보좌 앞과 네 생물과 장로들 앞에서 새 노래를 부르니\n회중: 땅에서 속량함을 받은 십사만 사천 밖에는 능히 이 노래를 배울 자가 없더라\n인도자: 이 사람들은 여자와 더불어 더럽히지 아니하고 순결한 자라\n회중: 어린 양이 어디로 인도하든지 따라가는 자며\n인도자: 사람 가운데에서 속량함을 받아 처음 익은 열매로 하나님과 어린 양에게 속한 자들이니\n회중: 그 입에 거짓말이 없고 흠이 없는 자들이더라","label":"교독문 86번  ·  요한계시록 14장"},"87":{"title":"요한계시록 21 장","body":"인도자: 또 내가 새 하늘과 새 땅을 보니처음 하늘과 처음 땅이 없어졌고 바다도 다시 있지 않더라\n회중: 또 내가 보매 거룩한 성 새 예루살렘이 하나님께로부터 하늘에서 내려오니그 준비한 것이 신부가 남편을 위하여 단장한 것 같더라\n인도자: 내가 들으니 보좌에서 큰 음성이 나서 이르되보라\n회중: 하나님의 장막이 사람들과 함께 있으매 하나님이그들과 함께 계시리니 그들은 하나님의 백성이 되고\n인도자: 하나님은 친히 그들과 함께 계셔서 모든 눈물을 그 눈에서 닦아 주시니\n회중: 다시는 사망이 없고 애통하는 것이나 곡하는 것이나 아픈 것이 다시 있지 아니하리니\n인도자: 처음 것들이 다 지나갔음이러라\n회중: 보좌에 앉으신 이가 이르시되보라\n인도자: 내가 만물을 새롭게 하노라","label":"교독문 87번  ·  요한계시록 21 장"},"88":{"title":"세례(침례) (1)","body":"인도자: 하늘에 계시는 주여 내가 눈을 들어 주께 향하나이다\n회중: 여호와 우리 하나님을 바라보며 우리에게 은혜 베풀어 주시기를 기다리나이다\n인도자: (시 123:1, 2하) 우리가 아직 죄인 되었을 때에 그리스도께서 우리를 위하여 죽으심으로 하나님께서 우리에 대한 자기의 사랑을 확증하셨느니라\n회중: 그러면 이제 우리가 그의 피로 말미암아 의롭다 하심을 받았으니\n인도자: 더욱 그로 말미암아 진노하심에서 구원을 받을 것이니(롬 5:8-9)이는 아버지의 영광으로 말미암아 그리스도를 죽은 자 가운데서 살리심과 같이 우리로 또한 새 생명 가운데서 행하게 하려 함이라(롬 6:4하) 그러므로 너희가 그리스도 예수를 주로 받았으니\n회중: 그 안에서 행하되 그 안에 뿌리를 박으며 새움을 받아\n인도자: 교훈을 받은 대로 믿음에 굳게 서서 감사함을 넘치게 하라","label":"교독문 88번  ·  세례(침례) (1)"},"89":{"title":"세례(침례) (2)","body":"인도자: 무릇 그리스도 예수와 합하여 세례를 받은 우리는그의 죽으심과 합하여 세례를 받은 줄을 알지 못하느냐\n회중: 그러므로 우리가 그의 죽으심과 합하여 세례를 받음으로 그와 함께 장사되었나니이는 아버지의 영광으로 말미암아 그리스도를 죽은 자 가운데서 살리심과 같이 우리로 또한 새 생명 가운데서 행하게 하려 함이라\n인도자: 만일 우리가 그의 죽으심과 같은 모양으로 연합한 자가 되었으면 또한 그의 부활과 같은 모양으로 연합한 자도 되리라\n회중: 우리가 알거니와 우리의 옛 사람이 예수와 함께 십자가에 못 박힌 것은 죄의 몸이죽어 다시는 우리가 죄에게 종 노릇 하지 아니하려 함이니\n인도자: 이는 죽은 자가 죄에서 벗어나 의롭다 하심을 얻었음이라\n회중: 만일 우리가 그리스도와 함께 죽었으면 또한 그와 함께 살 줄을 믿노니이는 그리스도와죽은 자 가운데서 살아나셨으매 다시 죽지 아니하시고","label":"교독문 89번  ·  세례(침례) (2)"},"90":{"title":"세례(침례) (3)","body":"인도자: 예수께서 대답하여 이르시되 진실로 진실로 네게 이르노니 사람이 거듭나지 아니하면 하나님의 나라를 볼 수 없느니라\n회중: 니고데모가 이르되 사람이 늙으면 어떻게 날 수 있사옵나이까\n인도자: 두 번째 모태에 들어갔다가 날 수 있사옵나이까\n회중: 예수께서 대답하시되 진실로 진실로 네게 이르노니 사람이 물과 성령으로 나지 아니하면 하나님의 나라에 들어갈 수 없느니라\n인도자: 육으로 난 것은 육이요 영으로 난 것은 영이니\n회중: 내가 네게 거듭나야 하겠다 하는 말을 놀랍게 여기지 말라(요 3:3-7)무릇 그리스도 예수와 합하여 세례를 받은 우리는그의 죽으심과 합하여 세례를 받은 줄을 알지 못하느냐\n인도자: 그러므로 우리가 그의 죽으심과 합하여 세례를 받음으로 그와 함께 장사되었나니이는 아버지의 영광으로 말미암아 그리스도를 죽은 자 가운데서 살리심과 같이","label":"교독문 90번  ·  세례(침례) (3)"},"91":{"title":"성찬(1)","body":"인도자: 예수께서 이르시되 나는 생명의 떡이니 내게 오는 자는 결코 주리지 아니할 터이요\n회중: 나를 믿는 자는 영원히 목마르지 아니하리라(요 6:35)나는 하늘에서 내려온 살아 있는 떡이니 사람이 이 떡을 먹으면 영생하리라\n인도자: 내가 줄 떡은 곧 세상의 위한 내 살이니라 하시니라(요 6:51)내살을먹고\n회중: 내 피를 마시는 자는 영생을 가졌고 마지막 날에 내가 그를 다시 살리리니\n인도자: 내 살은 참된 양식이요 내 피는 참된 음료로다\n회중: 내 살을 먹고 내 피를 마시는 자는 내 안에 거하고 나도 그의 안에 거하나니살아계신 아버지께서 나를 보내시매 내가 아버지로 말미암아 사는 것같이나를먹는그 사람도 나로 말미암아 살리라(요 6:54-57)새 계명을 너희에게 주노니 서로 사랑하라 내가 너희를 사랑한 것같이 너희도 서로 사랑하라\n인도자: 너희가 서로 사랑하면 이로써 모든 사람이 너희가 내 제자인 줄 알리라","label":"교독문 91번  ·  성찬(1)"},"92":{"title":"성찬(2)","body":"인도자: 때가 이르매 예수께서 사도들과 함께 앉으사 이르시되내가 고난을 받기 전에 너희와 함께 이 유월절 먹기를 원하고\n회중: 원하였노라(눅 22:14-15)내가 너희에게 이르노니 내가 이제부터 하나님의 나라가 임할 때까지 포도나무에서 난 것을 다시 마시지 아니하리라 하시고\n인도자: 또 떡을 가져 감사 기도 하시고 떼어 그들에게 주시며 이르시되 이것은 너희를 위하여 주는 내 몸이라 너희가 이를 행하여 나를 기념하라\n회중: 하시고저녁먹은후에잔도그와 같이 하여 이르시되이잔은내피로 세우는 새 언약이니 곧 너희를 위하여 붓는 것이라","label":"교독문 92번  ·  성찬(2)"},"93":{"title":"새해(1)","body":"인도자: 주께서 옛적에 땅의 기초를 놓으셨사오며 하늘도 주의 손으로 지으신 바니이다\n회중: 천지는 없어지려니와 주는 영존하시겠고\n인도자: 그것들은 다 옷같이 낡으리니 의복같이 바꾸시면 바뀌려니와주는 한결같으시고 주의 연대는 무궁하리이다(시102:25-27) 너희는 이전 일을 기억하지 말며 옛날 일을 생각하지 말라\n회중: 보라 내가 새 일을 행하리니 이제 나타낼 것이라\n인도자: 너희는 유혹의 욕심을 따라 썩어져 가는 구습을 따르는 옛 사람을 벗어 버리고\n회중: 오직 너희의 심령이 새롭게 되어 하나님을 따라 의와 진리의 거룩함으로 지으심을 받은 새 사람을 입으라(엡4:22-24) 그런즉 누구든지 그리스도 안에 있으면 새로운 피조물이라\n인도자: 이전 것은 지나갔으니 보라 새 것이 되었도다(고후5:17)새 계명을 너희에게 주노니 서로 사랑하라\n회중: 내가 너희를 사랑한 것같이 너희도 서로 사랑하라","label":"교독문 93번  ·  새해(1)"},"94":{"title":"새해(2)","body":"인도자: 찬송하리로다 하나님 곧 우리 주 예수 그리스도의 아버지께서 그리스도 안에서 하늘에 속한 모든 신령한 복을 우리에게 주시되곧창세전에 그리스도 안에서 우리를 택하사 우리로 사랑 안에서 그 앞에 거룩하고\n회중: 흠이 없게 하시려고\n인도자: 그 기쁘신 뜻대로 우리를 예정하사 예수 그리스도로 말미암아 자기의 아들들이 되게 하셨으니\n회중: 이는 그가 사랑하시는 자 안에서 우리에게 거저 주시는 바 그의 은혜의 영광을 찬송하게 하려는 것이라\n인도자: 우리는 그리스도 안에서 그의 은혜의 풍성함을 따라 그의 피로 말미암아 속량곧죄 사함을 받았느니라\n회중: 이는 그가 모든 지혜와 총명을 우리에게 넘치게 하사 그 뜻의 비밀을 우리에게 알리신 것이요(엡1:3-9상) 하늘에 있는 것이나 땅에 있는 것이 다 그리스도 안에서 통일되게 하려 하심이라\n인도자: 모든 일을 그의 뜻의 결정대로 일하시는 이의 계획을 따라 우리가 예정을 입어그 안에서 기업이 되었으니\n회중: 이는 우리가 그리스도 안에서 전부터 바라던 그의 영광의 찬송이 되게 하려 하심이라","label":"교독문 94번  ·  새해(2)"},"95":{"title":"가정주일","body":"인도자: 내가 사람의 방언과 천사의 말을 할지라도 사랑이 없으면 소리 나는 구리와 울리는 꽹과리가 되고\n회중: 내가 예언하는 능력이 있어 모든 비밀과 모든 지식을 알고 또 산을 옮길 만한 모든 믿음이 있을지라도 사랑이 없으면 내가 아무 것도 아니요\n인도자: 내가 내게 있는 모든 것으로 구제하고 또 내 몸을 불사르게 내줄지라도 사랑이 없으면 내게 아무 유익이 없느니라\n회중: 사랑은 오래 참고 사랑은 온유하며\n인도자: 시기하지 아니하며 사랑은 자랑하지 아니하며 교만하지 아니하며\n회중: 무례히 행하지 아니하며 자기의 유익을 구하지 아니하며\n인도자: 성내지 아니하며 악한 것을 생각하지 아니하며 불의를 기뻐하지 아니하며\n회중: 진리와 함께 기뻐하고 모든 것을 참으며\n인도자: 모든 것을 믿으며 모든 것을 바라며 모든 것을 견디느니라\n회중: 사랑은 언제까지나 떨어지지 아니하되 예언도 폐하고 방언도 그치고 지식도 폐하리라(고전13:1-8) 그런즉 믿음, 소망, 사랑, 이 세 가지는 항상 있을 것인데 그 중의 제일은 사랑이라","label":"교독문 95번  ·  가정주일"},"96":{"title":"어린이주일","body":"인도자: 보라 자식들은 여호와의 기업이요\n회중: 태의 열매는 그의 상급이로다\n인도자: 젊은 자의 자식은 장사의 수중의 화살 같으니\n회중: 이것이 그의 화살통에 가득한 자는 복되도다\n인도자: 이르시되 진실로 너희에게 이르노니 너희가 돌이켜 어린 아이들과 같이 되지 아니하면 결단코 천국에 들어가지 못하리라\n회중: 그러므로 누구든지 이 어린 아이와 같이 자기를 낮추는 사람이 천국에서 큰 자니라\n인도자: 또 누구든지 내 이름으로 이런 어린 아이 하나를 영접하면곧나를 영접함이니(마18:3-5)또 아비들아 너희 자녀를 노엽게 하지 말고 오직 주의 교훈과 훈계로 양육하라(엡6:4) 마땅히 행할 길을 아이에게 가르치라\n회중: 그리하면 늙어도 그것을 떠나지 아니하리라","label":"교독문 96번  ·  어린이주일"},"97":{"title":"청년주일","body":"인도자: 너는 청년의 때에 너의 창조주를 기억하라 곧 곤고한 날이 이르기 전에나는아무낙이 없다고 할 해들이 가깝기 전에해와빛과달과 별들이 어둡기 전에비뒤에 구름이 다시 일어나기 전에 그리하라(전12:1-2) 청년이여 네 어린 때를 즐거워하며 네 청년의 날들을 마음에 기뻐하여 마음에 원하는 길들과 네 눈이 보는 대로 행하라\n회중: 그러나 하나님이 이 모든 일로 말미암아 너를 심판하실 줄 알라(전11:9) 여호와를 경외하는 것이 지식의 근본이거늘 미련한 자는 지혜와 훈계를 멸시하느니라(잠1:7) 청년이 무엇으로 그의 행실을 깨끗하게 하리이까\n인도자: 주의 말씀만 지킬 따름이니이다(시119:9)또한너는 청년의 정욕을 피하고\n회중: 주를 깨끗한 마음으로 부르는 자들과 함께 의와 믿음과 사랑과 화평을 따르라(딤후 2:22)주의 권능의 날에 주의 백성이 거룩한 옷을 입고 즐거이 헌신하니\n인도자: 새벽 이슬 같은 주의 청년들이 주께 나오는도다","label":"교독문 97번  ·  청년주일"},"98":{"title":"어버이주일","body":"인도자: 네 부모를 공경하라\n회중: 그리하면 네 하나님 여호와가 네게 준 땅에서 네 생명이 길리라(출20:12)내 아들아 네 아비의 훈계를 들으며 네 어미의 법을 떠나지 말라\n인도자: 이는 네 머리의 아름다운 관이요 네 목의 금 사슬이니라(잠1:8-9)너를낳은 아비에게 청종하고 네 늙은 어미를 경히 여기지 말지니라(잠23:22)네 부모를 즐겁게 하며 너를 낳은 어미를 기쁘게 하라(잠23:25) 자녀들아 주 안에서 너희 부모에게 순종하라 이것이 옳으니라\n회중: 네 아버지와 어머니를 공경하라 이것은 약속이 있는 첫 계명이니 이로써 네가잘되고\n인도자: 땅에서 장수하리라","label":"교독문 98번  ·  어버이주일"},"99":{"title":"나라 사랑(1)","body":"인도자: 온 땅은 여호와를 두려워하며 세상의 모든 거민들은 그를 경외할지어다(시33:8) 여호와께서 나라들의 계획을 폐하시며 민족들의 사상을 무효하게 하시도다\n회중: 여호와의 계획은 영원히 서고 그의 생각은 대대에 이르리로다\n인도자: 여호와를 자기 하나님으로 삼은 나라 곧 하나님의 기업으로 선택된 백성은 복이 있도다\n회중: 여호와께서 하늘에서 굽어보사 모든 인생을 살피심이여곧그가\n인도자: 거하시는 곳에서 세상의 모든 거민들을 굽어살피시는도다(시33:10-14)많은 군대로 구원 얻은 왕이 없으며\n회중: 용사가 힘이 세어도 스스로 구원하지 못하는도다(시33:16) 여호와는 그를 경외하는 자 곧 그의 인자하심을 바라는 자를 살피사 그들의 영혼을 사망에서 건지시며 그들이 굶주릴 때에 그들을 살리시는도다\n인도자: 우리 영혼이 여호와를 바람이여 그는 우리의 도움과 방패시로다\n회중: 여호와여 우리가 주께 바라는 대로 주의 인자하심을 우리에게 베푸소서","label":"교독문 99번  ·  나라 사랑(1)"},"100":{"title":"나라 사랑(2)","body":"인도자: 할렐루야 내 영혼아 여호와를 찬양하라\n회중: 나의 생전에 여호와를 찬양하며 나의 평생에 내 하나님을 찬송하리로다\n인도자: 귀인들을 의지하지 말며 도울 힘이 없는 인생도 의지하지 말지니그의 호흡이 끊어지면 흙으로 돌아가서 그 날에 그의 생각이 소멸하리로다\n회중: 야곱의 하나님을 자기의 도움으로 삼으며\n인도자: 여호와 자기 하나님에게 자기의 소망을 두는 자는 복이 있도다\n회중: 여호와는 천지와 바다와 그 중의 만물을 지으시며 영원히 진실함을 지키시며\n인도자: 억눌린 사람들을 위해 정의로 심판하시며 주린 자들에게 먹을 것을 주시는 이시로다\n회중: 여호와께서는 갇힌 자들에게 자유를 주시는도다 여호와께서 맹인들의 눈을 여시며\n인도자: 여호와께서 비굴한 자들을 일으키시며\n회중: 여호와께서 의인들을 사랑하시며 여호와께서 나그네들을 보호하시며 고아와 과부를 붙드시고 악인들의 길은 굽게 하시는도다","label":"교독문 100번  ·  나라 사랑(2)"},"101":{"title":"나라 사랑(3)","body":"인도자: 내가 여호와를 찬송하리니 그는 높고 영화로우심이요\n회중: 말과 그 탄 자를 바다에 던지셨음이로다\n인도자: 여호와는 나의 힘이요 노래시며 나의 구원이시로다\n회중: 그는 나의 하나님이시니 내가 그를 찬송할 것이요(출15:1하-2상) 여호와여 주의 오른손이 권능으로 영광을 나타내시니이다\n인도자: 여호와여 주의 오른손이 원수를 부수시니이다(출15:6) 여호와께서 시온의 포로를 돌려 보내실 때에 우리는 꿈꾸는 것 같았도다\n회중: 그 때에 우리 입에는 웃음이 가득하고 우리 혀에는 찬양이 찼었도다\n인도자: 그 때에 뭇 나라 가운데에서 말하기를 여호와께서 그들을 위하여 큰 일을 행하셨다\n회중: 하였도다\n인도자: 여호와께서 우리를 위하여 큰 일을 행하셨으니 우리는 기쁘도다(시126:1-3) 흑암에 행하던 백성이 큰 빛을 보고\n회중: 사망의 그늘진 땅에 거주하던 자에게 빛이 비치도다\n인도자: 주께서 이 나라를 창성하게 하시며 나의 기업 이스라엘이여, 복이 있을지어다 하실 것임이라","label":"교독문 101번  ·  나라 사랑(3)"},"102":{"title":"나라 사랑(4)","body":"인도자: 그 땅 이스라엘 모든 산에서 그들이 한 나라를 이루어서 한 임금이 모두 다스리게 하리니\n회중: 그들이 다시는 두 민족이 되지 아니하며 두 나라로 나누이지 아니할지라\n인도자: 그들이 그 우상들과 가증한 물건과 그 모든 죄악으로 더 이상 자신들을 더럽히지 아니하리라\n회중: 내가 그들을 그 범죄한 처소에서 구원하여 정결하게 한즉\n인도자: 그들은 내 백성이 되고 나는 그들의 하나님이 되리라(겔 37:22-23)그가열방 사이에 판단하시며 많은 백성을 판결하시리니\n회중: 무리가 그들의 칼을 펴서 보습을 만들고 그들의 창을 쳐서 낫을 만들 것이며\n인도자: 이 나라와 저 나라가 다시는 칼을 들고 서로 치지 아니하며 다시는 전쟁을 연습하지 아니하리라(사 2:4)내가 에브라임의 병거와 예루살렘의 말을 끊겠고 전쟁하는 활도 끊으리니\n회중: 그가 이방 사람에게 화평을 전할 것이요\n인도자: 그의 통치는 바다에서 바다까지 이르고 유브라데 강에서 땅 끝까지 이르리라(슥 9:10)보라\n회중: 형제가 연합하여 동거함이 어찌 그리 선하고 아름다운고\n인도자: 머리에 있는 보배로운 기름이 수염 곧 아론의 수염에 흘러서 그의 옷깃까지 내림같고\n회중: 헐몬의 이슬이 시온의 산들에 내림 같도다 거기서 여호와께서 복을 명령하셨나니 곧 영생이로다","label":"교독문 102번  ·  나라 사랑(4)"},"103":{"title":"나라사랑(5)","body":"인도자: 내가 비옵는 것은 그들을 세상에서 데려가시기를 위함이 아니요\n회중: 다만 악에 빠지지 않게 보전하시기를 위함이니이다\n인도자: 내가 세상에 속하지 아니함같이 그들도 세상에 속하지 아니하였사옵나이다\n회중: 그들을 진리로 거룩하게 하옵소서 아버지의 말씀은 진리니이다\n인도자: 아버지께서 나를 세상에 보내신 것같이나도 그들을 세상에 보내었고\n회중: 또 그들을 위하여 내가 나를 거룩하게 하오니이는 그들도 진리로 거룩함을 얻게 하려 함이니이다(요17:15-19) 아버지여, 아버지께서 내 안에, 내가 아버지 안에 있는 것같이 그들도 다 하나가 되어 우리 안에 있게 하사 세상으로 아버지께서 나를 보내신 것을 믿게 하옵소서\n인도자: 내게 주신 영광을 내가 그들에게 주었사오니","label":"교독문 103번  ·  나라사랑(5)"},"104":{"title":"종교개혁주일","body":"인도자: 나의 힘이신 여호와여 내가 주를 사랑하나이다\n회중: 여호와는 나의 반석이시오 나의 요새시오 나를 건지시는 이시오나의 하나님이시오 내가 그 안에 피할 나의 바위시오 나의 방패시오나의 구원의 뿔이시오 나의 산성이시로다\n인도자: 예수께서 이르시되 오히려 하나님의 말씀을 듣고 지키는 자가 복이 있느니라\n회중: 하시니라(눅11:28)내가 복음을 부끄러워하지 아니하오니이 복음은 모든 믿는 자에게 구원을 주시는 하나님의 능력이 됨이라\n인도자: 먼저는 유대인에게요 그리고 헬라인에게로다\n회중: 복음에는 하나님의 의가 나타나서 믿음으로 믿음에 이르게 하나니\n인도자: 기록된 바 오직 의인은 믿음으로 말미암아 살리라 함과 같으니라(롬1:16-17) 너희가 내 말에 거하면 참으로 내 제자가 되고\n회중: 진리를 알지니 진리가 너희를 자유롭게 하리라(요8:31하-32)우리주예수 그리스도로 말미암아 우리에게 승리를 주시는 하나님께 감사하노니 그러므로 내 사랑하는 형제들아 견실하며 흔들리지 말고\n인도자: 항상 주의 일에 더욱 힘쓰는 자들이 되라","label":"교독문 104번  ·  종교개혁주일"},"105":{"title":"감사절(1)","body":"인도자: 여호와께 감사하라 그는 선하시며\n회중: 그 인자하심이 영원함이로다(시107:1) 여호와께 감사하고 그의 이름을 불러 아뢰며\n인도자: 그가 하는 일을 만민 중에 알게 할지어다(시105:1) 그들이 광야 사막 길에서 방황하며 거주할 성읍을 찾지 못하고\n회중: 주리고 목이 말라 그들의 영혼이 그들 안에서 피곤하였도다\n인도자: 이에 그들이 근심 중에 여호와께 부르짖으매\n회중: 그들의 고통에서 건지시고 또 바른 길로 인도하사 거주할 성읍에 이르게 하셨도다\n인도자: 여호와의 인자하심과 인생에게 행하신 기적으로 말미암아 그를 찬송할지로다\n회중: 그가 사모하는 영혼에게 만족을 주시며 주린 영혼에게 좋은 것으로 채워주심이로다","label":"교독문 105번  ·  감사절(1)"},"106":{"title":"감사절(2)","body":"인도자: 할렐루야 우리 하나님을 찬양하는 일이 선함이여 찬송하는 일이 아름답고\n회중: 마땅하도다\n인도자: 여호와께서 예루살렘을 세우시며 이스라엘의 흩어진 자들을 모으시며\n회중: 상심한 자들을 고치시며 그들의 상처를 싸매시는도다\n인도자: 그가 별들의 수효를 세시고 그것들을 다 이름대로 부르시는도다\n회중: 우리 주는 위대하시며 능력이 많으시며 그의 지혜가 무궁하시도다\n인도자: 여호와께서 겸손한 자들은 붙드시고 악인들은 땅에 엎드러뜨리시는도다\n회중: 감사함으로 여호와께 노래하며 수금으로 하나님께 찬양할지어다\n인도자: 그가 구름으로 하늘을 덮으시며 땅을 위하여 비를 준비하시며 산에 풀이 자라게 하시며\n회중: 들짐승과 우는 까마귀 새끼에게 먹을 것을 주시는도다\n인도자: 여호와는 말의 힘이 세다 하여 기뻐하지 아니하시며 사람의 다리가 억세다 하여 기뻐하지 아니하시고\n회중: 여호와는 자기를 경외하는 자들과 그의 인자하심을 바라는 자들을 기뻐하시는도다","label":"교독문 106번  ·  감사절(2)"},"107":{"title":"임직식(1)","body":"인도자: 이에 제자들에게 이르시되 추수할 것은 많되 일꾼이 적으니\n회중: 그러므로 추수하는 주인에게 청하여 추수할 일꾼들을 보내 주소서 하라\n인도자: 하시니라(마9:37-83)그가또한 우리를 새 언약의 일꾼 되기에 만족하게 하셨으니 율법 조문으로 하지 아니하고\n회중: 오직 영으로 함이니 율법 조문은 죽이는 것이요 영은 살리는 것이니라(고후3:6)나를\n인도자: 능하게 하신 그리스도 예수 우리 주께 내가 감사함은 나를 충성되이 여겨 내게 직분을 맡기심이니\n회중: 우리 주의 은혜가 그리스도 예수 안에 있는 믿음과 사랑과 함께 넘치도록 풍성하였도다(딤전1:12, 14)그 주인이 이르되 잘하였도다 착하고 충성된 종아 네가 적은 일에 충성하였으매내가많은것을네게 맡기리니 네 주인의 즐거움에 참여할지어다 하고","label":"교독문 107번  ·  임직식(1)"},"108":{"title":"임직식(2)","body":"인도자: 우리 각 사람에게 그리스도의 선물의 분량대로 은혜를 주셨나니(엡4:7)그가어떤 사람은 사도로, 어떤 사람은 선지자로, 어떤 사람은 복음 전하는 자로, 어떤 사람은 목사와 교사로 삼으셨으니\n회중: 이는 성도를 온전하게 하여 봉사의 일을 하게 하며 그리스도의 몸을 세우려 하심이라\n인도자: 우리가 다 하나님의 아들을 믿는 것과 아는 일에 하나가 되어\n회중: 온전한 사람을 이루어 그리스도의 장성한 분량이 충만한 데까지 이르리니(엡4:11-13)오직사랑 안에서 참된 것을 하여 범사에 그에게까지 자랄지라(엡4:15상) 그에게서 온 몸이 각 마디를 통하여 도움을 받음으로 연결되고 결합되어각 지체의 분량대로 역사하여 그 몸을 자라게 하며 사랑 안에서 스스로 세우느니라","label":"교독문 108번  ·  임직식(2)"},"109":{"title":"헌당예배","body":"인도자: 여호와의 집 우리 여호와의 성전 곧 우리 하나님의 성전 뜰에 서 있는 너희여 여호와를 찬송하라\n회중: 여호와는 선하시며 그의 이름이 아름다우니 그의 이름을 찬양하라(시135:2-3)내가주를 위하여 거하실 성전을 건축하였사오니 주께서 영원히 계실 처소로소이다 하고(대하6:2) 우리가 그의 계신 곳으로 들어가서 그의 발등상 앞에서 엎드려 예배하리로다(시132:7) 문들아 너희 머리를 들지어다 영원한 문들아 들릴지어다\n인도자: 영광의 왕이 들어가시리로다(시24:7) 그러나 나의 하나님 여호와여 주의 종의 기도와 간구를 돌아보시며\n회중: 주의 종이 주 앞에서 부르짖는 것과 비는 기도를 들으시옵소서(대하6:19)내가곧 그들을 나의 성산으로 인도하며\n인도자: 기도하는 내 집에서 그들을 기쁘게 할 것이며\n회중: 그들의 번제와 희생을 나의 제단에서 기꺼이 받게 되리니\n인도자: 이는 내 집은 만민이 기도하는 집이라 일컬음이 될 것임이라(사56:7)오직 여호와는 그 성전에 계시니 온 땅은 그 앞에서 잠잠할지니라\n회중: 하시니라","label":"교독문 109번  ·  헌당예배"},"110":{"title":"선교주일","body":"인도자: 온 땅이여 여호와께 노래하며 그의 구원을 날마다 선포할지어다\n회중: 그의 영광을 모든 민족 중에, 그의 기이한 행적을 만민 중에 선포할지어다\n인도자: 여호와는 위대하시니 극진히 찬양할 것이요 모든 신보다\n회중: 경외할 것임이여(대상16:23-25) 예수께서 또 이르시되 너희에게 평강이 있을지어다 아버지께서 나를 보내신 것같이 나도 너희를 보내노라\n인도자: 그러므로 너희는 가서 모든 민족을 제자로 삼아 아버지와 아들과 성령의 이름으로 세례를 베풀고\n회중: 내가 너희에게 분부한 모든 것을 가르쳐 지키게 하라\n인도자: 볼지어다 내가 세상 끝날까지 너희와 항상 함께 있으리라 하시니라(마28:19-20)오직 성령이 너희에게 임하시면 너희가 권능을 받고\n회중: 예루살렘과 온 유대와 사마리아와 땅 끝까지 이르러 내 증인이 되리라\n인도자: 하시니라","label":"교독문 110번  ·  선교주일"},"111":{"title":"성서주일","body":"인도자: 여호와여 주의 율례들의 도를 내게 가르치소서 내가 끝까지 지키리이다\n회중: 나로 하여금 깨닫게 하여 주소서 내가 주의 법을 준행하며 전심으로 지키리이다(시119:33-34)주의 말씀의 맛이 내게 어찌 그리 단지요\n인도자: 내 입에 꿀보다 더 다니이다\n회중: 주의 법도들로 말미암아 내가 명철하게 되었으므로모든거짓 행위를 미워하나이다\n인도자: 주의 말씀은 내 발에 등이요 내 길에 빛이니이다\n회중: 주의 의로운 규례들을 지키기로 맹세하고 굳게 정하였나이다(시119:103-106) 너희가 성경에서 영생을 얻는 줄 생각하고 성경을 연구하거니와이 성경이 곧 내게 대하여 증언하는 것이니라(요5:39)모든 성경은 하나님의 감동으로 된 것으로 교훈과 책망과 바르게 함과 의로 교육하기에 유익하니\n인도자: 이는 하나님의 사람으로 온전하게 하며 모든 선한 일을 행할 능력을 갖추게하려 함이라","label":"교독문 111번  ·  성서주일"},"112":{"title":"교회교육주일","body":"인도자: 이는 곧 너희의 하나님 여호와께서 너희에게 가르치라고 명하신 명령과 규례와 법도라\n회중: 너희가 건너가서 차지할 땅에서 행할 것이니 곧 너와 네 아들과 네 손자들이 평생에 네 하나님 여호와를 경외하며\n인도자: 내가 너희에게 명한 그 모든 규례와 명령을 지키게 하기 위한 것이며\n회중: 또 네 날을 장구하게 하기 위한 것이라 이스라엘아 듣고 삼가 그것을 행하라\n인도자: 그리하면 네가 복을 받고 네 조상들의 하나님 여호와께서 네게 허락하심같이젖과꿀이 흐르는 땅에서 네가 크게 번성하리라\n회중: 이스라엘아 들으라 우리 하나님 여호와는 오직 유일한 여호와이시니\n인도자: 너는 마음을 다하고 뜻을 다하고 힘을 다하여 네 하나님 여호와를 사랑하라","label":"교독문 112번  ·  교회교육주일"},"113":{"title":"자연과 환경","body":"인도자: 태초에 하나님이 천지를 창조하시니라\n회중: 하나님이 지으신 그 모든 것을 보시니 보시기에 심히 좋았더라(창1:31상) 하늘이 하나님의 영광을 선포하고\n인도자: 궁창이 그의 손으로 하신 일을 나타내는도다(시19:1)땅과 거기에 충만한 것과 세계와 그 가운데에 사는 자들은 다\n회중: 여호와의 것이로다(시24:1) 피조물이 고대하는 바는 하나님의 아들들이 나타나는 것이니(롬8:19)그 바라는 것은 피조물도 썩어짐의 종 노릇 한 데서 해방되어 하나님의 자녀들의 영광의 자유에 이르는 것이니라\n인도자: 피조물이 다 이제까지 함께 탄식하며 함께 고통을 겪고 있는 것을 우리가 아느니라\n회중: 그뿐 아니라 또한 우리 곧 성령의 처음 익은 열매를 받은 우리까지도\n인도자: 속으로 탄식하여 양자 될 것 곧 우리 몸의 속량을 기다리느니라(롬8:21-23)내 거룩한 산 모든 곳에서 해 됨도 없고 상함도 없을 것이니\n회중: 이는 물이 바다를 덮음같이 여호와를 아는 지식이 세상에 충만할 것임이니라","label":"교독문 113번  ·  자연과 환경"},"114":{"title":"이웃 사랑","body":"인도자: 주는 주의 힘으로 산을 세우시며 권능으로 띠를 띠시며\n회중: 바다의 설렘과 물결의 흔들림과 만민의 소요까지 진정하시나이다\n인도자: 땅 끝에 사는 자가 주의 징조를 두려워하나이다\n회중: 주께서 아침 되는 것과 저녁 되는 것을 즐거워하게 하시며\n인도자: 땅을 돌보사 물을 대어 심히 윤택하게 하시며 하나님의 강에 물이 가득하게 하시고\n회중: 이같이 땅을 예비하신 후에 그들에게 곡식을 주시니이다\n인도자: 주께서 밭고랑에 물을 넉넉히 대사 그 이랑을 평평하게 하시며\n회중: 또 단비로 부드럽게 하시고 그 싹에 복을 주시나이다\n인도자: 주의 은택으로 한 해를 관 씌우시니 주의 길에는 기름 방울이 떨어지며\n회중: 들의 초장에도 떨어지니 작은 산들이 기쁨으로 띠를 띠었나이다\n인도자: 초장은 양 떼로 옷 입었고 골짜기는 곡식으로 덮였으매 그들이 다 즐거이 외치고 또 노래하나이다","label":"교독문 114번  ·  이웃 사랑"},"115":{"title":"구주 강림(1)","body":"인도자: 성문으로 나아가라 나아가라 백성이 올 길을 닦으라\n회중: 큰 길을 수축하고 수축하라 돌을 제하라 만민을 위하여 기치를 들라\n인도자: 여호와께서 땅 끝까지 선포하시되 너희는 딸 시온에게 이르라 보라 네 구원이 이르렀느니라\n회중: 보라 상급이 그에게 있고 보응이 그 앞에 있느니라 하셨느니라\n인도자: 사람들이 너를 일컬어 거룩한 백성이라 여호와께서 구속하신 자라 하겠고\n회중: 또 너를 일컬어 찾은 바 된 자요 버림 받지 아니한 성읍이라 하리라(시62:10-12) 선지자 이사야의 책에 쓴 바 광야에서 외치는 자의 소리가 있어 이르되 너희는 주의 길을 준비하라 그의 오실 길을 곧게 하라\n인도자: 모든 골짜기가 메워지고 모든 산과 작은 산이 낮아지고\n회중: 굽은 것이 곧아지고 험한 길이 평탄하여질 것이요\n인도자: 모든 육체가 하나님의 구원하심을 보리라 함과 같으니라","label":"교독문 115번  ·  구주 강림(1)"},"116":{"title":"구주 강림(2)","body":"인도자: 이새의 줄기에서 한 싹이 나며 그 뿌리에서 한 가지가 나서 결실할 것이요\n회중: 그의 위에 여호와의 영 곧 지혜와 총명의 영이요 모략과 재능의 영이요\n인도자: 지식과 여호와를 경외하는 영이 강림하시리니\n회중: 그가 여호와를 경외함으로 즐거움을 삼을 것이며\n인도자: 그의 눈에 보이는 대로 심판하지 아니하며 그의 귀에 들리는 대로 판단하지 아니하며\n회중: 공의로 가난한 자를 심판하며 정직으로 세상의 겸손한 자를 판단할 것이며\n인도자: 그의 입의 막대기로 세상을 치며 그의 입술의 기운으로 악인을 죽일 것이며\n회중: 공의로 그의 허리띠를 삼으며 성실로 그의 몸의 띠를 삼으리라\n인도자: 그 때에 이리가 어린 양과 함께 살며 표범이 어린 염소와 함께 누우며\n회중: 송아지와 어린 사자와 살진 짐승이 함께 있어 어린 아이에게 끌리며\n인도자: 암소와 곰이 함께 먹으며 그것들의 새끼가 함께 엎드리며 사자가 소처럼 풀을 먹을 것이며\n회중: 젖 먹는 아이가 독사의 구멍에서 장난하며 젖 뗀 어린 아이가 독사의 굴에 손을 넣을 것이라\n인도자: 내 거룩한 산 모든 곳에서 해 됨도 없고 상함도 없을 것이니\n회중: 이는 물이 바다를 덮음같이 여호와를 아는 지식이 세상에 충만할 것임이니라\n인도자: 그 날에 이새의 뿌리에서 한 싹이 나서 만민의 기치로 설 것이요\n회중: 열방이 그에게로 돌아오리니 그가 거한 곳이 영화로우리라","label":"교독문 116번  ·  구주 강림(2)"},"117":{"title":"구주 강림(3)","body":"인도자: 광야와 메마른 땅이 기뻐하며 사막이 백합화같이 피어 즐거워하며\n회중: 무성하게 피어 기쁜 노래로 즐거워하며 레바논의 영광과 갈멜과 사론의 아름다움을 얻을 것이라\n인도자: 그것들이 여호와의 영광 곧 우리 하나님의 아름다움을 보리로다\n회중: 너희는 약한 손을 강하게 하며 떨리는 무릎을 굳게 하며\n인도자: 겁내는 자들에게 이르기를 굳세어라, 두려워하지 말라, 보라 너희 하나님이 오사 보복하시며 갚아 주실 것이라 하나님이 오사 너희를 구하시리라 하라\n회중: 그 때에 맹인의 눈이 밝을 것이며 못 듣는 사람의 귀가 열릴 것이며\n인도자: 그 때에 저는 자는 사슴같이 뛸 것이며 말 못하는 자의 혀는 노래하리니\n회중: 이는 광야에서 물이 솟겠고 사막에서 시내가 흐를 것임이라\n인도자: 뜨거운 사막이 변하여 못이 될 것이며 메마른 땅이 변하여 원천이 될 것이며\n회중: 승냥이의 눕던 곳에 풀과 갈대와 부들이 날 것이며\n인도자: 거기에 대로가 있어 그 길을 거룩한 길이라 일컫는 바 되리니\n회중: 깨끗하지 못한 자는 지나가지 못하겠고 오직 구속함을 입은 자들을 위하여 있게 될 것이라","label":"교독문 117번  ·  구주 강림(3)"},"118":{"title":"구주 강림(4)","body":"인도자: 나는 시온의 의가 빛같이, 예루살렘의 구원이 횃불같이 나타나도록 시온을 위하여 잠잠하지 아니하며 예루살렘을 위하여 쉬지 아니할 것인즉이방 나라들이 네 공의를, 뭇 왕이 다 네 영광을 볼 것이요\n회중: 너는 여호와의 입으로 정하실 새 이름으로 일컬음이 될 것이며\n인도자: 너는 또 여호와의 손의 아름다운 관, 네 하나님의 손의 왕관이 될 것이라(사62:1-3) 원하건대 주는 하늘을 가르고 강림하시고 주 앞에서 산들이 진동하기를불이섶을 사르며 불이 물을 끊임 같게 하사 주의 원수들이 주의 이름을 알게 하시며 이방 나라들로 주 앞에서 떨게 하옵소서\n회중: 주께서 강림하사 우리가 생각하지 못한 두려운 일을 행하시던 그 때에 산들이주 앞에서 진동하였사오니","label":"교독문 118번  ·  구주 강림(4)"},"119":{"title":"성탄절(1)","body":"인도자: 여호와의 영광이 나타나고\n회중: 모든 육체가 그것을 함께 보리라 이는 여호와의 입이 말씀하셨느니라(사40:5) 베들레헴 에브라다야 너는 유다 족속 중에 작을지라도 이스라엘을 다스릴 자가 네게서 내게로 나올 것이라 그의 근본은 상고에, 영원에 있느니라(미5:2)이는한 아기가 우리에게 났고 한 아들을 우리에게 주신 바 되었는데그의 어깨에는 정사를 메었고 그의 이름은 기묘자라, 모사라, 전능하신 하나님이라\n인도자: 영존하시는 아버지라, 평강의 왕이라 할 것임이라\n회중: 그 정사와 평강의 더함이 무궁하며\n인도자: 또 다윗의 왕좌와 그의 나라에 군림하여 그 나라를 굳게 세우고\n회중: 지금 이후로 영원히 정의와 공의로 그것을 보존하실 것이라\n인도자: 천사가 이르되 무서워하지 말라 보라 내가 온 백성에게 미칠 큰 기쁨의 좋은 소식을 너희에게 전하노라\n회중: 오늘 다윗의 동네에 너희를 위하여 구주가 나셨으니 곧 그리스도 주시니라","label":"교독문 119번  ·  성탄절(1)"},"120":{"title":"성탄절(2)","body":"인도자: 찬송하리로다 주 이스라엘의 하나님이여 그 백성을 돌보사 속량하시며\n회중: 우리를 위하여 구원의 뿔을 그 종 다윗의 집에 일으키셨으니\n인도자: 이것은 주께서 예로부터 거룩한 선지자의 입으로 말씀하신 바와 같이우리 원수에게서와 우리를 미워하는 모든 자의 손에서 구원하시는 일이라\n회중: 우리 조상을 긍휼히 여기시며 그 거룩한 언약을 기억하셨으니\n인도자: 곧 우리 조상 아브라함에게 하신 맹세라\n회중: 우리가 원수의 손에서 건지심을 받고 종신토록 주의 앞에서 성결과 의로 두려움이 없이 섬기게 하리라 하셨도다(눅1:68-75)이는우리 하나님의 긍휼로 인함이라 이로써 돋는 해가 위로부터 우리에게 임하여 어둠과 죽음의 그늘에 앉은 자에게 비치고 우리 발을 평강의 길로 인도하시리로다(눅1:78-79) 그러므로 주께서 친히 징조를 너희에게 주실 것이라\n인도자: 보라 처녀가 잉태하여 아들을 낳을 것이요 그의 이름을 임마누엘이라 하리라","label":"교독문 120번  ·  성탄절(2)"},"121":{"title":"주현절(1)","body":"인도자: 여호와여 주의 인자하심이 하늘에 있고\n회중: 주의 진실하심이 공중에 사무쳤으며\n인도자: 주의 의는 하나님의 산들과 같고 주의 심판은 큰 바다와 같으니이다\n회중: 여호와여 주는 사람과 짐승을 구하여 주시나이다\n인도자: 하나님이여 주의 인자하심이 어찌 그리 보배로우신지요\n회중: 사람들이 주의 날개 그늘 아래에 피하나이다\n인도자: 그들이 주의 집에 있는 살진 것으로 풍족할 것이라\n회중: 주께서 주의 복락의 강물을 마시게 하시리이다\n인도자: 진실로 생명의 원천이 주께 있사오니주의빛 안에서 우리가 빛을 보리이다\n회중: 주를 아는 자들에게 주의 인자하심을 계속 베푸시며\n인도자: 마음이 정직한 자에게 주의 공의를 베푸소서","label":"교독문 121번  ·  주현절(1)"},"122":{"title":"주현절(2)","body":"인도자: 내가 전심으로 주께 감사하며\n회중: 신들 앞에서 주께 찬송하리이다\n인도자: 내가 주의 성전을 향하여 예배하며 주의 인자하심과 성실하심으로 말미암아 주의 이름에 감사하오리니\n회중: 이는 주께서 주의 말씀을 주의 모든 이름보다 높게 하셨음이라\n인도자: 여호와여 세상의 모든 왕들이 주께 감사할 것은 그들이 주의 입의 말씀을 들음이오며\n회중: 그들이 여호와의 도를 노래할 것은 여호와의 영광이 크심이니이다\n인도자: 여호와께서는 높이 계셔도 낮은 자를 굽어살피시며 멀리서도 교만한 자를 아심이니이다\n회중: 여호와께서 나를 위하여 보상해 주시리이다 여호와여 주의 인자하심이 영원하오니 주의 손으로 지으신 것을 버리지 마옵소서","label":"교독문 122번  ·  주현절(2)"},"123":{"title":"주현절(3)","body":"인도자: 거룩하다 거룩하다 거룩하다 주 하나님 곧 전능하신 이여 전에도 계셨고 이제도 계시고 장차 오실 이시라(계4:8하)주 하나님 곧 전능하신 이시여 하시는 일이 크고 놀라우시도다 만국의 왕이시여주의길이 의롭고 참되시도다\n회중: 주여 누가 주의 이름을 두려워하지 아니하며 영화롭게 하지 아니하오리이까\n인도자: 오직 주만 거룩하시니이다 주의 의로우신 일이 나타났으매 만국이 와서 주께경배하리이다(계15:3하-4)우리주 하나님이여 영광과 존귀와 권능을 받으시는 것이 합당하오니 주께서 만물을 지으신지라\n회중: 만물이 주의 뜻대로 있었고 또 지으심을 받았나이다(계4:11) 보좌에 앉으신 이와 어린 양에게 찬송과 존귀와 영광과 권능을 세세토록 돌릴지어다(계5:13하)아멘 찬송과 영광과 지혜와 감사와 존귀와 권능과 힘이 우리 하나님께 세세토록 있을지어다 아멘","label":"교독문 123번  ·  주현절(3)"},"124":{"title":"사순절(1)","body":"인도자: 내 하나님이여 내 하나님이여 어찌 나를 버리셨나이까\n회중: 어찌 나를 멀리 하여 돕지 아니하시오며 내 신음 소리를 듣지 아니하시나이까\n인도자: 내 하나님이여 내가 낮에도 부르짖고 밤에도 잠잠하지 아니하오나 응답하지 아니하시나이다\n회중: 이스라엘의 찬송 중에 계시는 주여 주는 거룩하시니이다\n인도자: 우리 조상들이 주께 의뢰하고 의뢰하였으므로 그들을 건지셨나이다\n회중: 그들이 주께 부르짖어 구원을 얻고 주께 의뢰하여 수치를 당하지 아니하였나이다(시22:1-5)나를멀리하지 마옵소서 환난이 가까우나 도울 자 없나이다(시22:11)악한 무리가 나를 둘러 내 수족을 찔렀나이다\n인도자: 내가 내 모든 뼈를 셀 수 있나이다 그들이 나를 주목하여 보고 내 겉옷을 나누며\n회중: 속옷을 제비 뽑나이다\n인도자: 여호와여 멀리 하지 마옵소서 나의 힘이시여 속히 나를 도우소서(시22:16하-19)나를 사자의 입에서 구하소서 주께서 내게 응답하시고 들소의 뿔에서 구원하셨나이다\n회중: 내가 주의 이름을 형제에게 선포하고 회중 가운데에서 주를 찬송하리이다\n인도자: 여호와를 두려워하는 너희여 그를 찬송할지어다\n회중: 야곱의 모든 자손이여 그에게 영광을 돌릴지어다 너희 이스라엘 모든 자손이여그를 경외할지어다","label":"교독문 124번  ·  사순절(1)"},"125":{"title":"사순절(2)","body":"인도자: 하나님이여 사슴이 시냇물을 찾기에 갈급함같이내 영혼이 주를 찾기에 갈급하니이다\n회중: 내 영혼이 하나님 곧 살아 계시는 하나님을 갈망하나니내가어느때에 나아가서 하나님의 얼굴을 뵈올까\n인도자: 사람들이 종일 내게 하는 말이 네 하나님이 어디 있느뇨 하오니내 눈물이 주야로 내 음식이 되었도다(시42:1-3)내 영혼아 네가 어찌하여 낙심하며 어찌하여 내 속에서 불안해 하는가너는 하나님께 소망을 두라 그가 나타나 도우심으로 말미암아 내가 여전히 찬송하리로다(시42:5) 낮에는 여호와께서 그의 인자하심을 베푸시고\n회중: 밤에는 그의 찬송이 내게 있어 생명의 하나님께 기도하리로다\n인도자: 내 반석이신 하나님께 말하기를 어찌하여 나를 잊으셨나이까\n회중: 내가 어찌하여 원수의 압제로 말미암아 슬프게 다니나이까 하리로다\n인도자: 내 뼈를 찌르는 칼같이 내 대적이 나를 비방하여 늘 내게 말하기를네 하나님이 어디 있느냐 하도다\n회중: 내 영혼아 네가 어찌하여 낙심하며 어찌하여 내 속에서 불안해 하는가너는 하나님께 소망을 두라 나는 그가 나타나 도우심으로 말미암아 내 하나님을 여전히 찬송하리로다","label":"교독문 125번  ·  사순절(2)"},"126":{"title":"사순절(3)","body":"인도자: 여호와여 나의 영혼이 주를 우러러보나이다\n회중: 나의 하나님이여 내가 주께 의지하였사오니 나를 부끄럽지 않게 하시고\n인도자: 나의 원수들이 나를 이겨 개가를 부르지 못하게 하소서\n회중: 주를 바라는 자들은 수치를 당하지 아니하려니와 까닭 없이 속이는 자들은 수치를 당하리이다\n인도자: 여호와여 주의 도를 내게 보이시고 주의 길을 내게 가르치소서\n회중: 주의 진리로 나를 지도하시고 교훈하소서 주는 내 구원의 하나님이시니 내가종일 주를 기다리나이다\n인도자: 여호와여 주의 긍휼하심과 인자하심이 영원부터 있었사오니주여 이것들을 기억하옵소서\n회중: 여호와여 내 젊은 시절의 죄와 허물을 기억하지 마시고\n인도자: 주의 인자하심을 따라 주께서 나를 기억하시되 주의 선하심으로 하옵소서\n회중: 여호와는 선하시고 정직하시니 그러므로 그의 도로 죄인들을 교훈하시리로다\n인도자: 온유한 자를 정의로 지도하심이여 온유한 자에게 그의 도를 가르치시리로다","label":"교독문 126번  ·  사순절(3)"},"127":{"title":"사순절(4)","body":"인도자: 여호와를 자기 하나님으로 삼은 나라 곧 하나님의 기업으로 선택된 백성은 복이 있도다\n회중: 여호와께서 하늘에서 굽어보사 모든 인생을 살피심이여곧그가 거하시는 곳에서 세상의 모든 거민들을 굽어살피시는도다\n인도자: 그는 그들 모두의 마음을 지으시며 그들이 하는 일을 굽어살피시는 이로다\n회중: 많은 군대로 구원 얻은 왕이 없으며 용사가 힘이 세어도 스스로 구원하지 못하는도다(시 33:12-16)우리 영혼이 여호와를 바람이여 그는 우리의 도움과 방패시로다\n인도자: 우리 마음이 그를 즐거워함이요 우리가 그의 성호를 의지하였기 때문이로다\n회중: 여호와여 우리가 주께 바라는 대로 주의 인자하심을 우리에게 베푸소서","label":"교독문 127번  ·  사순절(4)"},"128":{"title":"사순절(5)","body":"인도자: 나의 영혼이 잠잠히 하나님만 바람이여 나의 구원이 그에게서 나오는도다\n회중: 오직 그만이 나의 반석이시오 나의 구원이시오 나의 요새이시니 내가 크게 흔들리지 아니하리로다\n인도자: 넘어지는 담과 흔들리는 울타리같이 사람을 죽이려고 너희가 일제히 공격하기를 언제까지 하려느냐\n회중: 그들이 그를 그의 높은 자리에서 떨어뜨리기만 꾀하고 거짓을 즐겨 하니\n인도자: 입으로는 축복이요 속으로는 저주로다\n회중: 나의 영혼아 잠잠히 하나님만 바라라 무릇 나의 소망이 그로부터 나오는도다\n인도자: 오직 그만이 나의 반석이시오 나의 구원이시오 나의 요새이시니 내가 흔들리지 아니하리로다\n회중: 나의 구원과 영광이 하나님께 있음이여 내 힘의 반석과 피난처도 하나님께 있도다\n인도자: 백성들아 시시로 그를 의지하고 그의 앞에 마음을 토하라 하나님은 우리의 피난처시로다","label":"교독문 128번  ·  사순절(5)"},"129":{"title":"종려주일","body":"인도자: 시온의 딸아 크게 기뻐할지어다\n회중: 예루살렘의 딸아 즐거이 부를지어다\n인도자: 보라 네 왕이 네게 임하시나니 그는 공의로우시며 구원을 베푸시며\n회중: 겸손하셔서 나귀를 타시나니 나귀의 작은 것 곧 나귀 새끼니라\n인도자: 내가 에브라임의 병거와 예루살렘의 말을 끊겠고\n회중: 전쟁하는 활도 끊으리니 그가 이방 사람에게 화평을 전할 것이요\n인도자: 그의 통치는 바다에서 바다까지 이르고\n회중: 유브라데 강에서 땅 끝까지 이르리라(슥 9:9-10) 앞에서 가고 뒤에서 따르는 무리가 소리 높여 이르되 호산나 다윗의 자손이여 찬송하리로다","label":"교독문 129번  ·  종려주일"},"130":{"title":"고난주간(1)","body":"인도자: 이튿날 요한이 예수께서 자기에게 나아오심을 보고 이르되보라\n회중: 세상이 죄를 지고 가는 하나님의 어린 양이로다(요 1:29)그날에죄와 더러움을 씻는 샘이 다윗의 족속과 예루살렘 주민을 위하여 열리리라\n인도자: 이러므로 나의 마음이 기쁘고 나의 영도 즐거워하며 내 육체도 안전히 살리니\n회중: 이는 주께서 내 영혼을 스올에 버리지 아니하시며 주의 거룩한 자를 멸망시키지 않으실 것임이니이다\n인도자: 주께서 생명의 길을 내게 보이시리니\n회중: 주의 앞에는 충만한 기쁨이 있고 주의 오른쪽에는 영원한 즐거움이 있나이다","label":"교독문 130번  ·  고난주간(1)"},"131":{"title":"고난주간(2)","body":"인도자: 우리가 전한 것을 누가 믿었느냐\n회중: 여호와의 팔이 누구에게 나타났느냐\n인도자: 그는 주 앞에서 자라나기를 연한 순 같고 마른 땅에서 나온 뿌리 같아서고운 모양도 없고 풍채도 없은즉 우리가 보기에 흠모할 만한 아름다운 것이 없도다\n회중: 그는 멸시를 받아 사람들에게 버림 받았으며\n인도자: 간고를 많이 겪었으며 질고를 아는 자라(사 53:1-3상)그는실로 우리의 질고를 지고 우리의 슬픔을 당하였거늘 우리는 생각하기를 그는 징벌을 받아 하나님께 맞으며 고난을 당한다 하였노라\n회중: 그가 찔림은 우리의 허물 때문이요\n인도자: 그가 상함은 우리의 죄악 때문이라\n회중: 그가 징계를 받으므로 우리는 평화를 누리고\n인도자: 그가 채찍에 맞으므로 우리는 나음을 받았도다\n회중: 우리는 다 양 같아서 그릇 행하여 각기 제 길로 갔거늘 여호와께서는 우리 모두의 죄악을 그에게 담당시키셨도다","label":"교독문 131번  ·  고난주간(2)"},"132":{"title":"고난주간(3)","body":"인도자: 이에 예수께서 제자들에게 이르시되 누구든지 나를 따라오려거든 자기를 부인하고 자기 십자가를 지고 나를 따를 것이니라(마 16:24)이를 위하여 너희가 부르심을 받았으니 그리스도도 너희를 위하여 고난을 받으사 너희에게 본을 끼쳐 그 자취를 따라오게 하려 하셨느니라\n회중: 그는 죄를 범하지 아니하시고 그 입에 거짓도 없으시며 욕을 당하시되 맞대어 욕하지 아니하시고\n인도자: 고난을 당하시되 위협하지 아니하시고 오직 공의로 심판하시는 이에게 부탁하시며\n회중: 친히 나무에 달려 그 몸으로 우리 죄를 담당하셨으니\n인도자: 이는 우리로 죄에 대하여 죽고 의에 대하여 살게 하려 하심이라\n회중: 그가 채찍에 맞음으로 너희는 나음을 얻었나니\n인도자: 너희가 전에는 양과 같이 길을 잃었더니 이제는 너희 영혼의 못자와 감독 되신 이에게 돌아왔느니라","label":"교독문 132번  ·  고난주간(3)"},"133":{"title":"부활절 (1)","body":"인도자: 하나님께서 그를 사망의 고통에서 풀어 살리셨으니\n회중: 이는 그가 사망에 매여 있을 수 없었음이라(행 2:24)우리주예수 그리스도로 말미암아 우리에게 승리를 주시는 하나님께 감사하노니 그러므로 내 사랑하는 형제들아 견실하며 흔들리지 말고 항상 주의 일에 더욱 힘쓰는 자들이 되라(고전 15:57-58상)이말을할때에 예수께서 친히 그들 가운데 서서 이르시되 너희에게 평강이 있을지어다 하시니\n인도자: 그들이 놀라고 무서워하여 그 보는 것을 영으로 생각하는지라\n회중: 예수께서 이르시되 어찌하여 두려워하며 어찌하여 마음에 의심이 일어나느냐\n인도자: 내 손과 발을 보고 나인 줄 알라 또 나를 만져 보라\n회중: 영은 살과 뼈가 없으되 너희 보는 바와 같이 나는 있느니라\n인도자: 그러나 이제 그리스도께서 죽은 자 가운데서 다시 살아나사 잠자는 자들의 첫 열매가 되셨도다(고전 15:20) 예수께서 이르시되 나는 부활이요 생명이니 나를 믿는 자는 죽어도 살겠고 무릇 살아서 나를 믿는 자는 영원히 죽지 아니하리니 이것을 네가 믿느냐\n회중: 이르되 주여 그러하외다 주는 그리스도시오 세상에 오시는 하나님의 아들이신줄내가 믿나이다","label":"교독문 133번  ·  부활절 (1)"},"134":{"title":"부활절(2)","body":"인도자: 내가 받은 것을 먼저 너희에게 전하였노니 이는 성경대로 그리스도께서 우리 죄를 위하여 죽으시고\n회중: 장사 지낸 바 되셨다가 성경대로 사흘 만에 다시 살아나사 게바에게 보이시고\n인도자: 후에 열두 제자에게와 그 후에 오백여 형제에게 일시에 보이셨나니그중에 지금까지 대다수는 살아 있고 어떤 사람은 잠들었으며 그 후에 야고보에게 보이셨으며\n회중: 그 후에 모든 사도에게와 맨 나중에 만삭되지 못하여 난 자 같은 내게도 보이셨느니라(고전 15:3-8) 그리스도께서 만일 다시 살아나지 못하셨으면 우리가 전파하는 것도 헛것이요\n인도자: 또 너희 믿음도 헛것이며(고전 15:14)만일 그리스도 안에서 우리가 바라는 것이 다만 이 세상의 삶뿐이면 모든 사람 가운데 우리가 더욱 불쌍한 자이리라\n회중: 그러나 이제 그리스도께서 죽은 자 가운데서 다시 살아나사 잠자는 자들의 첫 열매가 되셨도다","label":"교독문 134번  ·  부활절(2)"},"135":{"title":"성령강림(1)","body":"인도자: 그의 위에 여호와의 영 곧 지혜와 총명의 영이요 모략과 재능의 영이요\n회중: 지식과 여호와를 경외하는 영이 강림하시리니(사 11:2)오직 하나님이 성령으로 이것을 우리에게 보이셨으니\n인도자: 성령은 모든 것 곧 하나님의 깊은 것까지도 통달하시느니라(고전 2:10)내가 아버지께 구하겠으니 그가 또 다른 보혜사를 너희에게 주사 영원토록 너희와 함께 있게 하리니 그는 진리의 영이라\n회중: 보혜사 곧 아버지께서 내 이름으로 보내실 성령 그가 너희에게 모든 것을 가르치고\n인도자: 내가 너희에게 말한 모든 것을 생각나게 하리라(요 14:26)오직 성령이 너희에게 임하시면 너희가 권능을 받고\n회중: 예루살렘과 온 유대와 사마리아와 땅 끝까지 이르러 내 증인이 되리라\n인도자: 하시니라","label":"교독문 135번  ·  성령강림(1)"},"136":{"title":"성령강림(2)","body":"인도자: 그 후에 내가 영을 만민에게 부어 주리니\n회중: 너희 자녀들이 장래 일을 말할 것이며\n인도자: 너희 늙은이는 꿈을 꾸며 너희 젊은이는 이상을 볼 것이며\n회중: 그 때에 내가 또 내 영을 남종과 여종에게 부어 줄 것이며\n인도자: 내가 이적을 하늘과 땅에 베풀리니 곧 피와 불과 연기 기둥이라\n회중: 여호와의 크고 두려운 날이 이르기 전에해가 어두워지고 달이 핏빛같이 변하려니와 누구든지 여화와의 이름을 부르는 자는 구원을 얻으리니\n인도자: 이는 나 여호와의 말대로 시온 산과 예루살렘에서 피할 자가 있을 것임이요\n회중: 남은 자 중에 나 여호와의 부름을 받을 자가 있을 것임이니라","label":"교독문 136번  ·  성령강림(2)"},"137":{"title":"삼위일체","body":"인도자: 예수께서 세례를 받으시고 곧 물에서 올라오실새 하늘이 열리고\n회중: 하나님의 성령이 비둘기같이 내려 자기 위에 임하심을 보시더니 하늘로부터 소리가 있어 말씀하시되이는내 사랑하는 아들이요 내 기뻐하는 자라 하시니라\n인도자: 그러므로 너희는 가서 모든 민족을 제자로 삼아 아버지와 아들과 성령의 이름으로 세례를 베풀고\n회중: 내가 너희에게 분부한 모든 것을 가르쳐 지키게 하라\n인도자: 볼지어다 내가 세상 끝날까지 너희와 항상 함께 있으리라 하시니라(마 28:19-20)몸이 하나요 성령도 한 분이시니 이와 같이 너희가 부르심의 한 소망 안에서 부르심을 받았느니라\n회중: 주도 한 분이시오 믿음도 하나요 세례도 하나요 하나님도 한 분이시니\n인도자: 곧 만유의 아버지시라 만유 위에 계시고 만유를 통일하시고 만유 가운데 계시도다","label":"교독문 137번  ·  삼위일체"}},"scripture":{"창세기 1:1":"1 태초에 하나님이 천지를 창조하시니라","창세기 1:1-3":"1 태초에 하나님이 천지를 창조하시니라\n2 땅이 혼돈하고 공허하며 흑암이 깊음 위에 있고 하나님의 영은 수면 위에 운행하시니라\n3 하나님이 이르시되 빛이 있으라 하시니 빛이 있었고","시편 23:1-3":"1 여호와는 나의 목자시니 내게 부족함이 없으리로다\n2 그가 나를 푸른 풀밭에 누이시며 쉴 만한 물 가로 인도하시는도다\n3 내 영혼을 소생시키시고 자기 이름을 위하여 의의 길로 인도하시는도다","시편 23:1-6":"1 여호와는 나의 목자시니 내게 부족함이 없으리로다\n2 그가 나를 푸른 풀밭에 누이시며 쉴 만한 물 가로 인도하시는도다\n3 내 영혼을 소생시키시고 자기 이름을 위하여 의의 길로 인도하시는도다\n4 내가 사망의 음침한 골짜기로 다닐지라도 해를 두려워하지 않을 것은 주께서 나와 함께 하심이라 주의 지팡이와 막대기가 나를 안위하시나이다\n5 주께서 내 원수의 앞에서 내게 상을 차려 주시고 기름을 내 머리에 붓으셨으니 내 잔이 넘치나이다\n6 내 평생에 선하심과 인자하심이 반드시 나를 따르리니 내가 여호와의 집에 영원히 살리로다","시편 23편":"1 여호와는 나의 목자시니 내게 부족함이 없으리로다\n2 그가 나를 푸른 풀밭에 누이시며 쉴 만한 물 가로 인도하시는도다\n3 내 영혼을 소생시키시고 자기 이름을 위하여 의의 길로 인도하시는도다\n4 내가 사망의 음침한 골짜기로 다닐지라도 해를 두려워하지 않을 것은 주께서 나와 함께 하심이라 주의 지팡이와 막대기가 나를 안위하시나이다\n5 주께서 내 원수의 앞에서 내게 상을 차려 주시고 기름을 내 머리에 붓으셨으니 내 잔이 넘치나이다\n6 내 평생에 선하심과 인자하심이 반드시 나를 따르리니 내가 여호와의 집에 영원히 살리로다","시편 100:1-5":"1 온 땅이여 여호와께 즐거운 찬송을 부를지어다\n2 기쁨으로 여호와를 섬기며 노래하면서 그의 앞에 나아갈지어다\n3 여호와가 우리 하나님이신 줄 너희는 알지어다 그는 우리를 지으신 이요 우리는 그의 것이니 그의 백성이요 그의 기르시는 양이로다\n4 감사함으로 그 문에 들어가며 찬송함으로 그 궁정에 들어가서 그에게 감사하며 그 이름을 송축할지어다\n5 여호와는 선하시니 그의 인자하심이 영원하고 그의 성실하심이 대대에 이르리로다","이사야 40:31":"31 오직 여호와를 앙망하는 자는 새 힘을 얻으리니 독수리가 날개치며 올라감 같을 것이요 달음박질하여도 곤비하지 아니하겠고 걸어가도 피곤하지 아니하리로다","이사야 53:5-6":"5 그가 찔림은 우리의 허물 때문이요 그가 상함은 우리의 죄악 때문이라 그가 징계를 받으므로 우리는 평화를 누리고 그가 채찍에 맞으므로 우리는 나음을 받았도다\n6 우리는 다 양 같아서 그릇 행하여 각기 제 길로 갔거늘 여호와께서는 우리 무리의 죄악을 그에게 담당시키셨도다","마태복음 5:3-6":"3 심령이 가난한 자는 복이 있나니 천국이 그들의 것임이요\n4 애통하는 자는 복이 있나니 그들이 위로를 받을 것임이요\n5 온유한 자는 복이 있나니 그들이 땅을 기업으로 받을 것임이요\n6 의에 주리고 목마른 자는 복이 있나니 그들이 배부를 것임이요","마태복음 6:9-13":"9 그러므로 너희는 이렇게 기도하라 하늘에 계신 우리 아버지여 이름이 거룩히 여김을 받으시오며\n10 나라가 임하시오며 뜻이 하늘에서 이루어진 것 같이 땅에서도 이루어지이다\n11 오늘 우리에게 일용할 양식을 주시옵고\n12 우리가 우리에게 죄 지은 자를 사하여 준 것 같이 우리 죄를 사하여 주시옵고\n13 우리를 시험에 들게 하지 마시옵고 다만 악에서 구하시옵소서","마태복음 11:28-30":"28 수고하고 무거운 짐 진 자들아 다 내게로 오라 내가 너희를 쉬게 하리라\n29 나는 마음이 온유하고 겸손하니 나의 멍에를 메고 내게 배우라 그리하면 너희 마음이 쉼을 얻으리니\n30 이는 내 멍에는 쉽고 내 짐은 가벼움이라 하시니라","요한복음 1:1-5":"1 태초에 말씀이 계시니라 이 말씀이 하나님과 함께 계셨으니 이 말씀은 곧 하나님이시니라\n2 그가 태초에 하나님과 함께 계셨고\n3 만물이 그로 말미암아 지은 바 되었으니 지은 것이 하나도 그가 없이는 된 것이 없느니라\n4 그 안에 생명이 있었으니 이 생명은 사람들의 빛이라\n5 빛이 어둠에 비치되 어둠이 깨닫지 못하더라","요한복음 3:16":"16 하나님이 세상을 이처럼 사랑하사 독생자를 주셨으니 이는 그를 믿는 자마다 멸망하지 않고 영생을 얻게 하려 하심이라","요한복음 3:16-17":"16 하나님이 세상을 이처럼 사랑하사 독생자를 주셨으니 이는 그를 믿는 자마다 멸망하지 않고 영생을 얻게 하려 하심이라\n17 하나님이 그 아들을 세상에 보내신 것은 세상을 심판하려 하심이 아니요 그로 말미암아 세상이 구원을 받게 하려 하심이라","요한복음 3:16-20":"16 하나님이 세상을 이처럼 사랑하사 독생자를 주셨으니 이는 그를 믿는 자마다 멸망하지 않고 영생을 얻게 하려 하심이라\n17 하나님이 그 아들을 세상에 보내신 것은 세상을 심판하려 하심이 아니요 그로 말미암아 세상이 구원을 받게 하려 하심이라\n18 그를 믿는 자는 심판을 받지 아니하는 것이요 믿지 아니하는 자는 하나님의 독생자의 이름을 믿지 아니하므로 벌써 심판을 받은 것이니라\n19 그 정죄는 이것이니 곧 빛이 세상에 왔으되 사람들이 자기 행위가 악하므로 빛보다 어둠을 더 사랑한 것이니라\n20 악을 행하는 자마다 빛을 미워하여 빛으로 오지 아니하나니 이는 그 행위가 드러날까 함이요","요 3:16-20":"16 하나님이 세상을 이처럼 사랑하사 독생자를 주셨으니 이는 그를 믿는 자마다 멸망하지 않고 영생을 얻게 하려 하심이라\n17 하나님이 그 아들을 세상에 보내신 것은 세상을 심판하려 하심이 아니요 그로 말미암아 세상이 구원을 받게 하려 하심이라\n18 그를 믿는 자는 심판을 받지 아니하는 것이요 믿지 아니하는 자는 하나님의 독생자의 이름을 믿지 아니하므로 벌써 심판을 받은 것이니라\n19 그 정죄는 이것이니 곧 빛이 세상에 왔으되 사람들이 자기 행위가 악하므로 빛보다 어둠을 더 사랑한 것이니라\n20 악을 행하는 자마다 빛을 미워하여 빛으로 오지 아니하나니 이는 그 행위가 드러날까 함이요","요한복음 14:1-3":"1 너희는 마음에 근심하지 말라 하나님을 믿으니 또 나를 믿으라\n2 내 아버지 집에 거할 곳이 많도다 그렇지 않으면 너희에게 일렀으리라 내가 너희를 위하여 처소를 예비하러 가노니\n3 가서 너희를 위하여 처소를 예비하면 내가 다시 와서 너희를 내게로 영접하여 나 있는 곳에 너희도 있게 하리라","요한복음 14:6":"6 예수께서 이르시되 내가 곧 길이요 진리요 생명이니 나로 말미암지 않고는 아버지께로 올 자가 없느니라","로마서 8:28":"28 우리가 알거니와 하나님을 사랑하는 자 곧 그의 뜻대로 부르심을 입은 자들에게는 모든 것이 합력하여 선을 이루느니라","로마서 8:38-39":"38 내가 확신하노니 사망이나 생명이나 천사들이나 권세자들이나 현재 일이나 장래 일이나 능력이나\n39 높음이나 깊음이나 다른 어떤 피조물이라도 우리를 우리 주 그리스도 예수 안에 있는 하나님의 사랑에서 끊을 수 없으리라","고린도전서 13:4-7":"4 사랑은 오래 참고 사랑은 온유하며 시기하지 아니하며 사랑은 자랑하지 아니하며 교만하지 아니하며\n5 무례히 행하지 아니하며 자기의 유익을 구하지 아니하며 성내지 아니하며 악한 것을 생각하지 아니하며\n6 불의를 기뻐하지 아니하며 진리와 함께 기뻐하고\n7 모든 것을 참으며 모든 것을 믿으며 모든 것을 바라며 모든 것을 견디느니라","빌립보서 4:6-7":"6 아무 것도 염려하지 말고 다만 모든 일에 기도와 간구로 너희 구할 것을 감사함으로 하나님께 아뢰라\n7 그리하면 모든 지각에 뛰어난 하나님의 평강이 그리스도 예수 안에서 너희 마음과 생각을 지키시리라","빌립보서 4:13":"13 내게 능력 주시는 자 안에서 내가 모든 것을 할 수 있느니라","데살로니가전서 5:16-18":"16 항상 기뻐하라\n17 쉬지 말고 기도하라\n18 범사에 감사하라 이것이 그리스도 예수 안에서 너희를 향하신 하나님의 뜻이니라","히브리서 11:1":"1 믿음은 바라는 것들의 실상이요 보이지 않는 것들의 증거니","요한일서 4:7-8":"7 사랑하는 자들아 우리가 서로 사랑하자 사랑은 하나님께 속한 것이니 사랑하는 자마다 하나님으로부터 나서 하나님을 알고\n8 사랑하지 아니하는 자는 하나님을 알지 못하나니 이는 하나님은 사랑이심이라","요한계시록 21:4":"4 모든 눈물을 그 눈에서 닦아 주시니 다시는 사망이 없고 애통하는 것이나 곡하는 것이나 아픈 것이 다시 있지 아니하리니 처음 것들이 다 지나갔음이러라","히브리서 4:1-11":"1 그러므로 우리는 두려워할지니 그의 안식에 들어갈 약속이 남아 있을지라도 너희 중에는 혹 이르지 못할 자가 있을까 함이라\n2 그들과 같이 우리도 복음 전함을 받았으되 들은 바 그 말씀이 그들에게 유익하지 못한 것은 듣는 자가 믿음과 결부시키지 아니함이라\n3 이미 믿는 우리들은 저 안식에 들어가는도다 그 말씀하신 바와 같이 내가 노하여 맹세한 바와 그들이 내 안식에 들어오지 못하리라 하셨다 하였으나 세상을 창조할 때부터 그 일이 이루어졌느니라\n4 제칠일에 관하여는 어딘가에 이같이 일렀으되 하나님이 제칠일에 그의 모든 일을 쉬셨다 하였으며\n5 또 다시 거기에 그들이 내 안식에 들어오지 못하리라 하였으니\n6 그러면 거기에 들어갈 자들이 남아 있거니와 복음 전함을 먼저 받은 자들은 순종하지 아니함으로 말미암아 들어가지 못하였으므로\n7 오랜 후에 다윗의 글에 다시 어느 날을 정하여 오늘이라고 미리 이같이 일렀으되 오늘 너희가 그의 음성을 듣거든 너희 마음을 완고하게 하지 말라 하였나니\n8 만일 여호수아가 그들에게 안식을 주었더라면 그 후에 다른 날을 말씀하지 아니하셨으리라\n9 그런즉 안식할 때가 하나님의 백성에게 남아 있도다\n10 이미 그의 안식에 들어간 자는 하나님이 자기의 일을 쉬심과 같이 자기 일을 쉬느니라\n11 그러므로 우리가 저 안식에 들어가기를 힘쓸지니 이는 누구든지 저 순종하지 아니하는 본에 빠지지 않게 하려 함이라","히브리서 4장 1-11절":"1 그러므로 우리는 두려워할지니 그의 안식에 들어갈 약속이 남아 있을지라도 너희 중에는 혹 이르지 못할 자가 있을까 함이라\n2 그들과 같이 우리도 복음 전함을 받았으되 들은 바 그 말씀이 그들에게 유익하지 못한 것은 듣는 자가 믿음과 결부시키지 아니함이라\n3 이미 믿는 우리들은 저 안식에 들어가는도다 그 말씀하신 바와 같이 내가 노하여 맹세한 바와 그들이 내 안식에 들어오지 못하리라 하셨다 하였으나 세상을 창조할 때부터 그 일이 이루어졌느니라\n4 제칠일에 관하여는 어딘가에 이같이 일렀으되 하나님이 제칠일에 그의 모든 일을 쉬셨다 하였으며\n5 또 다시 거기에 그들이 내 안식에 들어오지 못하리라 하였으니\n6 그러면 거기에 들어갈 자들이 남아 있거니와 복음 전함을 먼저 받은 자들은 순종하지 아니함으로 말미암아 들어가지 못하였으므로\n7 오랜 후에 다윗의 글에 다시 어느 날을 정하여 오늘이라고 미리 이같이 일렀으되 오늘 너희가 그의 음성을 듣거든 너희 마음을 완고하게 하지 말라 하였나니\n8 만일 여호수아가 그들에게 안식을 주었더라면 그 후에 다른 날을 말씀하지 아니하셨으리라\n9 그런즉 안식할 때가 하나님의 백성에게 남아 있도다\n10 이미 그의 안식에 들어간 자는 하나님이 자기의 일을 쉬심과 같이 자기 일을 쉬느니라\n11 그러므로 우리가 저 안식에 들어가기를 힘쓸지니 이는 누구든지 저 순종하지 아니하는 본에 빠지지 않게 하려 함이라","시 60:1-5 (개역개정)":"1 하나님이여 주께서 우리를 버려 흩으셨고 분노하셨사오나 지금은 우리를 회복시키소서\n2 주께서 땅을 진동시키사 갈라지게 하셨사오니 그 틈을 기우소서 땅이 흔들림이니이다\n3 주께서 주의 백성에게 어려움을 보이시고 비틀거리게 하는 포도주를 우리에게 마시게 하셨나이다\n4 주를 경외하는 자에게 깃발을 주시고 진리를 위하여 달게 하셨나이다 (셀라)\n5 주께서 사랑하시는 자를 건지시기 위하여 주의 오른손으로 구원하시고 응답하소서","시 60:1-5":"1 하나님이여 주께서 우리를 버려 흩으셨고 분노하셨사오나 지금은 우리를 회복시키소서\n2 주께서 땅을 진동시키사 갈라지게 하셨사오니 그 틈을 기우소서 땅이 흔들림이니이다\n3 주께서 주의 백성에게 어려움을 보이시고 비틀거리게 하는 포도주를 우리에게 마시게 하셨나이다\n4 주를 경외하는 자에게 깃발을 주시고 진리를 위하여 달게 하셨나이다 (셀라)\n5 주께서 사랑하시는 자를 건지시기 위하여 주의 오른손으로 구원하시고 응답하소서","시편 60:1-5 (개역개정)":"1 하나님이여 주께서 우리를 버려 흩으셨고 분노하셨사오나 지금은 우리를 회복시키소서\n2 주께서 땅을 진동시키사 갈라지게 하셨사오니 그 틈을 기우소서 땅이 흔들림이니이다\n3 주께서 주의 백성에게 어려움을 보이시고 비틀거리게 하는 포도주를 우리에게 마시게 하셨나이다\n4 주를 경외하는 자에게 깃발을 주시고 진리를 위하여 달게 하셨나이다 (셀라)\n5 주께서 사랑하시는 자를 건지시기 위하여 주의 오른손으로 구원하시고 응답하소서","시편 60:1-5":"1 하나님이여 주께서 우리를 버려 흩으셨고 분노하셨사오나 지금은 우리를 회복시키소서\n2 주께서 땅을 진동시키사 갈라지게 하셨사오니 그 틈을 기우소서 땅이 흔들림이니이다\n3 주께서 주의 백성에게 어려움을 보이시고 비틀거리게 하는 포도주를 우리에게 마시게 하셨나이다\n4 주를 경외하는 자에게 깃발을 주시고 진리를 위하여 달게 하셨나이다 (셀라)\n5 주께서 사랑하시는 자를 건지시기 위하여 주의 오른손으로 구원하시고 응답하소서","창 1:1-5 (개역개정)":"1 태초에 하나님이 천지를 창조하시니라\n2 땅이 1) 혼돈하고 공허하며 흑암이 깊음 위에 있고 하나님의 영은 수면 위에 운행하시니라\n3 하나님이 이르시되 빛이 있으라 하시니 빛이 있었고\n4 빛이 하나님이 보시기에 좋았더라 하나님이 빛과 어둠을 나누사\n5 하나님이 빛을 낮이라 부르시고 어둠을 밤이라 부르시니라 저녁이 되고 아침이 되니 이는 첫째 날이니라","창 1:1-5":"1 태초에 하나님이 천지를 창조하시니라\n2 땅이 1) 혼돈하고 공허하며 흑암이 깊음 위에 있고 하나님의 영은 수면 위에 운행하시니라\n3 하나님이 이르시되 빛이 있으라 하시니 빛이 있었고\n4 빛이 하나님이 보시기에 좋았더라 하나님이 빛과 어둠을 나누사\n5 하나님이 빛을 낮이라 부르시고 어둠을 밤이라 부르시니라 저녁이 되고 아침이 되니 이는 첫째 날이니라","고전 1:1-5 (개역개정)":"1 하나님의 뜻을 따라 그리스도 예수의 사도로 부르심을 받은 바울 과 형제 소스데네 는\n2 고린도 에 있는 하나님의 교회 곧 그리스도 예수 안에서 거룩하여지고 성도라 부르심을 받은 자들과 또 각처에서 우리의 주 곧 그들과 우리의 주 되신 예수 그리스도의 이름을 부르는 모든 자들에게\n3 하나님 우리 아버지와 주 예수 그리스도로부터 은혜와 평강이 있기를 원하노라\n4 그리스도 예수 안에서 너희에게 주신 하나님의 은혜로 말미암아 내가 너희를 위하여 항상 하나님께 감사하노니\n5 이는 너희가 그 안에서 모든 일 곧 모든 언변과 모든 지식에 풍족하므로","고전 1:1-5":"1 하나님의 뜻을 따라 그리스도 예수의 사도로 부르심을 받은 바울 과 형제 소스데네 는\n2 고린도 에 있는 하나님의 교회 곧 그리스도 예수 안에서 거룩하여지고 성도라 부르심을 받은 자들과 또 각처에서 우리의 주 곧 그들과 우리의 주 되신 예수 그리스도의 이름을 부르는 모든 자들에게\n3 하나님 우리 아버지와 주 예수 그리스도로부터 은혜와 평강이 있기를 원하노라\n4 그리스도 예수 안에서 너희에게 주신 하나님의 은혜로 말미암아 내가 너희를 위하여 항상 하나님께 감사하노니\n5 이는 너희가 그 안에서 모든 일 곧 모든 언변과 모든 지식에 풍족하므로","시 50:1-5 (개역개정)":"1 전능하신 이 여호와 하나님께서 말씀하사 해 돋는 데서부터 지는 데까지 세상을 부르셨도다\n2 온전히 아름다운 시온 에서 하나님이 빛을 비추셨도다\n3 우리 하나님이 오사 잠잠하지 아니하시니 그 앞에는 삼키는 불이 있고 그 사방에는 광풍이 불리 로다\n4 하나님이 자기의 백성을 판결하시려고 위 하늘과 아래 땅에 선포하여\n5 이르시되 나의 성도들을 내 앞에 모으라 그들은 제사로 나와 언약한 이들이니라 하시도다","시 50:1-5":"1 전능하신 이 여호와 하나님께서 말씀하사 해 돋는 데서부터 지는 데까지 세상을 부르셨도다\n2 온전히 아름다운 시온 에서 하나님이 빛을 비추셨도다\n3 우리 하나님이 오사 잠잠하지 아니하시니 그 앞에는 삼키는 불이 있고 그 사방에는 광풍이 불리 로다\n4 하나님이 자기의 백성을 판결하시려고 위 하늘과 아래 땅에 선포하여\n5 이르시되 나의 성도들을 내 앞에 모으라 그들은 제사로 나와 언약한 이들이니라 하시도다","시 60:1-12 (개역개정)":"1 하나님이여 주께서 우리를 버려 흩으셨고 분노하셨사오나 지금은 우리를 회복시키소서\n2 주께서 땅을 진동시키사 갈라지게 하셨사오니 그 틈을 기우소서 땅이 흔들림이니이다\n3 주께서 주의 백성에게 어려움을 보이시고 비틀거리게 하는 포도주를 우리에게 마시게 하셨나이다\n4 주를 경외하는 자에게 깃발을 주시고 진리를 위하여 달게 하셨나이다 (셀라)\n5 주께서 사랑하시는 자를 건지시기 위하여 주의 오른손으로 구원하시고 응답하소서\n6 하나님이 그의 거룩하심으로 말씀하시되 내가 뛰놀리라 내가 세겜 을 나누며 숙곳 골짜기를 측량하리라\n7 길르앗 이 내 것이요 므낫세 도 내 것이며 에브라임 은 내 머리의 투구요 유다 는 나의 규이며\n8 모압 은 나의 목욕통이라 에돔 에는 나의 신발을 던지리라 블레셋 아 나로 말미암아 외치라 하셨도다\n9 누가 나를 이끌어 견고한 성에 들이며 누가 나를 에돔 에 인도할까\n10 하나님이여 주께서 우리를 버리지 아니하셨나이까 하나님이여 주께서 우리 군대와 함께 나아가지 아니하시나이다\n11 우리를 도와 대적을 치게 하소서 사람의 구원은 헛됨이니이다\n12 우리가 하나님을 의지하고 용감하게 행하리니 그는 우리의 대적을 밟으실 이심이로다","시 60:1-12":"1 하나님이여 주께서 우리를 버려 흩으셨고 분노하셨사오나 지금은 우리를 회복시키소서\n2 주께서 땅을 진동시키사 갈라지게 하셨사오니 그 틈을 기우소서 땅이 흔들림이니이다\n3 주께서 주의 백성에게 어려움을 보이시고 비틀거리게 하는 포도주를 우리에게 마시게 하셨나이다\n4 주를 경외하는 자에게 깃발을 주시고 진리를 위하여 달게 하셨나이다 (셀라)\n5 주께서 사랑하시는 자를 건지시기 위하여 주의 오른손으로 구원하시고 응답하소서\n6 하나님이 그의 거룩하심으로 말씀하시되 내가 뛰놀리라 내가 세겜 을 나누며 숙곳 골짜기를 측량하리라\n7 길르앗 이 내 것이요 므낫세 도 내 것이며 에브라임 은 내 머리의 투구요 유다 는 나의 규이며\n8 모압 은 나의 목욕통이라 에돔 에는 나의 신발을 던지리라 블레셋 아 나로 말미암아 외치라 하셨도다\n9 누가 나를 이끌어 견고한 성에 들이며 누가 나를 에돔 에 인도할까\n10 하나님이여 주께서 우리를 버리지 아니하셨나이까 하나님이여 주께서 우리 군대와 함께 나아가지 아니하시나이다\n11 우리를 도와 대적을 치게 하소서 사람의 구원은 헛됨이니이다\n12 우리가 하나님을 의지하고 용감하게 행하리니 그는 우리의 대적을 밟으실 이심이로다","요한복음 3:16-21 (개역개정)":"16 하나님이 세상을 이처럼 사랑하사 독생자를 주셨으니 이는 그를 믿는 자마다 멸망하지 않고 영생을 얻게 하려 하심이라\n17 하나님이 그 아들을 세상에 보내신 것은 세상을 심판하려 하심이 아니요 그로 말미암아 세상이 구원을 받게 하려 하심이라\n18 그를 믿는 자는 심판을 받지 아니하는 것이요 믿지 아니하는 자는 하나님의 독생자의 이름을 믿지 아니하므로 벌써 심판을 받은 것이니라\n19 그 정죄는 이것이니 곧 빛이 세상에 왔으되 사람들이 자기 행위가 악하므로 빛보다 어둠을 더 사랑한 것이니라\n20 악을 행하는 자마다 빛을 미워하여 빛으로 오지 아니하나니 이는 그 행위가 드러날까 함이요","요한복음 3:16-21":"16 하나님이 세상을 이처럼 사랑하사 독생자를 주셨으니 이는 그를 믿는 자마다 멸망하지 않고 영생을 얻게 하려 하심이라\n17 하나님이 그 아들을 세상에 보내신 것은 세상을 심판하려 하심이 아니요 그로 말미암아 세상이 구원을 받게 하려 하심이라\n18 그를 믿는 자는 심판을 받지 아니하는 것이요 믿지 아니하는 자는 하나님의 독생자의 이름을 믿지 아니하므로 벌써 심판을 받은 것이니라\n19 그 정죄는 이것이니 곧 빛이 세상에 왔으되 사람들이 자기 행위가 악하므로 빛보다 어둠을 더 사랑한 것이니라\n20 악을 행하는 자마다 빛을 미워하여 빛으로 오지 아니하나니 이는 그 행위가 드러날까 함이요","레 3:1-5 (개역개정)":"1 사람이 만일 화목제의 제물을 예물로 드리되 소로 드리려면 수컷이나 암컷이나 흠 없는 것으로 여호와 앞에 드릴지니\n2 그 예물의 머리에 안수하고 회막 문에서 잡을 것이요 아론 의 자손 제사장들은 그 피를 제단 사방에 뿌릴 것이며\n3 그는 또 그 화목제의 제물 중에서 여호와께 화제를 드릴지니 곧 내장에 덮인 기름과 내장에 붙은 모든 기름과\n4 두 콩팥과 그 위의 기름 곧 허리 쪽에 있는 것과 간에 덮인 꺼풀을 콩팥과 함께 떼어낼 것이요\n5 아론 의 자손은 그것을 제단 위의 불 위에 있는 나무 위의 번제물 위에서 사를지니 이는 화제라 여호와께 향기로운 냄새니라","레 3:1-5":"1 사람이 만일 화목제의 제물을 예물로 드리되 소로 드리려면 수컷이나 암컷이나 흠 없는 것으로 여호와 앞에 드릴지니\n2 그 예물의 머리에 안수하고 회막 문에서 잡을 것이요 아론 의 자손 제사장들은 그 피를 제단 사방에 뿌릴 것이며\n3 그는 또 그 화목제의 제물 중에서 여호와께 화제를 드릴지니 곧 내장에 덮인 기름과 내장에 붙은 모든 기름과\n4 두 콩팥과 그 위의 기름 곧 허리 쪽에 있는 것과 간에 덮인 꺼풀을 콩팥과 함께 떼어낼 것이요\n5 아론 의 자손은 그것을 제단 위의 불 위에 있는 나무 위의 번제물 위에서 사를지니 이는 화제라 여호와께 향기로운 냄새니라","마태복음 5:1-12 (개역개정)":"1 예수께서 무리를 보시고 산에 올라가 앉으시니 제자들이 나아온지라\n2 입을 열어 가르쳐 이르시되\n3 심령이 가난한 자는 복이 있나니 천국이 그들의 것임이요\n4 애통하는 자는 복이 있나니 그들이 위로를 받을 것임이요\n5 온유한 자는 복이 있나니 그들이 땅을 기업으로 받을 것임이요\n6 의에 주리고 목마른 자는 복이 있나니 그들이 배부를 것임이요\n7 긍휼히 여기는 자는 복이 있나니 그들이 긍휼히 여김을 받을 것임이요\n8 마음이 청결한 자는 복이 있나니 그들이 하나님을 볼 것임이요\n9 화평하게 하는 자는 복이 있나니 그들이 하나님의 아들이라 일컬음을 받을 것임이요\n10 의를 위하여 박해를 받은 자는 복이 있나니 천국이 그들의 것임이라\n11 나로 말미암아 너희를 욕하고 박해하고 거짓으로 너희를 거슬러 모든 악한 말을 할 때에는 너희에게 복이 있나니\n12 기뻐하고 즐거워하라 하늘에서 너희의 상이 큼이라 너희 전에 있던 선지자들도 이같이 박해하였느니라","마태복음 5:1-12":"1 예수께서 무리를 보시고 산에 올라가 앉으시니 제자들이 나아온지라\n2 입을 열어 가르쳐 이르시되\n3 심령이 가난한 자는 복이 있나니 천국이 그들의 것임이요\n4 애통하는 자는 복이 있나니 그들이 위로를 받을 것임이요\n5 온유한 자는 복이 있나니 그들이 땅을 기업으로 받을 것임이요\n6 의에 주리고 목마른 자는 복이 있나니 그들이 배부를 것임이요\n7 긍휼히 여기는 자는 복이 있나니 그들이 긍휼히 여김을 받을 것임이요\n8 마음이 청결한 자는 복이 있나니 그들이 하나님을 볼 것임이요\n9 화평하게 하는 자는 복이 있나니 그들이 하나님의 아들이라 일컬음을 받을 것임이요\n10 의를 위하여 박해를 받은 자는 복이 있나니 천국이 그들의 것임이라\n11 나로 말미암아 너희를 욕하고 박해하고 거짓으로 너희를 거슬러 모든 악한 말을 할 때에는 너희에게 복이 있나니\n12 기뻐하고 즐거워하라 하늘에서 너희의 상이 큼이라 너희 전에 있던 선지자들도 이같이 박해하였느니라","로마서 8:28-30 (개역개정)":"28 우리가 알거니와 하나님을 사랑하는 자 곧 그의 뜻대로 부르심을 입은 자들에게는 모든 것이 합력하여 선을 이루느니라\n29 하나님이 미리 아신 자들을 또한 그 아들의 형상을 본받게 하기 위하여 미리 정하셨으니 이는 그로 많은 형제 중에서 맏아들이 되게 하려 하심이니라\n30 또 미리 정하신 그들을 또한 부르시고 부르신 그들을 또한 의롭다 하시고 의롭다 하신 그들을 또한 영화롭게 하셨느니라","로마서 8:28-30":"28 우리가 알거니와 하나님을 사랑하는 자 곧 그의 뜻대로 부르심을 입은 자들에게는 모든 것이 합력하여 선을 이루느니라\n29 하나님이 미리 아신 자들을 또한 그 아들의 형상을 본받게 하기 위하여 미리 정하셨으니 이는 그로 많은 형제 중에서 맏아들이 되게 하려 하심이니라\n30 또 미리 정하신 그들을 또한 부르시고 부르신 그들을 또한 의롭다 하시고 의롭다 하신 그들을 또한 영화롭게 하셨느니라","골로새서 3:1-4 (개역개정)":"1 그러므로 너희가 그리스도와 함께 다시 살리심을 받았으면 위의 것을 찾으라 거기는 그리스도께서 하나님 우편에 앉아 계시느니라\n2 위의 것을 생각하고 땅의 것을 생각하지 말라\n3 이는 너희가 죽었고 너희 생명이 그리스도와 함께 하나님 안에 감추어졌음이라\n4 우리 생명이신 그리스도께서 나타나실 그 때에 너희도 그와 함께 영광 중에 나타나리라","골로새서 3:1-4":"1 그러므로 너희가 그리스도와 함께 다시 살리심을 받았으면 위의 것을 찾으라 거기는 그리스도께서 하나님 우편에 앉아 계시느니라\n2 위의 것을 생각하고 땅의 것을 생각하지 말라\n3 이는 너희가 죽었고 너희 생명이 그리스도와 함께 하나님 안에 감추어졌음이라\n4 우리 생명이신 그리스도께서 나타나실 그 때에 너희도 그와 함께 영광 중에 나타나리라"}};
+window.WORSHIP_LOOKUP = {"hymns":{"1":"만복의 근원 하나님","2":"찬양 성부 성자 성령","3":"성부 성자와 성령","4":"성부 성자와 성령","5":"이 천지간 만물들아","6":"목소리 높여서","7":"성부 성자 성령","8":"거룩 거룩 거룩","9":"하늘에 가득 찬 영광의 하나님","10":"전능왕 오셔서","11":"홀로 한 분 하나님께","12":"다 함께 주를 경배하세","13":"영원한 하늘나라","14":"주 우리 하나님","15":"하나님의 크신 사랑","16":"은혜로신 하나님 우리 주 하나님","17":"사랑의 하나님","18":"성도들아 찬양하자","19":"찬송하는 소리 있어","20":"큰 영광 중에 계신 주","21":"다 찬양하여라","22":"만유의 주 앞에","23":"만 입이 내게 있으면","24":"왕 되신 주","25":"면류관 벗어서","26":"구세주를 아는 이들","27":"빛나고 높은 보좌와","28":"복의 근원 강림 하사","29":"성도여 다 함께","30":"전능하고 놀라우신","31":"찬양하라 복되신 구세주 예수","32":"만유의 주재","33":"영광스런 주를 보라","34":"참 놀랍도다 주 크신 이름","35":"큰 영화로신 주","36":"주 예수 이름 높이어","37":"주 예수 이름 높이어","38":"예수 우리 왕이여","39":"주 은혜를 받으려","40":"찬송으로 보답할 수 없는","41":"내 영혼아 주 찬양하여라","42":"거룩한 주님께","43":"즐겁게 안식할 날","44":"지난 이레 동안에","45":"거룩한 주의 날","46":"이 날은 주님 정하신","47":"하늘이 푸르고","48":"거룩하신 주 하나님","49":"하나님이 언약하신 그대로","50":"내게 있는 모든 것을","51":"주님 주신 거룩한 날","52":"거룩하신 나의 하나님","53":"성전을 떠나가기 전","54":"주여 복을 구하오니","55":"주 이름으로 모였던","56":"우리의 주여","57":"오늘 주신 말씀에","58":"지난밤에 보호하사","59":"하나님 아버지 어둔 밤이 지나","60":"영혼의 햇빛 예수님","61":"우리가 기다리던","62":"고요히 머리 숙여","63":"주가 세상을 다스리니","64":"기뻐하며 경배하세","65":"내 영혼아 찬양하라","66":"다 감사드리세","67":"영광의 왕께 다 경배하며","68":"오 하나님 우리의 창조주시니","69":"온 천하 만물 우러러","70":"피난처 있으니","71":"예부터 도움 되시고","72":"만왕의 왕 앞에 나오라","73":"내 눈을 들어 두루 살피니","74":"오 만세 반석이신","75":"주여 우리 무리를","76":"창조의 주 아버지께","77":"거룩하신 하나님","78":"저 높고 푸른 하늘과","79":"주 하나님 지으신 모든 세계","80":"천지에 있는 이름 중","81":"주는 귀한 보배","82":"성부의 어린 양이","83":"나의 맘에 근심 구름","84":"온 세상이 캄캄하여서","85":"구주를 생각만 해도","86":"내가 늘 의지하는 예수","87":"내 주님 입으신 그 옷은","88":"내 진정 사모하는","89":"샤론의 꽃 예수","90":"주 예수 내가 알기 전","91":"슬픈 마음 있는 사람","92":"위에 계신 나의 친구","93":"예수는 나의 힘이요","94":"주 예수보다 더 귀한 것은 없네","95":"나의 기쁨 나의 소망되시며","96":"예수님은 누구신가","97":"정혼한 처녀에게","98":"예수님 오소서","99":"주님 앞에 떨며 서서","100":"미리암과 같은 여인들이","101":"이새의 뿌리에서","102":"영원한 문아 열려라","103":"우리 주님 예수께","104":"곧 오소서 임마누엘","105":"오랫동안 기다리던","106":"아기 예수 나셨네","107":"거룩한 밤 복된 이 밤","108":"그 어린 주 예수","109":"고요한 밤 거룩한 밤","110":"고요하고 거룩한 밤","111":"귀중한 보배합을","112":"그 맑고 환한 밤중에","113":"그 아기 잠들었네","114":"그 어린 주 예수","115":"기쁘다 구주오셨네","116":"동방에서 박사들","117":"만백성 기뻐하여라","118":"영광나라 천사들아","119":"옛날 임금 다윗 성에","120":"오 베들레헴 작은 골","121":"우리 구주 나신 날","122":"참 반가운 성도여","123":"저 들 밖에 한밤중에","124":"양 지키는 목자여","125":"천사들의 노래가","126":"천사 찬송하기를","127":"그 고요한 쓸쓸한","128":"거룩하신 우리 주님","129":"마리아는 아기를","130":"찬란한 주의 영광은","131":"다 나와 찬송 부르세","132":"주의 영광 빛나니","133":"하나님의 말씀으로","134":"나 어느 날 꿈속을 헤메며","135":"어저께나 오늘이나","136":"가나의 혼인 잔치","137":"하나님의 아들이","138":"햇빛을 받는 곳마다","139":"오 영원한 내 주 예수","140":"왕되신 우리 주께","141":"호산나 호산나","142":"시온에 오시는 주","143":"웬말인가 날 위하여","144":"예수 나를 위하여","145":"오 거룩하신 주님","146":"저 멀리 푸른 언덕에","147":"거기 너 있었는가","148":"영화로운 주 예수의","149":"주 달려 죽은 십자가","150":"갈보리 산 위에","151":"만왕의 왕 내 주께서","152":"귀하신 예수","153":"가시 면류관","154":"생명의 주여 면류관","155":"십자가 지고","156":"머리에 가시관 붉은 피 흐르는","157":"겟세마네 동산에서 최후 기도","158":"서쪽 하늘 붉은 노을","159":"기뻐 찬송하세","160":"무덤에 머물러","161":"할렐루야 우리 예수","162":"부활하신 구세주","163":"할렐루야 할렐루야","164":"예수 부활했으니","165":"주님께 영광","166":"싸움은 모두 끝나고","167":"즐겁도다 이 날","168":"하늘에 찬송이 들리던 그 날","169":"사망의 권세가","170":"내 주님은 살아 계셔","171":"하나님의 독생자","172":"사망을 이긴 주","173":"다 함께 찬송 부르자","174":"대속하신 구주께서","175":"신랑되신 예수께서","176":"주 어느 때 다시 오실는지","177":"오랫동안 고대하던","178":"주 예수 믿는 자여","179":"주 예수의 강림이","180":"하나님의 나팔 소리","181":"부활 승천하신 주께서","182":"강물같이 흐르는 기쁨","183":"빈 들에 마른 풀같이","184":"불길같은 주 성령","185":"이 기쁜 소식을","186":"영화로신 주 성령","187":"비둘기같이 온유한","188":"무한하신 주 성령","189":"진실하신 주 성령","190":"성령이여 강림하사","191":"내가 매일 기쁘게","192":"임하소서 임하소서","193":"성령의 봄바람 불어오니","194":"저 하늘 거룩하신 주여","195":"성령이여 우리 찬송 부를 때","196":"성령의 은사를","197":"은혜가 풍성한 하나님은","198":"주 예수 해변서","199":"나의 사랑하는 책","200":"달고 오묘한 그 말씀","201":"참 사람 되신 말씀","202":"하나님 아버지 주신 책은","203":"하나님의 말씀은","204":"주의 말씀 듣고서","205":"주 예수 크신 사랑","206":"주님의 귀한 말씀은","207":"귀하신 주님 계신 곳","208":"내 주의 나라와","209":"이 세상 풍파 심하고","210":"시온성과 같은 교회","211":"값비싼 향유를 주께 드린","212":"겸손히 주를 섬길 때","213":"나의 생명 드리니","214":"나 주의 도움 받고자","215":"내 죄 속해 주신 주께","216":"성자의 귀한 몸","217":"하나님이 말씀 하시기를","218":"네 맘과 정성을 다하여서","219":"주 하나님의 사랑은","220":"사랑하는 주님 앞에","221":"주 믿는 형제들","222":"우리 다시 만날 때까지","223":"하나님은 우리들의","224":"정한 물로 우리 죄를","225":"실로암 샘물가에 핀","226":"성령으로 세례 받아","227":"주 앞에 성찬받기 위하여","228":"오 나의 주님 친히 뵈오니","229":"아무 흠도 없고","230":"우리의 참되신 구주시니","231":"우리 다 같이 무릎 꿇고서","232":"유월절 때가 이르러","233":"자비로 그 몸을 찢기시고","234":"구주 예수 그리스도","235":"보아라 즐거운 우리 집","236":"우리 모든 수고 끝나","237":"저 건너편 강 언덕에","238":"해 지는 저편","239":"저 뵈는 본향 집","240":"주가 맡긴 모든 역사","241":"아름다운 본향","242":"황무지가 장미꽃같이","243":"저 요단강 건너편에","244":"구원 받은 천국의 성도들","245":"저 좋은 낙원 이르니","246":"나 가나안 땅 귀한 성에","247":"보아라 저 하늘에","248":"언약의 주 하나님","249":"주 사랑하는 자 다 찬송할 때에","250":"구주의 십자가 보혈로","251":"놀랍다 주님의 큰 은혜","252":"나의 죄를 씻기는","253":"그 자비하신 주님","254":"내 주의 보혈은","255":"너희 죄 흉악하나","256":"나의 죄 모두 지신 주님","257":"마음에 가득한 의심을 깨치고","258":"샘물과 같은 보혈은","259":"예수 십자가에 흘린 피로써","260":"우리를 죄에서 구하시려","261":"이 세상의 모든 죄를","262":"날 구원하신 예수님","263":"이 세상 험하고","264":"정결하게 하는 샘이","265":"주 십자가를 지심으로","266":"주의 피로 이룬 샘물","267":"주의 확실한 약속의 말씀 듣고","268":"죄에서 자유를 얻게 함은","269":"그 참혹한 십자가에","270":"변찮는 주님의 사랑과","271":"나와 같은 죄인 위해","272":"고통의 멍에 벗으려고","273":"나 주를 멀리 떠났다","274":"나 행한 것 죄뿐이니","275":"날마다 주와 멀어져","276":"아버지여 이 죄인을","277":"양떼를 떠나서","278":"여러 해 동안 주 떠나","279":"인애하신 구세주여","280":"천부여 의지 없어서","281":"요나처럼 순종않고","282":"큰 죄에 빠진 날 위해","283":"나 속죄함을 받은 후","284":"오랫동안 모든 죄 가운데 빠져","285":"주의 말씀 받은 그 날","286":"주 예수님 내 맘에 오사","287":"예수 앞에 나오면","288":"예수를 나의 구주삼고","289":"주 예수 내 맘에 들어와","290":"우리는 주님을 늘 배반하나","291":"외롭게 사는 이 그 누군가","292":"주 없이 살 수 없네","293":"주의 사랑 비칠 때에","294":"하나님은 외아들을","295":"큰 죄에 빠진 나를","296":"죄인 구원하시려고","297":"양 아흔아홉 마리는","298":"속죄하신 구세주를","299":"하나님 사랑은","300":"내 맘이 낙심되며","301":"지금까지 지내온 것","302":"내 주 하나님 넓고 큰 은혜는","303":"날 위하여 십자가의","304":"그 크신 하나님의 사랑","305":"나 같은 죄인 살리신","306":"죽을 죄인 살려주신","307":"소리없이 보슬보슬","308":"내 평생 살아온 길","309":"목마른 내 영혼","310":"아 하나님의 은혜로","311":"내 너를 위하여","312":"너 하나님께 이끌리어","313":"내 임금 예수 내 주여","314":"내 구주 예수를 더욱 사랑","315":"내 주 되신 주를 참 사랑하고","316":"주여 나의 생명","317":"내 주 예수 주신 은혜","318":"순교자의 흘린 피가","319":"말씀으로 이 세상을","320":"나의 죄를 정케하사","321":"날 대속하신 예수께","322":"세상의 헛된 신을 버리고","323":"부름받아 나선 이 몸","324":"예수 나를 오라 하네","325":"예수가 함께 계시니","326":"내 죄를 회개하고","327":"주님 주실 화평","328":"너 주의 사람아","329":"주 날 불러 이르소서","330":"어둔 밤 쉬 되리니","331":"영광을 받으신 만유의 주여","332":"우리는 부지런한","333":"충성하라 죽도록","334":"위대하신 주를","335":"크고 놀라운 평화가","336":"환난과 핍박 중에도","337":"내 모든 시험 무거운 짐을","338":"내 주를 가까이 하게 함은","339":"내 주님 지신 십자가","340":"어지러운 세상 중에","341":"십자가를 내가 지고","342":"너 시험을 당해","343":"시험 받을 때에","344":"믿음으로 가리라","345":"캄캄한 밤 사나운 바람 불 때","346":"주 예수 우리 구하려","347":"허락하신 새 땅에","348":"마귀들과 싸울지라","349":"나는 예수 따라가는","350":"우리들이 싸울 것은","351":"믿는 사람들은 주의 군사니","352":"십자가 군병들아","353":"십자가 군병되어서","354":"주를 앙모하는 자","355":"다 같이 일어나","356":"주 예수 이름 소리 높여","357":"주 믿는 사람 일어나","358":"주의 진리 위해 십자가 군기","359":"천성을 향해 가는 성도들아","360":"행군 나팔 소리에","361":"기도하는 이 시간","362":"주여 복을 주시기를","363":"내가 깊은 곳에서","364":"내 기도하는 그 시간","365":"마음 속에 근심 있는 사람","366":"어두운 내 눈 밝히사","367":"인내하게 하소서 주여 우리를","368":"주 예수여 은혜를","369":"죄짐맡은 우리 구주","370":"주 안에 있는 나에게","371":"구주여 광풍이 불어","372":"그 누가 나의 괴롬 알며","373":"고요한 바다로","374":"나의 믿음 약할 때","375":"나는 갈 길 모르니","376":"나그네와 같은 내가","377":"전능하신 주 하나님","378":"내 선한 목자","379":"내 갈 길 멀고 밤은 깊은데","380":"나의 생명되신 주","381":"나 캄캄한 밤 죄의 길에","382":"너 근심 걱정 말아라","383":"눈을 들어 산을 보니","384":"나의 갈 길 다 가도록","385":"못 박혀 죽으신","386":"만세반석 열린 곳에","387":"멀리멀리 갔더니","388":"비바람이 칠 때와","389":"내게로 오라 하신 주님의","390":"예수가 거느리시니","391":"오 놀라운 구세주","392":"주여 어린 사슴이","393":"오 신실하신 주","394":"이 세상의 친구들","395":"자비하신 예수여","396":"우리 주님 밤새워","397":"주 사랑 안에 살면","398":"어둠의 권세에서","399":"어린 양들아 두려워 말아라","400":"험한 시험 물 속에서","401":"주의 곁에 있을 때","402":"나의 반석 나의 방패","403":"영원하신 주님의","404":"바다에 놀이 일 때에","405":"주의 친절한 팔에 안기세","406":"곤한 내 영혼 편히 쉴 곳과","407":"구주와 함께 나 죽었으니","408":"나 어느 곳에 있든지","409":"나의 기쁨은 사랑의 주님께","410":"내 맘에 한 노래있어","411":"아 내 맘속에","412":"내 영혼의 그윽히 깊은 데서","413":"내 평생에 가는 길","414":"이 세상은 요란하나","415":"십자가 그늘 아래","416":"너희 근심 걱정을","417":"주 예수 넓은 품에","418":"기쁠 때나 슬플 때나","419":"주 날개 밑 내가 편안히 쉬네","420":"너 성결키 위해","421":"내가 예수 믿고서","422":"거룩하게 하소서","423":"먹보다도 더 검은","424":"아버지여 나의 맘을","425":"주님의 뜻을 이루소서","426":"이 죄인을 완전케 하시옵고","427":"맘 가난한 사람","428":"내 영혼에 햇빛 비치니","429":"세상 모든 풍파 너를 흔들어","430":"주와 같이 길 가는 것","431":"주 안에 기쁨 있네","432":"큰 물결이 설레는 어둔 바다","433":"귀하신 주여 날 붙드사","434":"귀하신 친구 내게 계시니","435":"나의 영원하신 기업","436":"나 이제 주님의 새 생명 얻은 몸","437":"하늘 보좌 떠나서","438":"내 영혼이 은총 입어","439":"십자가로 가까이","440":"어디든지 예수 나를 이끌면","441":"은혜 구한 내게 은혜의 주님","442":"저 장미꽃 위에 이슬","443":"아침 햇살 비칠 때","444":"겟세마네 동산에서","445":"태산을 넘어 험곡에 가도","446":"주 음성 외에는","447":"이 세상 끝날까지","448":"주님 가신 길을 따라","449":"예수 따라가며","450":"내 평생 소원 이것뿐","451":"예수 영광 버리사","452":"내 모든 소원 기도의 제목","453":"예수 더 알기 원하네","454":"주와 같이 되기를","455":"주님의 마음을 본받는 자","456":"거친 세상에서 실패하거든","457":"겟세마네 동산의","458":"너희 마음에 슬픔이 가득할 때","459":"누가 주를 따라","460":"뜻 없이 무릎 꿇는","461":"십자가를 질 수 있나","462":"생명 진리 은혜 되신","463":"신자 되기 원합니다","464":"믿음의 새 빛을","465":"주 믿는 나 남 위해","466":"죽기까지 사랑하신 주","467":"높으신 주께서 낮아지심은","468":"큰 사랑의 새 계명을","469":"내 주 하나님","470":"나의 몸이 상하여","471":"주여 나의 병든 몸을","472":"네 병든 손 내밀라고","473":"괴로움과 고통을","474":"의원되신 예수님의","475":"인류는 하나 되게","476":"꽃이 피고 새가 우는","477":"하나님이 창조하신","478":"참 아름다워라","479":"괴로운 인생길 가는 몸이","480":"천국에서 만나보자","481":"때 저물어서 날이 어두니","482":"참 즐거운 노래를","483":"구름같은 이 세상","484":"내 맘의 주여 소망되소서","485":"세월이 흘러가는데","486":"이 세상에 근심된 일이 많고","487":"어두움 후에 빛이 오며","488":"이 몸의 소망 무언가","489":"저 요단강 건너편에 찬란하게","490":"주여 지난밤 내 꿈에","491":"저 높은 곳을 향하여","492":"잠시 세상에 내가 살면서","493":"하늘가는 밝은 길이","494":"만세 반석 열리니","495":"익은 곡식 거둘 자가","496":"새벽부터 우리","497":"주 예수 넓은 사랑","498":"저 죽어가는 자 다 구원하고","499":"흑암에 사는 백성들을 보라","500":"물 위에 생명줄 던지어라","501":"너 시온아 이 소식 전파하라","502":"빛의 사자들이여","503":"세상 모두 사랑 없어","504":"주님의 명령 전할 사자여","505":"온 세상 위하여","506":"땅 끝까지 복음을","507":"저 북방 얼음 산과","508":"우리가 지금은 나그네 되어도","509":"기쁜 일이 있어 천국 종치네","510":"하나님의 진리 등대","511":"예수 말씀 하시기를","512":"천성 길을 버리고","513":"헛된 욕망 길을 가며","514":"먼동 튼다 일어나라","515":"눈을 들어 하늘 보라","516":"옳은 길 따르라 의의 길을","517":"가난한 자 돌봐주며","518":"기쁜 소리 들리니","519":"구주께서 부르되","520":"듣는 사람마다 복음 전하여","521":"구원으로 인도하는","522":"웬일인가 내 형제여","523":"어둔 죄악 길에서","524":"갈 길을 밝히 보이시니","525":"돌아와 돌아와","526":"목마른 자들아","527":"어서 돌아오오","528":"예수가 우리를 부르는 소리","529":"온유한 주님의 음성","530":"주께서 문에 오셔서","531":"자비한 주께서 부르시네","532":"주께로 한 걸음씩","533":"우리 주 십자가","534":"주님 찾아 오셨네","535":"주 예수 대문 밖에","536":"죄짐에 눌린 사람은","537":"형제여 지체말라","538":"죄짐을 지고서 곤하거든","539":"너 예수께 조용히 나가","540":"주의 음성을 내가 들으니","541":"꽃이 피는 봄날에만","542":"구주 예수 의지함이","543":"어려운 일 당할 때","544":"울어도 못하네","545":"이 눈에 아무 증거 아니 뵈어도","546":"주님 약속 하신 말씀 위에 서","547":"나 같은 죄인까지도","548":"날 구속하신","549":"내 주여 뜻대로","550":"시온의 영광이 빛나는 아침","551":"오늘까지 복과 은혜","552":"아침 해가 돋을 때","553":"새해 아침 환히 밝았네","554":"종소리 크게 울려라","555":"우리 주님 모신 가정","556":"날마다 주님을 의지하는","557":"에덴의 동산처럼","558":"미더워라 주의 가정","559":"사철에 봄바람 불어 잇고","560":"주의 발자취를 따름이","561":"예수님의 사랑은","562":"예루살렘 아이들","563":"예수 사랑하심을","564":"예수께서 오실 때에","565":"예수께로 가면","566":"사랑의 하나님 귀하신 이름은","567":"다정하신 목자 예수","568":"하나님은 나의 목자시니","569":"선한 목자 되신 우리 주","570":"주는 나를 기르시는 목자","571":"역사 속에 보냄 받아","572":"바다같이 넓은 은혜","573":"말씀에 순종하여","574":"가슴마다 파도친다","575":"주님께 귀한 것 드려","576":"하나님의 뜻을 따라","577":"낳으시고 길러주신","578":"언제나 바라봐도","579":"어머니의 넓은 사랑","580":"삼천리 반도 금수강산","581":"주 하나님 이 나라를 지켜주시고","582":"어둔 밤 마음에 잠겨","583":"이 민족에 복음을","584":"우리나라 지켜주신","585":"내 주는 강한 성이요","586":"어느 민족 누구게나","587":"감사하는 성도여","588":"공중 나는 새를 보라","589":"넓은 들에 익은 곡식","590":"논밭에 오곡백과","591":"저 밭에 농부 나가","592":"산마다 불이 탄다 고운 단풍에","593":"아름다운 하늘과","594":"감사하세 찬양하세","595":"나 맡은 본분은","596":"영광은 주님 홀로","597":"이전에 주님을 내가 몰라","598":"천지 주관하는 주님","599":"우리의 기도 들어주시옵소서","600":"교회의 참된 터는","601":"하나님이 정하시고","602":"성부님께 빕니다","603":"태초에 하나님이","604":"완전한 사랑","605":"오늘 모여 찬송함은","606":"해보다 더 밝은 천국","607":"내 본향 가는 길","608":"후일에 생명 그칠 때","609":"이 세상 살 때에","610":"고생과 수고가 다 지난 후","611":"주님 오라 부르시어","612":"이 땅에서 주를 위해","613":"사랑의 주 하나님","614":"얼마나 아프셨나","615":"그 큰 일을 행하신","616":"주를 경배하리","617":"주님을 찬양합니다","618":"나 주님을 사랑합니다","619":"놀라운 그 이름","620":"여기에 모인 우리","621":"찬양하라 내 영혼아","622":"거룩한 밤","623":"주님의 시간에","624":"우리 모두 찬양해","625":"거룩 거룩 거룩한 하나님","626":"만민들아 다 경배하라","627":"할렐루야 할렐루야 다 함께","628":"아멘 아멘 아멘 영광과 존귀를","629":"거룩 거룩 거룩","630":"진리와 생명 되신 주","631":"우리 기도를","632":"주여 주여 우리를","633":"나의 하나님 받으소서","634":"모든 것이 주께로부터","635":"하늘에 계신 아버지","636":"하늘에 계신 우리 아버지여","637":"주님 우리 마음을 여시어","638":"주 너를 지키시고","639":"주 함께하소서","640":"아멘","641":"아멘","642":"아멘","643":"아멘","644":"아멘","645":"아멘"},"hymnLyrics":{},"responsive":{},"scripture":{}};
 </script>
 <!-- WORSHIP_PAYLOAD -->
 </head>
@@ -392,7 +811,7 @@ window.WORSHIP_LOOKUP = {"hymns":{"1":"만복의 근원 하나님","2":"찬양 �
                 <p class="text-xs text-slate-400">예배순서 입력 · 축도·안내·광고 포함 · 전체화면</p>
             </div>
         </div>
-        <div class="flex space-x-3">
+        <div class="flex space-x-3 header-actions">
             <button onclick="printBulletin()" class="bg-emerald-700 hover:bg-emerald-600 text-white font-semibold py-2 px-4 rounded-lg text-sm transition flex items-center space-x-2 border border-emerald-500/40">
                 <i class="fa-solid fa-print"></i>
                 <span>주보 인쇄</span>
@@ -413,7 +832,7 @@ window.WORSHIP_LOOKUP = {"hymns":{"1":"만복의 근원 하나님","2":"찬양 �
                 <i class="fa-solid fa-download"></i>
                 <span>HTML 저장</span>
             </button>
-            <button onclick="startPresentation()" class="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold py-2.5 px-6 rounded-lg transition-all duration-300 shadow-lg shadow-blue-900/50 flex items-center space-x-2 border border-blue-400/35">
+            <button type="button" data-start-presentation onclick="startPresentation()" class="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold py-2.5 px-6 rounded-lg transition-all duration-300 shadow-lg shadow-blue-900/50 flex items-center space-x-2 border border-blue-400/35">
                 <i class="fa-solid fa-play"></i>
                 <span>예배 화면 (전체화면)</span>
             </button>
@@ -422,8 +841,8 @@ window.WORSHIP_LOOKUP = {"hymns":{"1":"만복의 근원 하나님","2":"찬양 �
     <div class="flex dashboard-layout">
 
         <!-- 좌측: 입력 및 제어 패널 -->
-        <div class="w-1/3 bg-slate-800/50 border-r border-slate-700 flex flex-col overflow-hidden" style="height:calc(100vh - 80px); min-height:0;">
-            <div class="p-4 border-b border-slate-700 shrink-0 space-y-2">
+        <div id="editor-form-col" class="w-1/3 bg-slate-800/50 border-r border-slate-700 flex flex-col overflow-hidden" style="height:calc(100vh - 80px); min-height:0;">
+            <div class="form-toolbar p-4 border-b border-slate-700 shrink-0 space-y-2">
                 <div class="flex items-center justify-between gap-2">
                     <h2 class="text-lg font-bold text-slate-200"><i class="fa-solid fa-pen-to-square mr-2 text-yellow-500"></i>예배 순서 입력</h2>
                     <button onclick="applyChanges()" class="text-xs bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded transition font-semibold shadow whitespace-nowrap">적용하기</button>
@@ -435,7 +854,7 @@ window.WORSHIP_LOOKUP = {"hymns":{"1":"만복의 근원 하나님","2":"찬양 �
             </div>
             <div class="flex-1 form-scroll p-6 space-y-4 text-sm" style="min-height:0; overflow-y:auto;">
                 <!-- 교회 기본 정보 -->
-                <div class="bg-slate-900/80 p-4 rounded-xl border border-slate-700/50 space-y-3">
+                <div class="form-card bg-slate-900/80 p-4 rounded-xl border border-slate-700/50 space-y-3">
                     <h3 class="text-yellow-500 font-semibold text-xs uppercase tracking-wider mb-2">기본 정보</h3>
                     <div>
                         <label class="block text-slate-400 mb-1">교회명</label>
@@ -455,7 +874,7 @@ window.WORSHIP_LOOKUP = {"hymns":{"1":"만복의 근원 하나님","2":"찬양 �
                     </div>
                 </div>
                 <!-- 예배 순서 세부 입력 -->
-                <div class="bg-slate-900/80 p-4 rounded-xl border border-slate-700/50 space-y-3">
+                <div class="form-card bg-slate-900/80 p-4 rounded-xl border border-slate-700/50 space-y-3">
                     <h3 class="text-blue-400 font-semibold text-xs uppercase tracking-wider mb-2">예배 순서 1–11 (번호 → 자동 불러오기)</h3>
                     <p class="text-[11px] text-slate-500 -mt-1 mb-2">장번호·교독문 번호·성경 구절을 입력한 뒤 <b>적용하기</b>를 누르면 미리보기에 반영됩니다.</p>
 
@@ -551,7 +970,6 @@ window.WORSHIP_LOOKUP = {"hymns":{"1":"만복의 근원 하나님","2":"찬양 �
                         </div>
                     </div>
                 </div>
-                </div>
             </div>
             <div class="shrink-0 border-t-2 border-amber-600/40 p-3 space-y-2 bg-slate-950" id="leftActionButtons">
                 <button onclick="applyChanges()" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 rounded-lg transition shadow-lg text-sm">적용하기 — 미리보기 반영</button>
@@ -569,18 +987,18 @@ window.WORSHIP_LOOKUP = {"hymns":{"1":"만복의 근원 하나님","2":"찬양 �
             </div>
         </div>
         <!-- 우측: 슬라이드 미니 뷰어 및 썸네일 목록 -->
-        <div class="w-2/3 flex flex-col bg-slate-900">
+        <div id="editor-preview-col" class="w-2/3 flex flex-col bg-slate-900">
             <!-- 미니 미리보기 뷰어 -->
-            <div class="p-6 bg-slate-950 flex justify-center items-center border-b border-slate-800 relative shadow-inner">
+            <div id="mini-preview-wrap" class="p-6 bg-slate-950 flex justify-center items-center border-b border-slate-800 relative shadow-inner">
                 <div class="absolute top-4 left-4 flex items-center space-x-2">
-                    <span class="bg-slate-800 text-slate-300 text-xs px-2.5 py-1 rounded border border-slate-700">실시간 미니 미리보기</span>
+                    <span class="mini-preview-badge bg-slate-800 text-slate-300 text-xs px-2.5 py-1 rounded border border-slate-700">실시간 미니 미리보기</span>
                 </div>
 
                 <div class="relative w-full max-w-3xl aspect-video bg-black rounded-xl overflow-hidden border-4 border-slate-800 shadow-2xl" id="mini-preview-container">
                 </div>
             </div>
             <!-- 슬라이드 썸네일 리스트 -->
-            <div class="flex-1 p-6 overflow-y-auto bg-slate-900">
+            <div id="slide-list-panel" class="flex-1 p-6 overflow-y-auto bg-slate-900">
                 <div class="flex justify-between items-center mb-4">
                     <h3 class="text-lg font-bold text-slate-200">생성된 슬라이드 목록 (<span id="slideCount">0</span>장)</h3>
                     <p class="text-xs text-slate-400">썸네일을 클릭하면 해당 화면을 미리볼 수 있습니다.</p>
@@ -634,19 +1052,20 @@ window.WORSHIP_LOOKUP = {"hymns":{"1":"만복의 근원 하나님","2":"찬양 �
         </div>
     </div>
 
-    <div id="presentation-view">
+    <div id="presentation-view" ontouchstart="" onclick="void 0">
         <div class="slide-container" id="fs-slide-container">
             <div class="slide-bg-decoration"></div>
 
             <div class="absolute bottom-0 left-0 h-1 bg-slate-800 w-full z-50">
                 <div id="progress-bar" class="h-full bg-blue-500 w-0 transition-all duration-300"></div>
             </div>
-            <div class="present-nav-hint">← 밀기 · 왼쪽/오른쪽 탭으로 이동</div>
+            <div class="present-nav-hint">화면 터치/클릭으로 다음 · 왼쪽은 이전</div>
             <button type="button" class="present-exit-btn" id="presentExitBtn" aria-label="예배 화면 종료" title="종료">×</button>
             <div id="control-hint" class="absolute top-4 left-1/2 transform -translate-x-1/2 bg-black/50 text-white/60 text-sm py-1.5 px-5 rounded-full z-50 transition-opacity duration-1000 font-sans shadow-lg">
-                키보드 스페이스바 또는 좌/우 방향키로 이동 · ESC로 종료
+                화면을 터치하거나 클릭하면 다음 슬라이드 · 왼쪽은 이전 · ESC로 종료
             </div>
             <div id="fs-slides-wrapper" class="w-full h-full relative"></div>
+            <div id="present-hit-layer" role="presentation" aria-hidden="true" onclick="void 0"></div>
         </div>
     </div>
     <script>
@@ -658,17 +1077,25 @@ window.WORSHIP_LOOKUP = {"hymns":{"1":"만복의 근원 하나님","2":"찬양 �
         let pptReady = false;
         let artifactsStale = false;
         let usedFullscreen = false;
-        let touchStartX = null;
-        let touchStartY = null;
-        let touchStartAt = 0;
         let suppressExitUntil = 0;
+
+        function isIPadLike() {
+            try {
+                const ua = navigator.userAgent || '';
+                if (/iPad/i.test(ua)) return true;
+                // iPadOS 13+ reports a desktop Mac UA
+                return navigator.platform === 'MacIntel' && (navigator.maxTouchPoints || 0) > 1;
+            } catch (e) {
+                return false;
+            }
+        }
 
         function isTouchWorshipDevice() {
             try {
-                const coarse = window.matchMedia('(pointer: coarse)').matches;
-                const narrow = window.matchMedia('(max-width: 1024px)').matches;
-                const touch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
-                return touch && (coarse || narrow || /iPad|iPhone|iPod|Android/i.test(navigator.userAgent));
+                if (isIPadLike() || isIPhone()) return true;
+                const ua = navigator.userAgent || '';
+                if (/Android/i.test(ua)) return true;
+                return window.matchMedia('(pointer: coarse) and (hover: none)').matches;
             } catch (e) {
                 return false;
             }
@@ -698,41 +1125,100 @@ window.WORSHIP_LOOKUP = {"hymns":{"1":"만복의 근원 하나님","2":"찬양 �
             }
         }
 
+        let lastNavAt = 0;
+        let ignoreClickUntil = 0;
+        function navPresentation(dir) {
+            if (!isPresenting) return;
+            const now = Date.now();
+            if (now - lastNavAt < 350) return;
+            lastNavAt = now;
+            ignoreClickUntil = now + 550;
+            if (dir > 0) nextPresentationSlide();
+            else prevPresentationSlide();
+        }
+
         function bindPresentationTouch() {
-            const view = document.getElementById('presentation-view');
-            if (!view || view.dataset.touchBound === '1') return;
-            view.dataset.touchBound = '1';
+            if (window.__worshipNavBound) return;
+            window.__worshipNavBound = true;
+            let x0 = 0;
+            let y0 = 0;
+            let tracking = false;
 
-            view.addEventListener('touchstart', (e) => {
-                if (!isPresenting || e.touches.length !== 1) return;
-                touchStartX = e.touches[0].clientX;
-                touchStartY = e.touches[0].clientY;
-                touchStartAt = Date.now();
-            }, { passive: true });
+            function fromPresent(e) {
+                if (!isPresenting) return false;
+                const view = document.getElementById('presentation-view');
+                if (!view || !view.classList.contains('active')) return false;
+                let t = e.target;
+                if (t && t.nodeType === 3) t = t.parentElement;
+                if (t && t.closest && t.closest('#presentExitBtn, .present-exit-btn, #mobile-present-gate, .gate-btn')) return false;
+                return true;
+            }
 
-            view.addEventListener('touchend', (e) => {
-                if (!isPresenting || touchStartX == null) return;
-                const t = e.changedTouches[0];
-                const dx = t.clientX - touchStartX;
-                const dy = t.clientY - touchStartY;
-                const dt = Date.now() - touchStartAt;
-                touchStartX = null;
-                touchStartY = null;
+            function pt(e) {
+                const t = (e.changedTouches && e.changedTouches[0])
+                    || (e.touches && e.touches[0])
+                    || e;
+                return { x: Number(t.clientX) || 0, y: Number(t.clientY) || 0 };
+            }
 
-                // Horizontal swipe
-                if (Math.abs(dx) >= 40 && Math.abs(dx) > Math.abs(dy) * 1.15) {
-                    if (dx < 0) nextPresentationSlide();
-                    else prevPresentationSlide();
-                    return;
+            function go(x) {
+                const w = window.innerWidth || 1;
+                navPresentation(x < w * 0.28 ? -1 : 1);
+            }
+
+            function onStart(e) {
+                if (!fromPresent(e)) return;
+                const p = pt(e);
+                x0 = p.x;
+                y0 = p.y;
+                tracking = true;
+            }
+
+            function onMove(e) {
+                if (!tracking || !fromPresent(e)) return;
+                if (e.cancelable) {
+                    try { e.preventDefault(); } catch (err) {}
                 }
+            }
 
-                // Tap zones only (no double-tap exit — that made the screen vanish mid-service)
-                if (dt < 350 && Math.abs(dx) < 18 && Math.abs(dy) < 18) {
-                    const w = window.innerWidth || 1;
-                    if (t.clientX > w * 0.62) nextPresentationSlide();
-                    else if (t.clientX < w * 0.38) prevPresentationSlide();
+            function onEnd(e) {
+                if (!fromPresent(e) || !tracking) return;
+                tracking = false;
+                if (e.cancelable) {
+                    try { e.preventDefault(); } catch (err) {}
                 }
-            }, { passive: true });
+                const p = pt(e);
+                const dx = p.x - x0;
+                const dy = p.y - y0;
+                if (Math.abs(dx) >= 30 && Math.abs(dx) > Math.abs(dy)) navPresentation(dx < 0 ? 1 : -1);
+                else go(p.x || x0);
+            }
+
+            const opts = { capture: true, passive: false };
+            const nodes = [
+                document,
+                document.getElementById('presentation-view'),
+                document.getElementById('present-hit-layer'),
+            ].filter(Boolean);
+            nodes.forEach((el) => {
+                el.addEventListener('touchstart', onStart, opts);
+                el.addEventListener('touchmove', onMove, opts);
+                el.addEventListener('touchend', onEnd, opts);
+                el.addEventListener('touchcancel', () => { tracking = false; }, { capture: true, passive: true });
+                el.addEventListener('pointerdown', (e) => {
+                    if (e.pointerType === 'mouse' && e.button !== 0) return;
+                    onStart(e);
+                }, opts);
+                el.addEventListener('pointerup', (e) => {
+                    if (e.pointerType === 'mouse' && e.button !== 0) return;
+                    onEnd(e);
+                }, opts);
+                el.addEventListener('click', (e) => {
+                    if (!fromPresent(e)) return;
+                    if (Date.now() < ignoreClickUntil) return;
+                    go(e.clientX);
+                }, true);
+            });
         }
 
         function ensurePresentationVisible() {
@@ -1199,10 +1685,16 @@ window.WORSHIP_LOOKUP = {"hymns":{"1":"만복의 근원 하나님","2":"찬양 �
         async function fetchScriptureOnline(parsed) {
             if (!parsed.bookId || !parsed.chapter) return '';
             const url = `https://bolls.life/get-text/KRV/${parsed.bookId}/${parsed.chapter}/`;
-            const res = await fetch(url, { method: 'GET' });
-            if (!res.ok) throw new Error(`HTTP ${res.status}`);
-            const rows = await res.json();
-            return sliceChapterVerses(rows, parsed);
+            const ctrl = typeof AbortController === 'function' ? new AbortController() : null;
+            const timer = ctrl ? setTimeout(() => { try { ctrl.abort(); } catch (e) {} }, 4000) : null;
+            try {
+                const res = await fetch(url, { method: 'GET', signal: ctrl ? ctrl.signal : undefined });
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const rows = await res.json();
+                return sliceChapterVerses(rows, parsed);
+            } finally {
+                if (timer) clearTimeout(timer);
+            }
         }
 
         async function lookupScripture() {
@@ -1897,12 +2389,20 @@ window.WORSHIP_LOOKUP = {"hymns":{"1":"만복의 근원 하나님","2":"찬양 �
             w.document.close();
         }
 
-        window.onload = () => {
-            applyPayloadForm();
-            // Ensure lookup catalog exists even for standalone open
+        function safeSetSlideCount() {
+            const el = document.getElementById('slideCount');
+            if (el) el.innerText = String(slidesData.length || 0);
+        }
+
+        function bootWorship() {
+            if (window.__worshipBooted) return;
+            window.__worshipBooted = true;
+            try {
+                applyPayloadForm();
+            } catch (e) {}
+            // Ensure lookup catalog exists even for standalone / GitHub Pages open
             if (!window.WORSHIP_PAYLOAD) window.WORSHIP_PAYLOAD = { lookup: window.WORSHIP_LOOKUP || { hymns: {}, hymnLyrics: {}, responsive: {}, scripture: {} } };
             else if (!window.WORSHIP_PAYLOAD.lookup) window.WORSHIP_PAYLOAD.lookup = window.WORSHIP_LOOKUP || { hymns: {}, hymnLyrics: {}, responsive: {}, scripture: {} };
-            // Merge static template lookup under payload lookup (payload wins)
             if (window.WORSHIP_LOOKUP && window.WORSHIP_LOOKUP.hymnLyrics) {
                 const L = lookupData();
                 if (!L.hymnLyrics) L.hymnLyrics = {};
@@ -1916,20 +2416,32 @@ window.WORSHIP_LOOKUP = {"hymns":{"1":"만복의 근원 하나님","2":"찬양 �
                 slidesData = payload.slides;
                 seedHymnLyricsFromSlides(slidesData);
                 usedStreamlitSlides = true;
-                document.getElementById('slideCount').innerText = slidesData.length;
-                renderThumbnailList();
-                showMiniPreview(0);
+                safeSetSlideCount();
+                try { renderThumbnailList(); showMiniPreview(0); } catch (e) {}
                 if (payload.artifacts && payload.artifacts.pptx) {
                     pptReady = true;
                     const banner = document.getElementById('pptReadyBanner');
                     if (banner) banner.classList.remove('hidden');
                 }
             } else {
-                void autoFillAll();
-                updatePreview();
+                // Build slides immediately — do not wait for remote scripture fetch (hangs on some mobile networks)
+                try {
+                    generateSlidesData();
+                    renderThumbnailList();
+                    showMiniPreview(0);
+                } catch (e) {}
+                void autoFillAll().then(() => {
+                    if (!usedStreamlitSlides) {
+                        try {
+                            generateSlidesData();
+                            renderThumbnailList();
+                            showMiniPreview(currentPreviewIndex || 0);
+                        } catch (e2) {}
+                    }
+                }).catch(() => {});
             }
             document.addEventListener('keydown', handleKeydown);
-            // Safari may drop native fullscreen briefly — never tear down the worship deck
+            bindPresentationTouch();
             document.addEventListener('fullscreenchange', () => {
                 if (!isPresenting) return;
                 if (!document.fullscreenElement) {
@@ -1963,6 +2475,14 @@ window.WORSHIP_LOOKUP = {"hymns":{"1":"만복의 근원 하나님","2":"찬양 �
                     hideBrowserChrome();
                 }
             });
+            window.addEventListener('orientationchange', () => {
+                setTimeout(() => {
+                    if (isPresenting) {
+                        syncViewportHeight();
+                        hideBrowserChrome();
+                    }
+                }, 250);
+            });
             if (window.visualViewport) {
                 window.visualViewport.addEventListener('resize', () => {
                     if (isPresenting) syncViewportHeight();
@@ -1979,24 +2499,34 @@ window.WORSHIP_LOOKUP = {"hymns":{"1":"만복의 근원 하나님","2":"찬양 �
                     exitPresentation();
                 });
             }
+            document.querySelectorAll('#btnStartFullscreen, [data-start-presentation]').forEach((btn) => {
+                if (btn.dataset.startBound === '1') return;
+                btn.dataset.startBound = '1';
+                const go = (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    startPresentation();
+                };
+                btn.addEventListener('click', go);
+                btn.addEventListener('touchend', go, { passive: false });
+            });
 
-            // iPhone / iPad: hide tangled editor, show worship gate (or auto-present)
-            if (wantsPresentMode()) {
+            if (isTouchWorshipDevice()) {
                 document.body.classList.add('touch-worship');
+            }
+            if (wantsPresentMode()) {
                 const gate = document.getElementById('mobile-present-gate');
-                if (gate) {
+                if (gate && isTouchWorshipDevice()) {
                     gate.classList.remove('hidden-gate');
                     const hint = document.getElementById('mobileSlideCountHint');
                     if (hint && slidesData.length) hint.textContent = `슬라이드 ${slidesData.length}장`;
                 }
                 try {
                     const q = new URLSearchParams(window.location.search);
-                    // Do NOT auto-start: iPad fullscreen needs a real tap gesture
                     if (isStandaloneWorship() && slidesData.length) {
                         document.body.classList.add('standalone-worship');
                         setTimeout(() => startPresentation(), 80);
-                    } else if (q.get('present') === '1' || q.get('present') === 'true') {
-                        // Stay on gate so the user taps "전체화면으로 예배 시작"
+                    } else if (isTouchWorshipDevice() && (q.get('present') === '1' || q.get('present') === 'true')) {
                         const btn = document.getElementById('btnStartFullscreen');
                         if (btn) btn.focus();
                     }
@@ -2007,7 +2537,13 @@ window.WORSHIP_LOOKUP = {"hymns":{"1":"만복의 근원 하나님","2":"찬양 �
                 const hint = document.getElementById('control-hint');
                 if (hint && !isTouchWorshipDevice()) hint.style.opacity = '0';
             }, 4000);
-        };
+        }
+
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', bootWorship);
+        } else {
+            bootWorship();
+        }
 
         function generateSlidesData() {
             seedHymnLyricsFromSlides(slidesData);
@@ -2196,7 +2732,7 @@ window.WORSHIP_LOOKUP = {"hymns":{"1":"만복의 근원 하나님","2":"찬양 �
 
             slidesData = newSlides;
             usedStreamlitSlides = false;
-            document.getElementById('slideCount').innerText = slidesData.length;
+            safeSetSlideCount();
         }
 
         function getSlideHTML(slide) {
@@ -2208,13 +2744,13 @@ window.WORSHIP_LOOKUP = {"hymns":{"1":"만복의 근원 하나님","2":"찬양 �
                     : '';
                 html = `
                     <div class="slide-body cover-body">
-                        <div class="w-24 h-1 bg-yellow-500 rounded-full mb-8"></div>
-                        <h1 class="font-serif text-huge font-bold text-white mb-6 tracking-wide drop-shadow-2xl">${slide.title}</h1>
-                        <p class="text-title text-blue-300 font-light tracking-widest">${slide.subtitle || ''}</p>
-                        ${extra}
-                    </div>
-                    <div class="cover-footer absolute bottom-10 w-full text-center text-xl text-slate-400 font-serif tracking-widest uppercase">
-                        ${slide.footer || ''}
+                        <div class="cover-main">
+                            <div class="w-24 h-1 bg-yellow-500 rounded-full mb-8"></div>
+                            <h1 class="font-serif text-huge font-bold text-white mb-6 tracking-wide drop-shadow-2xl">${slide.title}</h1>
+                            <p class="text-title text-blue-300 font-light tracking-widest">${slide.subtitle || ''}</p>
+                            ${extra}
+                        </div>
+                        <div class="cover-footer">${slide.footer || ''}</div>
                     </div>
                 `;
             }
@@ -2322,6 +2858,7 @@ window.WORSHIP_LOOKUP = {"hymns":{"1":"만복의 근원 하나님","2":"찬양 �
         }
         function renderThumbnailList() {
             const list = document.getElementById('slide-list');
+            if (!list) return;
             list.innerHTML = '';
             slidesData.forEach((slide, index) => {
                 const div = document.createElement('div');
@@ -2376,7 +2913,6 @@ window.WORSHIP_LOOKUP = {"hymns":{"1":"만복의 근원 하나님","2":"찬양 �
             try {
                 if (window.navigator.standalone === true) return true;
                 if (window.matchMedia('(display-mode: standalone)').matches) return true;
-                if (window.matchMedia('(display-mode: fullscreen)').matches) return true;
             } catch (e) {}
             return false;
         }
@@ -2411,6 +2947,7 @@ window.WORSHIP_LOOKUP = {"hymns":{"1":"만복의 근원 하나님","2":"찬양 �
 
         function hideBrowserChrome() {
             syncViewportHeight();
+            if (!isTouchWorshipDevice()) return;
             try {
                 // Nudge Safari to collapse the URL bar when possible
                 const grow = Math.max(window.innerHeight, document.documentElement.clientHeight) + 80;
@@ -2460,6 +2997,7 @@ window.WORSHIP_LOOKUP = {"hymns":{"1":"만복의 근원 하나님","2":"찬양 �
         }
 
         async function startPresentation() {
+            if (isPresenting) return;
             const view = document.getElementById('presentation-view');
             const wrapper = document.getElementById('fs-slides-wrapper');
             if (!slidesData.length) {
@@ -2527,7 +3065,7 @@ window.WORSHIP_LOOKUP = {"hymns":{"1":"만복의 근원 하나님","2":"찬양 �
             document.documentElement.classList.remove('is-presenting');
             document.documentElement.style.removeProperty('--vvh');
             if (view) view.style.height = '';
-            if (wantsPresentMode()) {
+            if (isTouchWorshipDevice()) {
                 const gate = document.getElementById('mobile-present-gate');
                 if (gate) gate.classList.remove('hidden-gate');
             }

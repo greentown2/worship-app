@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <title>주일 예배 화면</title>
+    <script>
+        (function () {
+            var target = 'worship_presentation.html' + (location.search || '') + (location.hash || '');
+            location.replace(target);
+        })();
+    </script>
+    <meta http-equiv="refresh" content="0; url=worship_presentation.html">
+</head>
+<body style="font-family: sans-serif; background:#0a0f1d; color:#f8fafc; padding:2rem; text-align:center;">
+    <p><a href="worship_presentation.html" style="color:#93c5fd;">주일 예배 화면 열기</a></p>
+</body>
+</html>
