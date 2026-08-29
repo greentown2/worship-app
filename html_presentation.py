@@ -21,7 +21,7 @@ from template_tokens import _creed_pages, _hymn_pages, _responsive_pages, _text_
 ROOT = Path(__file__).resolve().parent
 TEMPLATE_PATH = ROOT / "worship_presentation.html"
 
-_HTML_VERSION = "2026-08-28-editor-restore-v28"
+_HTML_VERSION = "2026-08-29-type-match-v29"
 
 
 def _esc(text: str) -> str:
@@ -309,8 +309,8 @@ def build_presentation_slides(data: WorshipData, *, allow_remote: bool = True) -
             "title": "예배 순서",
             "subtitle": "Order of Worship",
             "content": (
-                '<div class="order-list grid grid-cols-1 gap-y-4 text-left w-max max-w-full mt-2 '
-                'text-2xl text-slate-200">'
+                '<div class="order-list grid grid-cols-1 gap-y-3 text-left w-max max-w-full mt-2 '
+                'font-bold text-slate-200">'
                 + "".join(order_rows)
                 + "</div>"
             ),
