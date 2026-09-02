@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Dict, List
 
+PREP_HYMN_COUNT = 5
+
 
 @dataclass
 class HymnEntry:
@@ -25,9 +27,12 @@ class WorshipData:
     preacher: str = ""
     worship_leader: str = "엄영민 목사"
 
-    # 1. 예배 준비의 시간 (two hymns)
+    # 1. 예배 준비의 시간 (up to 5 hymns)
     prep_hymn_1: HymnEntry = field(default_factory=HymnEntry)
     prep_hymn_2: HymnEntry = field(default_factory=HymnEntry)
+    prep_hymn_3: HymnEntry = field(default_factory=HymnEntry)
+    prep_hymn_4: HymnEntry = field(default_factory=HymnEntry)
+    prep_hymn_5: HymnEntry = field(default_factory=HymnEntry)
 
     # 2. 찬양과 기도
     praise_hymn: HymnEntry = field(default_factory=HymnEntry)
@@ -82,10 +87,12 @@ class WorshipData:
     # PPT uses hymn intro slides only; lyrics come from separate hymn PPTs
     include_hymn_lyrics: bool = False
 
+    def iter_prep_hymns(self) -> List[HymnEntry]:
+        return [getattr(self, f"prep_hymn_{i}") for i in range(1, PREP_HYMN_COUNT + 1)]
+
     def iter_hymns(self) -> List[HymnEntry]:
         return [
-            self.prep_hymn_1,
-            self.prep_hymn_2,
+            *self.iter_prep_hymns(),
             self.praise_hymn,
             self.hymn,
             self.offering_hymn,

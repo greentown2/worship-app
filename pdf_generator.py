@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-_PDF_VERSION = "2026-08-26-cover-half-down-v21"
+_PDF_VERSION = "2026-08-31-prep-hymns-5"
 
 from io import BytesIO
 from pathlib import Path
@@ -617,7 +617,7 @@ def _styles() -> dict[str, ParagraphStyle]:
 
 def _order_items(data: WorshipData) -> List[Tuple[str, str, str]]:
     return [
-        ("1", "예배 준비의 시간", _hymn_pair_line(data.prep_hymn_1, data.prep_hymn_2)),
+        ("1", "예배 준비의 시간", _hymn_pair_line(*data.iter_prep_hymns())),
         ("2", "찬양과 기도", _hymn_line(data.praise_hymn)),
         ("3", "사도신경", ""),
         ("4", "교독문", _clean(data.responsive_reading_title)),

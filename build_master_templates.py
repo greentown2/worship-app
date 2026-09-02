@@ -700,9 +700,15 @@ def build_master_pptx(path: Path) -> Path:
         space_after=4,
     )
 
-    # ── 1. Preparation praise — two hymn intros ──
-    _hymn_intro_slide(prs, "1. 예배 준비의 시간", "{{HYMN_PREP_1}}", token_name="HYMN_PREP_1", motif="announce")
-    _hymn_intro_slide(prs, "1. 예배 준비의 시간", "{{HYMN_PREP_2}}", token_name="HYMN_PREP_2", motif="announce")
+    # ── 1. Preparation praise — up to five hymn intros ──
+    for i in range(1, 6):
+        _hymn_intro_slide(
+            prs,
+            "1. 예배 준비의 시간",
+            f"{{{{HYMN_PREP_{i}}}}}",
+            token_name=f"HYMN_PREP_{i}",
+            motif="announce",
+        )
 
     # ── 2. Praise — intro only (lyrics from separate hymn PPT) ──
     _hymn_intro_slide(prs, "2. 찬양과 기도", "{{HYMN_1}}", token_name="HYMN_1", motif="announce")

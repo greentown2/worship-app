@@ -21,7 +21,7 @@ from template_tokens import _creed_pages, _hymn_pages, _responsive_pages, _text_
 ROOT = Path(__file__).resolve().parent
 TEMPLATE_PATH = ROOT / "worship_presentation.html"
 
-_HTML_VERSION = "2026-08-29-type-match-v29"
+_HTML_VERSION = "2026-09-02-gospel-lyrics"
 
 
 def _esc(text: str) -> str:
@@ -45,7 +45,7 @@ def _hymn_label(h: HymnEntry) -> str:
 
 
 def _hymn_has(h: HymnEntry) -> bool:
-    return bool((h.number or "").strip() or (h.title or "").strip())
+    return bool((h.number or "").strip() or (h.title or "").strip() or (h.lyrics or []))
 
 
 def _scripture_ref_clean(ref: str) -> str:
@@ -125,8 +125,25 @@ def _append_hymn_lyric_slides(
     )
 
     raw_lyrics = list(hymn.lyrics or [])
-    num = parse_hymn_number(hymn.number or "") or parse_hymn_number(label)
+    num = parse_hymn_number(hymn.number or "")
     if num:
+        hit = resolve_hymn_lyrics(str(num), hymn.title or "", allow_remote=allow_remote)
+        options: list[list[str]] = []
+        if raw_lyrics and is_usable_lyrics(raw_lyrics):
+            options.append(raw_lyrics)
+        if hit and hit.lyrics and is_usable_lyrics(hit.lyrics):
+            options.append(list(hit.lyrics))
+            if hit.title and (not label or label == "—" or str(num) in label):
+                label = f"{hit.number}장  ·  {hit.title}"
+        if options:
+            raw_lyrics = max(
+                options,
+                key=lambda lines: (
+                    0 if _looks_like_incomplete_stub(lines) else 1,
+                    _lyrics_richness(lines),
+                    len([ln for ln in lines if str(ln).strip()]),
+                ),
+            )
         hit = resolve_hymn_lyrics(str(num), hymn.title or "", allow_remote=allow_remote)
         options: list[list[str]] = []
         if raw_lyrics and is_usable_lyrics(raw_lyrics):
@@ -154,6 +171,8 @@ def _append_hymn_lyric_slides(
         and "가사를 직접 입력" not in p
     ]
     if not pages:
+        if not num:
+            return
         slides.append(
             {
                 "type": "lyric",
@@ -261,7 +280,7 @@ def build_presentation_slides(data: WorshipData, *, allow_remote: bool = True) -
         else ""
     )
     service_title = (data.service_title or "주일 예배").strip()
-    prep = hymn_pair_label(data.prep_hymn_1, data.prep_hymn_2) or "—"
+    prep = hymn_pair_label(*data.iter_prep_hymns()) or "—"
     praise = _hymn_label(data.praise_hymn)
     hymn = _hymn_label(data.hymn)
     offering = _hymn_label(data.offering_hymn)
@@ -317,8 +336,8 @@ def build_presentation_slides(data: WorshipData, *, allow_remote: bool = True) -
         }
     )
 
-    # 1. 예배 준비의 시간 — two hymns, intro + lyrics each
-    prep_hymns = [h for h in (data.prep_hymn_1, data.prep_hymn_2) if _hymn_has(h)]
+    # 1. 예배 준비의 시간 — up to 5 hymns, intro + lyrics each
+    prep_hymns = [h for h in data.iter_prep_hymns() if _hymn_has(h)]
     if prep_hymns:
         for h in prep_hymns:
             label = _hymn_label(h)
@@ -487,22 +506,34 @@ def build_form_prefetch(data: WorshipData) -> dict:
         n = parse_hymn_number(h.number or "")
         return str(n) if n else ""
 
+    def _lyrics(h: HymnEntry) -> str:
+        if parse_hymn_number(h.number or ""):
+            return ""
+        return "\n".join(str(ln) for ln in (h.lyrics or []) if str(ln).strip() or ln == "")
+
     resp_n = parse_responsive_number(data.responsive_reading_title or "")
     return {
         "churchName": data.church_name_en or data.church_name_ko or "",
         "churchNameKo": data.church_name_ko or "플러톤 빌라 교회",
         "churchNameEn": data.church_name_en or "",
         "worshipDate": "  ·  ".join(x for x in [data.date, data.service_time] if x),
-        "prepHymn1Num": _num(data.prep_hymn_1),
-        "prepHymn1Title": _hymn_label(data.prep_hymn_1) if _hymn_has(data.prep_hymn_1) else "",
-        "prepHymn2Num": _num(data.prep_hymn_2),
-        "prepHymn2Title": _hymn_label(data.prep_hymn_2) if _hymn_has(data.prep_hymn_2) else "",
+        **{
+            k: v
+            for i, h in enumerate(data.iter_prep_hymns(), start=1)
+            for k, v in (
+                (f"prepHymn{i}Num", _num(h)),
+                (f"prepHymn{i}Title", (h.title or "").strip() if not _num(h) else (_hymn_label(h) if _hymn_has(h) else "")),
+                (f"prepHymn{i}Lyrics", _lyrics(h)),
+            )
+        },
         "hymn1Num": _num(data.praise_hymn),
         "hymn1Title": _hymn_label(data.praise_hymn),
+        "hymn1Lyrics": _lyrics(data.praise_hymn),
         "responsiveNum": str(resp_n) if resp_n else "",
         "responsiveTitle": data.responsive_reading_title or "",
         "hymn2Num": _num(data.hymn),
         "hymn2Title": _hymn_label(data.hymn),
+        "hymn2Lyrics": _lyrics(data.hymn),
         "bibleRef": _scripture_ref_clean(data.scripture_reference or ""),
         "bibleText": normalize_breaks(data.scripture_text or ""),
         "memoryVerseRef": _scripture_ref_clean(getattr(data, "memory_verse_reference", "") or ""),
@@ -510,6 +541,7 @@ def build_form_prefetch(data: WorshipData) -> dict:
         "sermonTitle": data.sermon_title or "",
         "hymn4Num": _num(data.offering_hymn),
         "hymn4Title": _hymn_label(data.offering_hymn),
+        "hymn4Lyrics": _lyrics(data.offering_hymn),
         "worshipLeader": data.worship_leader or "",
         "serviceTitle": data.service_title or "주일 예배",
         "apostlesCreed": normalize_breaks(data.apostles_creed or ""),
@@ -545,8 +577,7 @@ def generate_worship_html(
         warmed = warm_hymn_numbers(nums, allow_remote=bool(allow_remote))
         # Push warmed lyrics onto slots so slides never see stubs
         for slot_name in (
-            "prep_hymn_1",
-            "prep_hymn_2",
+            *[f"prep_hymn_{i}" for i in range(1, 6)],
             "praise_hymn",
             "hymn",
             "offering_hymn",

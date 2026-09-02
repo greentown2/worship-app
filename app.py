@@ -82,7 +82,7 @@ from defaults import (
     DEFAULT_SERVICE_TITLE,
     DEFAULT_WORSHIP_PRAYER,
 )
-from models import HymnEntry, WorshipData
+from models import PREP_HYMN_COUNT, HymnEntry, WorshipData
 from hymn_lookup import lookup_hymn, parse_hymn_number
 from html_presentation import generate_worship_html
 import html_share
@@ -192,10 +192,11 @@ def _init_state():
         "service_time": DEFAULT_SERVICE_TIME,
         "preacher": "",
         "worship_leader": DEFAULT_WORSHIP_LEADER,
-        "prep_hymn_1_num": "",
-        "prep_hymn_1_title": "",
-        "prep_hymn_2_num": "",
-        "prep_hymn_2_title": "",
+        **{
+            k: ""
+            for i in range(1, PREP_HYMN_COUNT + 1)
+            for k in (f"prep_hymn_{i}_num", f"prep_hymn_{i}_title")
+        },
         "praise_num": "7",
         "praise_title": "",
         "apostles_creed": DEFAULT_APOSTLES_CREED,
@@ -273,10 +274,14 @@ def _init_state():
 
     # Apply pending widget values BEFORE any widgets are created
     pending = {
-        "_p_prep_hymn_1_num": "prep_hymn_1_num",
-        "_p_prep_hymn_1_title": "prep_hymn_1_title",
-        "_p_prep_hymn_2_num": "prep_hymn_2_num",
-        "_p_prep_hymn_2_title": "prep_hymn_2_title",
+        **{
+            f"_p_prep_hymn_{i}_num": f"prep_hymn_{i}_num"
+            for i in range(1, PREP_HYMN_COUNT + 1)
+        },
+        **{
+            f"_p_prep_hymn_{i}_title": f"prep_hymn_{i}_title"
+            for i in range(1, PREP_HYMN_COUNT + 1)
+        },
         "_p_praise_num": "praise_num",
         "_p_praise_title": "praise_title",
         "_p_hymn_num": "hymn_num",
@@ -314,8 +319,7 @@ def _init_state():
             st.session_state[key] = value
             # Seed hymn lyric caches + titles via local lookup
             if key in (
-                "prep_hymn_1_num",
-                "prep_hymn_2_num",
+                *[f"prep_hymn_{i}_num" for i in range(1, PREP_HYMN_COUNT + 1)],
                 "praise_num",
                 "hymn_num",
                 "offering_num",
@@ -415,6 +419,19 @@ def _hymn_from_keys(num_key: str, title_key: str, *, allow_remote: bool) -> Hymn
     )
     cached = normalize_line_list(st.session_state.get(f"lyrics_cache_{num_key}") or [])
     seed = text_lyrics or cached
+    if not parse_hymn_number(num):
+        # Pasted lyrics only — do not reuse a previous 찬송가 cache
+        entry = HymnEntry(
+            number="",
+            title=title,
+            lyrics=list(text_lyrics),
+            include_lyrics=bool(title or text_lyrics),
+        )
+        if text_lyrics:
+            st.session_state[f"lyrics_cache_{num_key}"] = list(text_lyrics)
+        else:
+            st.session_state.pop(f"lyrics_cache_{num_key}", None)
+        return entry
     if not (num or title):
         return HymnEntry(lyrics=list(seed), include_lyrics=bool(seed))
     # When a number is present, resolve title from the catalog (not a stale title)
@@ -450,8 +467,6 @@ def _hymn_from_keys(num_key: str, title_key: str, *, allow_remote: bool) -> Hymn
         entry = HymnEntry(number=num, title=title, lyrics=list(seed), include_lyrics=True)
     if entry.lyrics:
         st.session_state[f"lyrics_cache_{num_key}"] = entry.lyrics
-        if not (st.session_state.get(f"lyrics_text_{num_key}") or "").strip():
-            st.session_state[f"lyrics_text_{num_key}"] = "\n".join(entry.lyrics)
     elif seed:
         entry.lyrics = list(seed)
     return entry
@@ -533,8 +548,12 @@ def _build_worship_data(service_date, *, allow_remote: bool, force_lyrics: bool 
         service_time=(st.session_state.get("service_time") or DEFAULT_SERVICE_TIME).strip(),
         preacher=(st.session_state.get("preacher") or "").strip(),
         worship_leader=(st.session_state.get("worship_leader") or DEFAULT_WORSHIP_LEADER).strip(),
-        prep_hymn_1=_hymn_from_keys("prep_hymn_1_num", "prep_hymn_1_title", allow_remote=allow_remote),
-        prep_hymn_2=_hymn_from_keys("prep_hymn_2_num", "prep_hymn_2_title", allow_remote=allow_remote),
+        **{
+            f"prep_hymn_{i}": _hymn_from_keys(
+                f"prep_hymn_{i}_num", f"prep_hymn_{i}_title", allow_remote=allow_remote
+            )
+            for i in range(1, PREP_HYMN_COUNT + 1)
+        },
         praise_hymn=_hymn_from_keys("praise_num", "praise_title", allow_remote=allow_remote),
         apostles_creed=(st.session_state.get("apostles_creed") or "").strip(),
         responsive_reading_title=resp_title or resp_num,
@@ -793,15 +812,29 @@ def _hymn_inputs(label: str, num_key: str, title_key: str, fetch_key: str, allow
             args=(num_key, title_key),
         )
     with c2:
-        st.text_input("제목", key=title_key, placeholder="번호 입력 시 자동")
+        st.text_input("제목", key=title_key, placeholder="번호 입력 시 자동 · 복음성가는 직접 입력")
+    lyrics_key = f"lyrics_text_{num_key}"
+    if lyrics_key not in st.session_state:
+        st.session_state[lyrics_key] = ""
+    has_custom = bool((st.session_state.get(lyrics_key) or "").strip()) and not parse_hymn_number(
+        st.session_state.get(num_key) or ""
+    )
+    with st.expander("가사 붙여넣기 (복음성가)", expanded=has_custom):
+        st.text_area(
+            "가사",
+            key=lyrics_key,
+            height=110,
+            placeholder="장번호가 있으면 자동입니다.\n복음성가는 번호를 비우고 여기에 가사를 붙여 넣으세요.",
+            label_visibility="collapsed",
+        )
     resolved = st.session_state.get(f"resolved_hymn_{num_key}")
     h = _hymn_from_keys(num_key, title_key, allow_remote=False)
-    if resolved and resolved.get("number") and resolved.get("source") != "missing":
+    if parse_hymn_number(st.session_state.get(num_key) or "") and resolved and resolved.get("source") != "missing":
         st.caption(f"자동 제목: **{hymn_label(h) or resolved.get('title')}**")
-    elif h.number or h.title:
-        st.caption(f"연동: **{hymn_label(h) or '—'}**")
+    elif h.title or h.lyrics:
+        st.caption(f"표시: **{hymn_label(h) or h.title}**")
     else:
-        st.caption("장번호를 입력하면 제목이 자동으로 채워집니다. (21세기 새찬송가)")
+        st.caption("찬송가는 장번호만 넣으면 됩니다. 복음성가는 번호를 비우고 제목과 가사를 넣으세요.")
 
 
 def main():
@@ -810,8 +843,7 @@ def main():
     # First load: fill titles/bodies from default numbers without waiting for Enter
     if not st.session_state.get("_bootstrapped_lookups"):
         for nk, tk in (
-            ("prep_hymn_1_num", "prep_hymn_1_title"),
-            ("prep_hymn_2_num", "prep_hymn_2_title"),
+            *[(f"prep_hymn_{i}_num", f"prep_hymn_{i}_title") for i in range(1, PREP_HYMN_COUNT + 1)],
             ("praise_num", "praise_title"),
             ("hymn_num", "hymn_title"),
             ("offering_num", "offering_title"),
@@ -918,7 +950,7 @@ def main():
     paste_text = st.text_area(
         "또는 주보/예배 순서 텍스트를 붙여넣기 (페이지는 빈 줄 3개 또는 --- Page N --- 로 구분)",
         height=110,
-        placeholder="예:\n1. 예배 준비의 시간  9장  20장\n2. 찬양과 기도  7장\n…\n\n\n--- Page 2 ---\n오늘의 말씀 히브리서 4:1-11\n…",
+        placeholder="예:\n1. 예배 준비의 시간  9장  20장  30장  40장  50장\n2. 찬양과 기도  7장\n…\n\n\n--- Page 2 ---\n오늘의 말씀 히브리서 4:1-11\n…",
         key="bulletin_paste",
     )
 
@@ -1057,8 +1089,14 @@ def main():
     )
     st.subheader("예배 순서 입력 (1–11)")
 
-    _hymn_inputs("1. 예배 준비의 시간 · 1곡", "prep_hymn_1_num", "prep_hymn_1_title", "fetch_prep_1", allow_remote)
-    _hymn_inputs("1. 예배 준비의 시간 · 2곡", "prep_hymn_2_num", "prep_hymn_2_title", "fetch_prep_2", allow_remote)
+    for i in range(1, PREP_HYMN_COUNT + 1):
+        _hymn_inputs(
+            f"1. 예배 준비의 시간 · {i}곡",
+            f"prep_hymn_{i}_num",
+            f"prep_hymn_{i}_title",
+            f"fetch_prep_{i}",
+            allow_remote,
+        )
 
     _hymn_inputs("2. 찬양과 기도 (Praise & Prayer)", "praise_num", "praise_title", "fetch_praise", allow_remote)
 
@@ -1251,7 +1289,7 @@ def main():
     # PPT is built from the same slide list as HTML (includes hymn lyric pages)
     data.include_hymn_lyrics = True
 
-    # this_week PPT files are merged into the master at HYMN_PREP_1/2 + HYMN_1/2/3 after generation
+    # this_week PPT files are merged into the master at HYMN_PREP_1..5 + HYMN_1/2/3 after generation
     try:
         _week_fp = "|".join(
             f"{p.name}:{p.stat().st_mtime_ns}:{p.stat().st_size}"
@@ -1266,9 +1304,9 @@ def main():
         f"{data.scripture_reference}|{(data.scripture_text or '')[:120]}|"
         f"{data.memory_verse_reference}|{(data.memory_verse_text or '')[:80]}|"
         f"{data.responsive_reading_title}|{(data.responsive_reading or '')[:80]}|"
-        f"{data.preacher}|{(data.announcements or '')[:80]}|{data.prep_hymn_1.number}|"
-        f"{data.prep_hymn_2.number}|{data.praise_hymn.number}|"
-        f"{data.hymn.number}|{data.offering_hymn.number}|{data.benediction}|{data.date}|"
+        f"{data.preacher}|{(data.announcements or '')[:80]}|"
+        f"{'|'.join((h.number or '') + ':' + (h.title or '')[:24] + ':' + ''.join(h.lyrics or [])[:40] for h in data.iter_hymns())}|"
+        f"{data.benediction}|{data.date}|"
         f"{(data.apostles_creed or '')[:40]}|{data.include_hymn_lyrics}|week:{_week_fp}"
     )
 
@@ -1639,7 +1677,7 @@ def main():
         st.caption(
             "그 주에 쓸 찬송 PPT만 골라 **순서**로 모아 둡니다. "
             "예배 마스터 PPT 생성 시 **손대지 않고 그대로** 삽입됩니다 "
-            "(1번째→찬양/기도, 2번째→찬송가, 3번째→감사/봉헌). "
+            "(1~5번째→예배 준비 1~5곡, 6번째→찬양/기도, 7번째→찬송가, 8번째→감사/봉헌). "
             f"폴더: `{ppt_library.THIS_WEEK_DIR.relative_to(Path(__file__).resolve().parent)}`"
         )
         week_uploads = st.file_uploader(

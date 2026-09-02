@@ -167,6 +167,12 @@ class ParsedBulletin:
     prep_hymn_1_title: str = ""
     prep_hymn_2_num: str = ""
     prep_hymn_2_title: str = ""
+    prep_hymn_3_num: str = ""
+    prep_hymn_3_title: str = ""
+    prep_hymn_4_num: str = ""
+    prep_hymn_4_title: str = ""
+    prep_hymn_5_num: str = ""
+    prep_hymn_5_title: str = ""
     praise_num: str = ""
     praise_title: str = ""
     responsive_num: str = ""
@@ -325,7 +331,7 @@ def _first_hymn(text: str) -> tuple[str, str]:
     return f"{num}장", title
 
 
-def _hymns_from_text(text: str, limit: int = 2) -> list[tuple[str, str]]:
+def _hymns_from_text(text: str, limit: int = 5) -> list[tuple[str, str]]:
     """Collect unique hymn numbers from a block (skips scripture 'N장 M절')."""
     text_wo_scripture = _SCRIPTURE_RE.sub(" ", text or "")
     seen: set[str] = set()
@@ -457,16 +463,30 @@ def parse_bulletin_text(text: str, *, method: str = "") -> ParsedBulletin:
         combo = f"{head}\n{body}"
 
         if kind == "prep" and not hymn_slots_used["prep"]:
-            found = _hymns_from_text(combo, limit=2)
+            found = _hymns_from_text(combo, limit=5)
             if found:
                 result.prep_hymn_1_num, result.prep_hymn_1_title = found[0]
             if len(found) > 1:
                 result.prep_hymn_2_num, result.prep_hymn_2_title = found[1]
+            if len(found) > 2:
+                result.prep_hymn_3_num, result.prep_hymn_3_title = found[2]
+            if len(found) > 3:
+                result.prep_hymn_4_num, result.prep_hymn_4_title = found[3]
+            if len(found) > 4:
+                result.prep_hymn_5_num, result.prep_hymn_5_title = found[4]
             hymn_slots_used["prep"] = True
-            result.notes.append(
-                f"1. 예배 준비의 시간 ← {result.prep_hymn_1_num} {result.prep_hymn_1_title}"
-                f" / {result.prep_hymn_2_num} {result.prep_hymn_2_title}".strip()
+            prep_note = " / ".join(
+                f"{n} {t}".strip()
+                for n, t in (
+                    (result.prep_hymn_1_num, result.prep_hymn_1_title),
+                    (result.prep_hymn_2_num, result.prep_hymn_2_title),
+                    (result.prep_hymn_3_num, result.prep_hymn_3_title),
+                    (result.prep_hymn_4_num, result.prep_hymn_4_title),
+                    (result.prep_hymn_5_num, result.prep_hymn_5_title),
+                )
+                if n or t
             )
+            result.notes.append(f"1. 예배 준비의 시간 ← {prep_note}".strip())
         elif kind == "praise" and not hymn_slots_used["praise"]:
             num, title = _first_hymn(combo)
             result.praise_num, result.praise_title = num, title
@@ -576,6 +596,9 @@ def _enrich_parsed_lookups(result: ParsedBulletin) -> None:
     for num_attr, title_attr in (
         ("prep_hymn_1_num", "prep_hymn_1_title"),
         ("prep_hymn_2_num", "prep_hymn_2_title"),
+        ("prep_hymn_3_num", "prep_hymn_3_title"),
+        ("prep_hymn_4_num", "prep_hymn_4_title"),
+        ("prep_hymn_5_num", "prep_hymn_5_title"),
         ("praise_num", "praise_title"),
         ("hymn_num", "hymn_title"),
         ("offering_num", "offering_title"),
@@ -650,6 +673,12 @@ def result_to_session_updates(p: ParsedBulletin) -> dict[str, str]:
         "prep_hymn_1_title": p.prep_hymn_1_title,
         "prep_hymn_2_num": p.prep_hymn_2_num,
         "prep_hymn_2_title": p.prep_hymn_2_title,
+        "prep_hymn_3_num": p.prep_hymn_3_num,
+        "prep_hymn_3_title": p.prep_hymn_3_title,
+        "prep_hymn_4_num": p.prep_hymn_4_num,
+        "prep_hymn_4_title": p.prep_hymn_4_title,
+        "prep_hymn_5_num": p.prep_hymn_5_num,
+        "prep_hymn_5_title": p.prep_hymn_5_title,
         "praise_num": p.praise_num,
         "praise_title": p.praise_title,
         "responsive_num": p.responsive_num,
@@ -907,6 +936,12 @@ def _merge_parsed(base: ParsedBulletin, extra: ParsedBulletin, *, role: str) -> 
         "prep_hymn_1_title",
         "prep_hymn_2_num",
         "prep_hymn_2_title",
+        "prep_hymn_3_num",
+        "prep_hymn_3_title",
+        "prep_hymn_4_num",
+        "prep_hymn_4_title",
+        "prep_hymn_5_num",
+        "prep_hymn_5_title",
         "praise_num",
         "praise_title",
         "responsive_num",

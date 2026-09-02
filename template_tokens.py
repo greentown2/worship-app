@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from text_normalize import normalize_breaks, normalize_line_list
 from data_enrich import enrich_hymn, enrich_worship_data, hymn_label
 from hymn_lookup import lookup_hymn, parse_hymn_number
-from models import HymnEntry, WorshipData
+from models import PREP_HYMN_COUNT, HymnEntry, WorshipData
 
 
 def _scripture_ref_for_projection(ref: str) -> str:
@@ -59,14 +59,12 @@ def resolve_hymn_entry(h: HymnEntry, *, allow_remote: bool = True) -> ResolvedHy
     enriched = enrich_hymn(h, allow_remote=allow_remote)
     raw_num = (enriched.number or h.number or "").strip()
     raw_title = (enriched.title or h.title or "").strip()
-    num = parse_hymn_number(raw_num) or parse_hymn_number(raw_title) or 0
+    num = parse_hymn_number(raw_num) or 0
 
     # Always re-query by number so {{HYMN_n}} gets catalog data, not empty stubs
     hit = None
     if num:
         hit = lookup_hymn(str(num), raw_title, allow_remote=allow_remote)
-    elif raw_title:
-        hit = lookup_hymn(raw_title, raw_title, allow_remote=allow_remote)
 
     if hit and hit.number:
         num = hit.number
@@ -228,7 +226,8 @@ def _order_block(data: WorshipData, hymns: dict[str, ResolvedHymn]) -> str:
 
     prep_detail = "  /  ".join(
         p
-        for p in (hymns["PREP_1"].label, hymns["PREP_2"].label)
+        for slot in (f"PREP_{i}" for i in range(1, PREP_HYMN_COUNT + 1))
+        for p in (hymns[slot].label,)
         if (p or "").strip() and p != "—"
     )
     return "\n".join(
@@ -267,8 +266,10 @@ def build_token_map(data: WorshipData, *, allow_remote: bool = True) -> dict[str
     data = enrich_worship_data(data, allow_remote=allow_remote, force_hymn_lyrics=True)
 
     hymns = {
-        "PREP_1": resolve_hymn_entry(data.prep_hymn_1, allow_remote=allow_remote),
-        "PREP_2": resolve_hymn_entry(data.prep_hymn_2, allow_remote=allow_remote),
+        **{
+            f"PREP_{i}": resolve_hymn_entry(h, allow_remote=allow_remote)
+            for i, h in enumerate(data.iter_prep_hymns(), start=1)
+        },
         "1": resolve_hymn_entry(data.praise_hymn, allow_remote=allow_remote),
         "2": resolve_hymn_entry(data.hymn, allow_remote=allow_remote),
         # Slot 3 = offering (response hymn removed from order)
@@ -284,8 +285,8 @@ def build_token_map(data: WorshipData, *, allow_remote: bool = True) -> dict[str
             include_lyrics=True,
         )
 
-    data.prep_hymn_1 = _to_entry(hymns["PREP_1"])
-    data.prep_hymn_2 = _to_entry(hymns["PREP_2"])
+    for i in range(1, PREP_HYMN_COUNT + 1):
+        setattr(data, f"prep_hymn_{i}", _to_entry(hymns[f"PREP_{i}"]))
     data.praise_hymn = _to_entry(hymns["1"])
     data.hymn = _to_entry(hymns["2"])
     data.offering_hymn = _to_entry(hymns["3"])

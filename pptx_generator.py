@@ -923,6 +923,9 @@ def _scrub_soft_breaks_in_prs(prs: Presentation) -> int:
 _PAGED_SERIES = (
     ("HYMN_PREP_1_LYRICS", "HYMN_PREP_1_LYRICS_FULL"),
     ("HYMN_PREP_2_LYRICS", "HYMN_PREP_2_LYRICS_FULL"),
+    ("HYMN_PREP_3_LYRICS", "HYMN_PREP_3_LYRICS_FULL"),
+    ("HYMN_PREP_4_LYRICS", "HYMN_PREP_4_LYRICS_FULL"),
+    ("HYMN_PREP_5_LYRICS", "HYMN_PREP_5_LYRICS_FULL"),
     ("HYMN_1_LYRICS", "HYMN_1_LYRICS_FULL"),
     ("HYMN_2_LYRICS", "HYMN_2_LYRICS_FULL"),
     ("HYMN_3_LYRICS", "HYMN_3_LYRICS_FULL"),
@@ -935,6 +938,9 @@ _PAGED_SERIES = (
 _SERIES_META = {
     "HYMN_PREP_1_LYRICS": ("1. 예배 준비의 시간", "HYMN_PREP_1", True),
     "HYMN_PREP_2_LYRICS": ("1. 예배 준비의 시간", "HYMN_PREP_2", True),
+    "HYMN_PREP_3_LYRICS": ("1. 예배 준비의 시간", "HYMN_PREP_3", True),
+    "HYMN_PREP_4_LYRICS": ("1. 예배 준비의 시간", "HYMN_PREP_4", True),
+    "HYMN_PREP_5_LYRICS": ("1. 예배 준비의 시간", "HYMN_PREP_5", True),
     "HYMN_1_LYRICS": ("2. 찬양과 기도", "HYMN_1", True),
     "HYMN_2_LYRICS": ("5. 찬송가", "HYMN_2", True),
     "HYMN_3_LYRICS": ("9. 감사와 봉헌", "HYMN_3", True),
@@ -1390,12 +1396,21 @@ def pptx_slide_previews(pptx: MasterSource, *, max_chars: int = 420) -> list[str
     return slides
 
 
-# Hymn intro tokens in master order → this_week PPT index 0..4
-_HYMN_SLOT_TOKENS = ("HYMN_PREP_1", "HYMN_PREP_2", "HYMN_1", "HYMN_2", "HYMN_3")
+# Hymn intro tokens in master order → this_week PPT index 0..7
+_HYMN_SLOT_TOKENS = (
+    "HYMN_PREP_1",
+    "HYMN_PREP_2",
+    "HYMN_PREP_3",
+    "HYMN_PREP_4",
+    "HYMN_PREP_5",
+    "HYMN_1",
+    "HYMN_2",
+    "HYMN_3",
+)
 
 
 def _this_week_hymn_paths() -> list[Path]:
-    """Ordered list of this-week PPT files (up to 5 hymn slots)."""
+    """Ordered list of this-week PPT files (up to 8 hymn slots)."""
     try:
         import ppt_library
 
@@ -1406,10 +1421,10 @@ def _this_week_hymn_paths() -> list[Path]:
 
 def insert_this_week_hymn_decks(prs: Presentation, paths: list[Path] | None = None) -> list[str]:
     """
-    After each hymn intro (HYMN_PREP_1 / HYMN_PREP_2 / HYMN_1 / HYMN_2 / HYMN_3),
+    After each hymn intro (HYMN_PREP_1..5 / HYMN_1 / HYMN_2 / HYMN_3),
     insert that week's matching hymn PPT slides as-is (score images included).
 
-    Mapping: this_week order 1→준비1, 2→준비2, 3→찬양, 4→찬송, 5→봉헌.
+    Mapping: this_week order 1–5→준비1–5, 6→찬양, 7→찬송, 8→봉헌.
     Returns human-readable notes for the UI.
     """
     import pptx_slide_copy as psc

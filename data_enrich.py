@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 
-from hymn_lookup import _lyrics_richness, is_usable_lyrics, lookup_hymn
+from hymn_lookup import _lyrics_richness, is_usable_lyrics, lookup_hymn, parse_hymn_number
 from models import HymnEntry, WorshipData
 from responsive_lookup import format_responsive_label, lookup_responsive, parse_responsive_number
 from scripture_lookup import (
@@ -26,9 +26,19 @@ def enrich_hymn(h: HymnEntry, *, allow_remote: bool = True) -> HymnEntry:
     if not (number or title):
         return h
 
+    # Gospel / custom songs: title + pasted lyrics, no hymnal number — do not
+    # match a 찬송가 by title and overwrite what the user typed.
+    has_num = bool(parse_hymn_number(number))
+    if not has_num:
+        return HymnEntry(
+            number="",
+            title=title,
+            lyrics=lyrics,
+            include_lyrics=True if (title or lyrics) else h.include_lyrics,
+        )
+
     # Always re-query so short local stubs are replaced by full lyrics.
     # When a number is present, take the catalog title (do not keep a previous hymn's title).
-    has_num = bool(re.search(r"\d", number or ""))
     result = lookup_hymn(
         number or title,
         "" if has_num else title,
@@ -67,8 +77,8 @@ def enrich_worship_data(
     allow_remote: bool = True,
     force_hymn_lyrics: bool = True,
 ) -> WorshipData:
-    data.prep_hymn_1 = enrich_hymn(data.prep_hymn_1, allow_remote=allow_remote)
-    data.prep_hymn_2 = enrich_hymn(data.prep_hymn_2, allow_remote=allow_remote)
+    for i, hymn in enumerate(data.iter_prep_hymns(), start=1):
+        setattr(data, f"prep_hymn_{i}", enrich_hymn(hymn, allow_remote=allow_remote))
     data.praise_hymn = enrich_hymn(data.praise_hymn, allow_remote=allow_remote)
     data.hymn = enrich_hymn(data.hymn, allow_remote=allow_remote)
     data.response_hymn = enrich_hymn(data.response_hymn, allow_remote=allow_remote)
