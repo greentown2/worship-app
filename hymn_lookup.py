@@ -78,12 +78,14 @@ def _load_lyrics() -> dict[str, dict]:
         return json.load(f)
 
 
+@lru_cache(maxsize=1)
 def _load_runtime_cache() -> dict[str, dict]:
     if not HYMN_CACHE_PATH.exists():
         return {}
     try:
         with HYMN_CACHE_PATH.open(encoding="utf-8") as f:
-            return json.load(f)
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
     except (OSError, json.JSONDecodeError):
         return {}
 
@@ -95,12 +97,17 @@ def _save_runtime_cache(number: int, title: str, lyrics: list[str]) -> None:
     if _looks_like_incomplete_stub(lyrics):
         return
     with _CACHE_LOCK:
-        cache = _load_runtime_cache()
-        cache[str(number)] = {"title": title, "lyrics": list(lyrics)}
+        cache = dict(_load_runtime_cache())
+        new_entry = {"title": title, "lyrics": list(lyrics)}
+        prev = cache.get(str(number))
+        if prev == new_entry:
+            return
+        cache[str(number)] = new_entry
         try:
             DATA_DIR.mkdir(parents=True, exist_ok=True)
             with HYMN_CACHE_PATH.open("w", encoding="utf-8") as f:
                 json.dump(cache, f, ensure_ascii=False, indent=2)
+            _load_runtime_cache.cache_clear()
         except OSError:
             pass
 
@@ -314,12 +321,17 @@ def _looks_like_incomplete_stub(lyrics: list[str]) -> bool:
     blob = "\n".join(lines)
     hangul = len(re.findall(r"[가-힣]", blob))
     verses = len(re.findall(r"(?m)^\s*\d+\s*[\.．、)]\s*", blob))
-    # Short doxologies (no verse numbers) are complete
-    if verses == 0 and len(lines) >= 4 and hangul >= 25:
+    last = lines[-1] if lines else ""
+    amen = bool(_AMEN_TAIL_RE.search(last))
+    # Compact amen-doxologies (e.g. 1장) are complete
+    if verses == 0 and 4 <= len(lines) <= 5 and amen:
         return False
     if hangul < 30:
         return True
     if len(lines) <= 3 and hangul < 90:
+        return True
+    # Unnumbered 4–6 lines without 아멘 — verse 1 of a longer hymn (e.g. 8장)
+    if verses == 0 and 4 <= len(lines) <= 6 and not amen:
         return True
     # Numbered verse groups that are almost empty (e.g. "1. 이 몸의" alone)
     for group in _split_verse_groups(list(lyrics or [])):
@@ -354,12 +366,14 @@ def _should_try_remote(lyrics: list[str] | None) -> bool:
     # Numbered but clearly first-verse-only
     if verses == 1 and hangul < 120:
         return True
-    # Unnumbered short body — often verse1+chorus of a longer hymn (e.g. 288장)
-    # Keep true short doxologies (very little text) offline-stable
-    if verses == 0 and len(lines) >= 6 and hangul < 160:
+    last = lines[-1] if lines else ""
+    amen = bool(_AMEN_TAIL_RE.search(last))
+    # Unnumbered 4–6 lines without 아멘 — often verse 1 of a longer hymn (e.g. 8장)
+    if verses == 0 and 4 <= len(lines) <= 6 and hangul >= 48 and not amen:
         return True
-    if verses == 0 and 3 <= len(lines) <= 5 and hangul < 55:
-        return False
+    # Longer unnumbered body that still looks truncated (no doxology close)
+    if verses == 0 and len(lines) >= 7 and hangul < 160 and not amen:
+        return True
     return False
 
 
@@ -415,7 +429,7 @@ def _fetch_remote_lyrics_once(number: int) -> Optional[list[str]]:
         },
     )
     try:
-        with urlopen(req, timeout=15) as resp:
+        with urlopen(req, timeout=6) as resp:
             raw_html = resp.read().decode("utf-8", errors="replace")
     except (URLError, HTTPError, TimeoutError, OSError):
         return None
@@ -522,7 +536,7 @@ def _fetch_remote_lyrics_once(number: int) -> Optional[list[str]]:
     return None
 
 
-def _fetch_remote_lyrics(number: int, *, retries: int = 3) -> Optional[list[str]]:
+def _fetch_remote_lyrics(number: int, *, retries: int = 1) -> Optional[list[str]]:
     """Best-effort fetch with retries — network flakes should not drop Sunday lyrics."""
     import time
 
@@ -662,8 +676,13 @@ def lookup_hymn(
         best = max(candidates, key=_rank)
         best.title = index_title or best.title or override or title
         best.lyrics = _finalize_lyrics(best.lyrics)
-        if best.found_lyrics and not _looks_like_error_lyrics(best.lyrics) and not _looks_like_incomplete_stub(
-            best.lyrics
+        # Persist only newly fetched remote text. Rewriting the local DB on every
+        # keystroke (OneDrive) is what made the worship-order form feel frozen.
+        if (
+            best.source == "remote"
+            and best.found_lyrics
+            and not _looks_like_error_lyrics(best.lyrics)
+            and not _looks_like_incomplete_stub(best.lyrics)
         ):
             _persist_good_lyrics(number, best.title, best.lyrics)
         return best

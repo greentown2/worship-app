@@ -21,7 +21,7 @@ from template_tokens import _creed_pages, _hymn_pages, _responsive_pages, _text_
 ROOT = Path(__file__).resolve().parent
 TEMPLATE_PATH = ROOT / "worship_presentation.html"
 
-_HTML_VERSION = "2026-09-02-gospel-lyrics"
+_HTML_VERSION = "2026-09-02-ads-type-v24"
 
 
 def _esc(text: str) -> str:
@@ -127,23 +127,6 @@ def _append_hymn_lyric_slides(
     raw_lyrics = list(hymn.lyrics or [])
     num = parse_hymn_number(hymn.number or "")
     if num:
-        hit = resolve_hymn_lyrics(str(num), hymn.title or "", allow_remote=allow_remote)
-        options: list[list[str]] = []
-        if raw_lyrics and is_usable_lyrics(raw_lyrics):
-            options.append(raw_lyrics)
-        if hit and hit.lyrics and is_usable_lyrics(hit.lyrics):
-            options.append(list(hit.lyrics))
-            if hit.title and (not label or label == "—" or str(num) in label):
-                label = f"{hit.number}장  ·  {hit.title}"
-        if options:
-            raw_lyrics = max(
-                options,
-                key=lambda lines: (
-                    0 if _looks_like_incomplete_stub(lines) else 1,
-                    _lyrics_richness(lines),
-                    len([ln for ln in lines if str(ln).strip()]),
-                ),
-            )
         hit = resolve_hymn_lyrics(str(num), hymn.title or "", allow_remote=allow_remote)
         options: list[list[str]] = []
         if raw_lyrics and is_usable_lyrics(raw_lyrics):
@@ -320,7 +303,11 @@ def build_presentation_slides(data: WorshipData, *, allow_remote: bool = True) -
     order_rows = []
     for num, title, _en in ORDER_LABELS:
         detail = (details.get(num) or "").strip()
-        label = f"{num}. {title}" + (f"  ·  {detail}" if detail and detail != "—" else "")
+        if detail in {"", "—"} or detail == title or detail.startswith(title):
+            extra = "" if detail in {"", "—", title} else detail[len(title):].lstrip(" ··")
+            label = f"{num}. {title}" + (f"  ·  {extra}" if extra else "")
+        else:
+            label = f"{num}. {title}  ·  {detail}"
         order_rows.append(f"<div>{_esc(label)}</div>")
     slides.append(
         {

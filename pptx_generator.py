@@ -27,7 +27,7 @@ from template_tokens import (
 MasterSource = Union[bytes, bytearray, BinaryIO, str, Path]
 
 # Reload marker for Streamlit — bump when injection logic changes
-_INJECT_VERSION = "2026-08-24-pptx-from-slides-v1"
+_INJECT_VERSION = "2026-09-04-pptx-html-capture-v4"
 
 _PLACEHOLDER_ONLY_RE = re.compile(r"^\s*\{\{([A-Za-z0-9_]+)\}\}\s*$")
 
@@ -1467,7 +1467,9 @@ def generate_worship_pptx(
     insert_this_week: bool = True,
 ) -> BytesIO:
     """
-    Build the Sunday worship deck from the same slide list as HTML.
+    Build the Sunday worship deck from the same slide list as HTML, then run a
+    layout refine pass (reorder, optical center, fit type) so the PPT matches
+    the HTML deck's spacing.
 
     Master token injection is retired as the primary path — it caused overlapping
     body text. Optional master / this_week args remain for API compatibility.

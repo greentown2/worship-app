@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-_PDF_VERSION = "2026-08-31-prep-hymns-5"
+_PDF_VERSION = "2026-09-02-ads-type-v24"
 
 from io import BytesIO
 from pathlib import Path
@@ -417,12 +417,12 @@ def _styles() -> dict[str, ParagraphStyle]:
         ),
         "ads_body": ParagraphStyle(
             "AdsBody",
-            fontName=FONT_BOLD,
-            fontSize=23,
-            leading=32,
+            fontName=FONT,
+            fontSize=11.5,
+            leading=16,
             textColor=INK,
-            spaceBefore=6,
-            spaceAfter=6,
+            spaceBefore=2,
+            spaceAfter=2,
             leftIndent=4,
         ),
         "service": ParagraphStyle(
@@ -750,8 +750,13 @@ def _announcement_items(text: str) -> list[str]:
 
 
 def _flow_announcements(data: WorshipData, styles: dict) -> list:
-    """Back cover: shared header + senior-readable bulleted ads."""
-    story: list = _page_header("Announcements", "소식 · 광고", styles, ornament_w=96)
+    """Back cover: title stays large; ad lines sit a step smaller underneath."""
+    story: list = [
+        _para("Announcements", styles["face_tag"]),
+        _para("소식 · 광고", styles["ads_heading"]),
+        _ornament(96),
+        Spacer(1, 2.2 * mm),
+    ]
     items = _announcement_items(data.announcements or "")
     if items:
         for item in items:

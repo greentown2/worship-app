@@ -29,40 +29,67 @@ import lookup_bundle
 import pdf_generator
 import ppt_library
 import pptx_generator
+import pptx_from_slides
+import pptx_html_capture
+import pptx_polish
 import pptx_slide_copy
 import responsive_lookup
 import scripture_lookup
 import template_tokens
 
-importlib.reload(defaults)
-importlib.reload(models)
-importlib.reload(scripture_lookup)
-importlib.reload(hymn_lookup)
-importlib.reload(responsive_lookup)
-importlib.reload(data_enrich)
-importlib.reload(bulletin_parser)
-importlib.reload(lookup_bundle)
-importlib.reload(build_master_templates)
-importlib.reload(template_tokens)
-importlib.reload(pdf_generator)
-importlib.reload(ppt_library)
-importlib.reload(pptx_slide_copy)
-importlib.reload(pptx_generator)
-importlib.reload(html_presentation)
-try:
-    scripture_lookup._load_common.cache_clear()
-except Exception:
-    pass
-try:
-    hymn_lookup._load_lyrics.cache_clear()
-    hymn_lookup._load_index.cache_clear()
-except Exception:
-    pass
-try:
-    responsive_lookup._load_readings.cache_clear()
-    responsive_lookup._load_index.cache_clear()
-except Exception:
-    pass
+# Re-execute app.py on every Streamlit rerun, but keep imported modules (and
+# their lyric caches) unless a .py file on disk actually changed.
+_CODE_MODULES = (
+    ("defaults", defaults),
+    ("models", models),
+    ("scripture_lookup", scripture_lookup),
+    ("hymn_lookup", hymn_lookup),
+    ("responsive_lookup", responsive_lookup),
+    ("data_enrich", data_enrich),
+    ("bulletin_parser", bulletin_parser),
+    ("lookup_bundle", lookup_bundle),
+    ("build_master_templates", build_master_templates),
+    ("template_tokens", template_tokens),
+    ("pdf_generator", pdf_generator),
+    ("ppt_library", ppt_library),
+    ("pptx_slide_copy", pptx_slide_copy),
+    ("pptx_polish", pptx_polish),
+    ("pptx_html_capture", pptx_html_capture),
+    ("pptx_from_slides", pptx_from_slides),
+    ("pptx_generator", pptx_generator),
+    ("html_presentation", html_presentation),
+)
+
+
+def _source_stamp() -> tuple:
+    root = Path(__file__).resolve().parent
+    stamp = []
+    for name, _mod in _CODE_MODULES:
+        path = root / f"{name}.py"
+        stamp.append((name, path.stat().st_mtime_ns if path.exists() else 0))
+    return tuple(stamp)
+
+
+_stamp = _source_stamp()
+_prev_stamp = getattr(hymn_lookup, "_app_src_stamp", None)
+if _prev_stamp != _stamp:
+    if _prev_stamp is not None:
+        for _name, _mod in _CODE_MODULES:
+            importlib.reload(_mod)
+        for _fn in (
+            getattr(scripture_lookup, "_load_common", None),
+            getattr(hymn_lookup, "_load_lyrics", None),
+            getattr(hymn_lookup, "_load_index", None),
+            getattr(hymn_lookup, "_load_runtime_cache", None),
+            getattr(responsive_lookup, "_load_readings", None),
+            getattr(responsive_lookup, "_load_index", None),
+        ):
+            if _fn is not None:
+                try:
+                    _fn.cache_clear()
+                except Exception:
+                    pass
+    hymn_lookup._app_src_stamp = _stamp
 
 from bulletin_parser import (
     PAGE_ROLES,
@@ -673,13 +700,13 @@ def _on_hymn_num_change(num_key: str, title_key: str) -> None:
     want = parse_hymn_number(st.session_state.get(num_key) or "")
     if not want:
         return
-    allow = bool(st.session_state.get("_allow_remote", True))
+    # Title fill must stay local so typing a hymn number is instant.
     prev = st.session_state.get(f"resolved_hymn_{num_key}") or {}
     # Number drives the title — never keep the previous hymn's title as override
     if prev.get("number") != want:
         st.session_state.pop(f"lyrics_cache_{num_key}", None)
         st.session_state.pop(f"lyrics_text_{num_key}", None)
-    hit = lookup_hymn(str(want), "", allow_remote=allow)
+    hit = lookup_hymn(str(want), "", allow_remote=False)
     if not hit or not hit.number:
         st.session_state[f"resolved_hymn_{num_key}"] = {
             "number": want,
@@ -706,8 +733,7 @@ def _on_responsive_num_change() -> None:
     want = parse_responsive_number(raw)
     if not want:
         return
-    allow = bool(st.session_state.get("_allow_remote", True))
-    hit = lookup_responsive(str(want), allow_remote=allow)
+    hit = lookup_responsive(str(want), allow_remote=False)
     if not (hit.found and hit.body):
         st.session_state["resolved_responsive"] = {
             "number": want,
@@ -731,8 +757,7 @@ def _on_scripture_ref_change() -> None:
     ref = (st.session_state.get("scripture_reference_input") or "").strip()
     if not ref:
         return
-    allow = bool(st.session_state.get("_allow_remote", True))
-    result = lookup_scripture(ref, allow_remote=allow)
+    result = lookup_scripture(ref, allow_remote=False)
     parsed = scripture_lookup.parse_scripture_reference(ref)
     if (
         result.found
@@ -762,8 +787,7 @@ def _on_memory_verse_change() -> None:
     ref = (st.session_state.get("memory_verse_ref") or "").strip()
     if not ref:
         return
-    allow = bool(st.session_state.get("_allow_remote", True))
-    result = lookup_scripture(ref, allow_remote=allow)
+    result = lookup_scripture(ref, allow_remote=False)
     parsed = scripture_lookup.parse_scripture_reference(ref)
     if (
         result.found
@@ -888,14 +912,9 @@ def main():
         allow_remote = st.toggle("온라인 보조 검색", value=True)
         st.caption("예배 직전에는 로컬 찬송 DB를 쓰는 것이 가장 안정적입니다.")
         try:
-            import json as _json
-            from pathlib import Path as _Path
+            from hymn_lookup import _load_index, _load_lyrics
 
-            _lyrics_path = _Path(__file__).resolve().parent / "data" / "hymns_lyrics.json"
-            _idx_path = _Path(__file__).resolve().parent / "data" / "hymn_index.json"
-            _n_lyrics = len(_json.loads(_lyrics_path.read_text(encoding="utf-8"))) if _lyrics_path.exists() else 0
-            _n_index = len(_json.loads(_idx_path.read_text(encoding="utf-8"))) if _idx_path.exists() else 645
-            st.metric("로컬 찬송 가사", f"{_n_lyrics} / {_n_index}")
+            st.metric("로컬 찬송 가사", f"{len(_load_lyrics())} / {len(_load_index())}")
         except Exception:
             pass
         if st.button("찬송 가사 DB 전체 업데이트", use_container_width=True, key="backfill_hymns"):
@@ -1271,7 +1290,7 @@ def main():
 
     data = _build_worship_data(
         service_date,
-        allow_remote=allow_remote,
+        allow_remote=False,
         force_lyrics=bool(st.session_state.get("include_lyrics_ppt", False)),
     )
     # Apply queued widget updates on the next run (cannot mutate after widgets exist)
@@ -1316,26 +1335,17 @@ def main():
 
     current_design = str(st.session_state.get("master_design_version") or "")
     is_manual_upload = current_design.startswith("upload:")
-    needs_bundled = (not st.session_state.get("master_pptx_bytes")) or (
-        not is_manual_upload and current_design != design_ver
-    )
-    if needs_bundled:
+    if not st.session_state.get("master_pptx_bytes") and bundled_master.exists():
+        st.session_state["master_pptx_bytes"] = bundled_master.read_bytes()
+        st.session_state["master_pptx_name"] = "master_worship.pptx"
+        if not is_manual_upload:
+            st.session_state["master_design_version"] = current_design or design_ver
         try:
-            build_master_templates.build_master_pptx(bundled_master)
-        except Exception as exc:
-            st.warning(f"마스터 재생성 중 문제: {exc}")
-        if bundled_master.exists():
-            st.session_state["master_pptx_bytes"] = bundled_master.read_bytes()
-            st.session_state["master_pptx_name"] = "master_worship.pptx"
-            st.session_state["master_design_version"] = design_ver
-            st.session_state.pop("pptx_file", None)
-            st.session_state.pop("pptx_name", None)
-            try:
-                st.session_state["master_pptx_placeholders"] = scan_placeholders(
-                    st.session_state["master_pptx_bytes"]
-                )
-            except Exception:
-                st.session_state["master_pptx_placeholders"] = []
+            st.session_state["master_pptx_placeholders"] = scan_placeholders(
+                st.session_state["master_pptx_bytes"]
+            )
+        except Exception:
+            st.session_state["master_pptx_placeholders"] = []
 
     mc1, mc2 = st.columns([2, 1])
     with mc1:
@@ -1389,39 +1399,42 @@ def main():
             key="make_both",
         )
     with gc2:
-        auto_both = st.toggle("자동 생성", value=True, key="auto_pdf")
+        auto_both = st.toggle("자동 생성", value=False, key="auto_generate_outputs")
+    st.caption("번호를 바꿀 때마다 PDF·PPT를 다시 만들지 않습니다. 다 입력한 뒤 「함께 만들기」를 누르세요.")
 
     engine_key = (
         f"{_PDF_VERSION}|{design_ver}|{getattr(pptx_generator, '_INJECT_VERSION', '')}|"
         f"{getattr(html_presentation, '_HTML_VERSION', 'html')}|hymn-intro"
     )
-    engine_changed = st.session_state.get("output_engine") != engine_key
-    if engine_changed:
+    prev_engine = st.session_state.get("output_engine")
+    engine_changed = prev_engine is not None and prev_engine != engine_key
+    if st.session_state.get("output_engine") != engine_key:
         st.session_state.pop("pdf_file", None)
         st.session_state.pop("pptx_file", None)
         st.session_state.pop("html_file", None)
         st.session_state.pop("content_fingerprint", None)
-        for _k in list(st.session_state.keys()):
-            if str(_k).startswith("lyrics_cache_"):
-                st.session_state.pop(_k, None)
         st.session_state["output_engine"] = engine_key
-        st.info(f"주보 디자인 엔진이 갱신되었습니다 · {_PDF_VERSION}")
+        if engine_changed:
+            st.info(f"주보 디자인 엔진이 갱신되었습니다 · {_PDF_VERSION}")
 
-    need_build = (
-        make_both
-        or engine_changed
-        or (auto_both and st.session_state.get("content_fingerprint") != content_fingerprint)
+    need_build = make_both or (
+        auto_both and st.session_state.get("content_fingerprint") != content_fingerprint
     )
     if need_build:
+        data = _build_worship_data(
+            service_date,
+            allow_remote=allow_remote,
+            force_lyrics=True,
+        )
         try:
             st.session_state["pdf_file"] = generate_worship_pdf(data, allow_remote=allow_remote).getvalue()
             st.session_state["pdf_name"] = f"bulletin_{service_date.strftime('%Y%m%d')}.pdf"
         except Exception as exc:
             st.error(f"PDF 오류: {exc}")
 
-        # Always rebuild bundled master so stale session PPT layouts cannot overflow
+        # Rebuild bundled master only when the design version actually changed
         is_manual_upload = str(st.session_state.get("master_design_version") or "").startswith("upload:")
-        if not is_manual_upload:
+        if not is_manual_upload and st.session_state.get("master_design_version") != design_ver:
             try:
                 build_master_templates.build_master_pptx(bundled_master)
                 st.session_state["master_pptx_bytes"] = bundled_master.read_bytes()
