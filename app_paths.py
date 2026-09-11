@@ -153,14 +153,24 @@ def _github_json(name: str) -> dict:
     return {}
 
 
+def _from_bundled_module(name: str) -> dict:
+    try:
+        from bundled_catalogs import CATALOGS
+    except Exception:
+        return {}
+    data = CATALOGS.get(name)
+    return data if isinstance(data, dict) and data else {}
+
+
 def load_bundled_json(name: str) -> dict:
-    """Load a data/*.json catalog from disk, then GitHub raw as a cloud fallback."""
+    """Load a data/*.json catalog from disk, embedded catalogs, then GitHub raw."""
     if name in _JSON_MEMO:
         return _JSON_MEMO[name]
 
     for path in (
         Path.cwd() / "data" / name,
         Path("/mount/src/data") / name,
+        Path("/app/data") / name,
         data_dir() / name,
         writable_data_dir() / name,
     ):
@@ -169,6 +179,11 @@ def load_bundled_json(name: str) -> dict:
             if name in _BUNDLED_JSON:
                 _JSON_MEMO[name] = data
             return data
+
+    bundled = _from_bundled_module(name)
+    if bundled:
+        _JSON_MEMO[name] = bundled
+        return bundled
 
     fetched = _github_json(name) if name in _BUNDLED_JSON else {}
     if fetched:

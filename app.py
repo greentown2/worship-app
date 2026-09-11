@@ -840,7 +840,7 @@ def _hymn_inputs(label: str, num_key: str, title_key: str, fetch_key: str, allow
     if want and (resolved.get("number") != want or not title_now):
         _on_hymn_num_change(num_key, title_key)
 
-    c1, c2 = st.columns([1.2, 3.8])
+    c1, c2, c3 = st.columns([1.1, 3.0, 1.5])
     with c1:
         st.text_input(
             "장번호",
@@ -851,6 +851,16 @@ def _hymn_inputs(label: str, num_key: str, title_key: str, fetch_key: str, allow
         )
     with c2:
         st.text_input("제목", key=title_key, placeholder="번호 입력 시 자동 · 복음성가는 직접 입력")
+    with c3:
+        st.write("")
+        st.write("")
+        st.button(
+            "제목 불러오기",
+            key=fetch_key,
+            use_container_width=True,
+            on_click=_on_hymn_num_change,
+            args=(num_key, title_key),
+        )
     lyrics_key = f"lyrics_text_{num_key}"
     if lyrics_key not in st.session_state:
         st.session_state[lyrics_key] = ""
@@ -877,6 +887,15 @@ def _hymn_inputs(label: str, num_key: str, title_key: str, fetch_key: str, allow
 
 def main():
     _init_state()
+
+    # Warm local/embedded catalogs before filling default hymn titles
+    try:
+        from hymn_lookup import _load_index, _load_lyrics
+
+        _load_index()
+        _load_lyrics()
+    except Exception:
+        pass
 
     # First load: fill titles/bodies from default numbers without waiting for Enter
     if not st.session_state.get("_bootstrapped_lookups"):
