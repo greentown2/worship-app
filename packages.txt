@@ -1,0 +1,4 @@
+fonts-nanum
+tesseract-ocr
+tesseract-ocr-kor
+poppler-utils

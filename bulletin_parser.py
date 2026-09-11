@@ -122,6 +122,8 @@ def _ocr_pil(img) -> tuple[str, str]:
     candidates = [
         Path(r"C:\Program Files\Tesseract-OCR\tesseract.exe"),
         Path(r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe"),
+        Path("/usr/bin/tesseract"),
+        Path("/usr/local/bin/tesseract"),
     ]
     for c in candidates:
         if c.exists():
@@ -182,6 +184,7 @@ class ParsedBulletin:
     hymn_title: str = ""
     prayer_leader: str = ""
     prayer_text: str = ""
+    choir_anthem_title: str = ""
     scripture_reference: str = ""
     scripture_text: str = ""
     response_num: str = ""
@@ -256,6 +259,7 @@ def _section_blocks(text: str) -> list[tuple[str, str]]:
         "생명의 말씀",
         "오늘의 말씀",
         "예배의 기도",
+        "성가대",
         "성경봉독",
         "찬송가",
         "찬송",
@@ -404,6 +408,8 @@ def _classify_heading(head: str) -> str:
         return "scripture"
     if "예배의 기도" in head:
         return "prayer"
+    if "성가대" in head or "choir" in h:
+        return "choir"
     if "축도" in head or "benediction" in h:
         return "benediction"
     # "7. 찬양 …" response hymn — after praise/prayer already handled
@@ -518,6 +524,12 @@ def parse_bulletin_text(text: str, *, method: str = "") -> ParsedBulletin:
             if body and len(body) > 20:
                 result.prayer_text = body
             result.notes.append("6. 예배의 기도 감지")
+        elif kind == "choir":
+            title = re.sub(r"^.*?성가대\s*(찬양)?\s*[:：-]?\s*", "", head).strip()
+            if not title or title in ("성가대", "성가대 찬양"):
+                title = body.split("\n")[0].strip() if body else ""
+            result.choir_anthem_title = title[:80]
+            result.notes.append(f"7. 성가대 찬양 ← {result.choir_anthem_title or '(제목 미확인)'}")
         elif kind == "scripture":
             ref = _first_scripture(combo) or _first_scripture(head)
             if ref:
@@ -525,7 +537,7 @@ def parse_bulletin_text(text: str, *, method: str = "") -> ParsedBulletin:
             # If body looks like verse text, keep it
             if re.search(r"^\d+\s+\S+", body, re.M) or len(body) > 60:
                 result.scripture_text = body
-            result.notes.append(f"7. 오늘의 말씀 ← {result.scripture_reference or '(구절 미확인)'}")
+            result.notes.append(f"8. 오늘의 말씀 ← {result.scripture_reference or '(구절 미확인)'}")
         elif kind == "response":
             # numbered order has no response hymn
             result.notes.append("응답 찬양 감지 (현재 순서에서는 사용하지 않음)")
@@ -535,15 +547,15 @@ def parse_bulletin_text(text: str, *, method: str = "") -> ParsedBulletin:
             if not title or title in ("생명의 말씀", "설교"):
                 title = body.split("\n")[0].strip() if body else ""
             result.sermon_title = title[:80]
-            result.notes.append(f"8. 생명의 말씀 ← {result.sermon_title or '(제목 미확인)'}")
+            result.notes.append(f"9. 생명의 말씀 ← {result.sermon_title or '(제목 미확인)'}")
         elif kind == "offering" and not hymn_slots_used["offering"]:
             num, title = _first_hymn(combo)
             result.offering_num, result.offering_title = num, title
             hymn_slots_used["offering"] = True
-            result.notes.append(f"9. 감사와 봉헌 ← {num} {title}".strip())
+            result.notes.append(f"10. 감사와 봉헌 ← {num} {title}".strip())
         elif kind == "benediction":
             result.benediction = body.split("\n")[0][:60] if body else result.benediction
-            result.notes.append("10. 축도 감지")
+            result.notes.append("11. 축도 감지")
 
     # Fallback: collect hymns only from lines that mention 장 with worship context
     all_hymns = []
@@ -688,6 +700,7 @@ def result_to_session_updates(p: ParsedBulletin) -> dict[str, str]:
         "hymn_title": p.hymn_title,
         "prayer_leader": p.prayer_leader,
         "prayer_text": p.prayer_text,
+        "choir_anthem_title": p.choir_anthem_title,
         "scripture_reference_input": p.scripture_reference,
         "scripture_text_area": p.scripture_text,
         "response_num": p.response_num,
@@ -951,6 +964,7 @@ def _merge_parsed(base: ParsedBulletin, extra: ParsedBulletin, *, role: str) -> 
         "hymn_title",
         "prayer_leader",
         "prayer_text",
+        "choir_anthem_title",
         "scripture_reference",
         "scripture_text",
         "response_num",

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-_PDF_VERSION = "2026-09-02-ads-type-v24"
+_PDF_VERSION = "2026-09-04-choir-anthem-v1"
 
 from io import BytesIO
 from pathlib import Path
@@ -91,29 +91,74 @@ def _ensure_fonts() -> None:
     global _FONT_READY, FONT, FONT_BOLD, FONT_DISPLAY, FONT_EN
     if _FONT_READY:
         return
-    fonts = Path(r"C:\Windows\Fonts")
-    regular = fonts / "malgun.ttf"
-    bold = fonts / "malgunbd.ttf"
-    # Korean serif for titles (HANBatang → batang fallback)
-    display_candidates = [
-        fonts / "HANBatang.ttf",
-        fonts / "batang.ttc",
-        fonts / "malgunbd.ttf",
-    ]
-    en_candidates = [
-        fonts / "georgia.ttf",
-        fonts / "times.ttf",
-        fonts / "GOTHIC.TTF",
-    ]
 
-    if regular.exists():
-        pdfmetrics.registerFont(TTFont(FONT, str(regular)))
-        pdfmetrics.registerFont(TTFont(FONT_BOLD, str(bold if bold.exists() else regular)))
+    def _find_font(*names: str) -> Path | None:
+        roots = [
+            Path(r"C:\Windows\Fonts"),
+            Path("/usr/share/fonts/truetype/nanum"),
+            Path("/usr/share/fonts/truetype/noto"),
+            Path("/usr/share/fonts/opentype/noto"),
+            Path("/usr/share/fonts/truetype/dejavu"),
+            Path("/usr/share/fonts/truetype/liberation"),
+            Path("/usr/share/fonts"),
+            Path("/usr/local/share/fonts"),
+            Path.home() / ".fonts",
+            Path.home() / ".local/share/fonts",
+        ]
+        wanted = {n.lower() for n in names}
+        for root in roots:
+            if not root.exists():
+                continue
+            for name in names:
+                direct = root / name
+                if direct.is_file():
+                    return direct
+            if root.name in {"fonts", "share"}:
+                continue
+            try:
+                for p in root.iterdir():
+                    if p.is_file() and p.name.lower() in wanted:
+                        return p
+            except OSError:
+                continue
+        return None
+
+    regular = _find_font(
+        "malgun.ttf",
+        "NanumGothic.ttf",
+        "NanumBarunGothic.ttf",
+        "NotoSansKR-Regular.otf",
+        "NotoSansKR-Regular.ttf",
+        "NotoSansCJK-Regular.ttc",
+    )
+    bold = _find_font(
+        "malgunbd.ttf",
+        "NanumGothicBold.ttf",
+        "NanumBarunGothicBold.ttf",
+        "NotoSansKR-Bold.otf",
+        "NotoSansKR-Bold.ttf",
+        "NotoSansCJK-Bold.ttc",
+    )
+    display_path = _find_font(
+        "HANBatang.ttf",
+        "batang.ttc",
+        "NanumMyeongjo.ttf",
+        "NanumMyeongjoBold.ttf",
+        "malgunbd.ttf",
+    )
+    en_path = _find_font("georgia.ttf", "times.ttf", "GOTHIC.TTF", "DejaVuSerif.ttf", "LiberationSerif-Regular.ttf")
+
+    if regular is not None:
+        try:
+            pdfmetrics.registerFont(TTFont(FONT, str(regular)))
+            bold_path = bold if bold is not None else regular
+            pdfmetrics.registerFont(TTFont(FONT_BOLD, str(bold_path)))
+        except Exception:
+            FONT, FONT_BOLD = "Helvetica", "Helvetica-Bold"
     else:
         FONT, FONT_BOLD = "Helvetica", "Helvetica-Bold"
 
-    display_path = next((p for p in display_candidates if p.exists()), None)
-    if display_path and display_path.suffix.lower() == ".ttf":
+    if display_path is not None and display_path.suffix.lower() == ".ttf":
         try:
             pdfmetrics.registerFont(TTFont(FONT_DISPLAY, str(display_path)))
         except Exception:
@@ -121,8 +166,7 @@ def _ensure_fonts() -> None:
     else:
         FONT_DISPLAY = FONT_BOLD
 
-    en_path = next((p for p in en_candidates if p.exists()), None)
-    if en_path:
+    if en_path is not None:
         try:
             pdfmetrics.registerFont(TTFont(FONT_EN, str(en_path)))
         except Exception:
@@ -623,16 +667,17 @@ def _order_items(data: WorshipData) -> List[Tuple[str, str, str]]:
         ("4", "교독문", _clean(data.responsive_reading_title)),
         ("5", "찬송가", _hymn_line(data.hymn)),
         ("6", "예배의 기도", _clean(data.worship_prayer_leader)),
-        ("7", "오늘의 말씀", _display_ref(data.scripture_reference)),
+        ("7", "성가대 찬양", _hymn_line(data.choir_anthem)),
+        ("8", "오늘의 말씀", _display_ref(data.scripture_reference)),
         (
-            "8",
+            "9",
             "생명의 말씀",
             _clean(data.sermon_title)
             or (_clean(data.sermon_subtitle) and f"({_clean(data.sermon_subtitle)})")
             or "",
         ),
-        ("9", "감사와 봉헌", _hymn_line(data.offering_hymn)),
-        ("10", "축도", _clean(data.benediction)[:48] if data.benediction else ""),
+        ("10", "감사와 봉헌", _hymn_line(data.offering_hymn)),
+        ("11", "축도", _clean(data.benediction)[:48] if data.benediction else ""),
     ]
 
 
@@ -664,8 +709,8 @@ def _order_table(data: WorshipData, styles: dict) -> Table:
     t = Table(table_data, colWidths=[left_w, right_w])
     style_cmds = [
         ("BACKGROUND", (0, 0), (-1, -1), WHITE),
-        ("TOPPADDING", (0, 0), (-1, -1), 6),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+        ("TOPPADDING", (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
         ("LEFTPADDING", (0, 0), (-1, -1), 5),
         ("RIGHTPADDING", (0, 0), (-1, -1), 4),
         ("LINEBELOW", (0, 0), (-1, -2), 0.4, RULE),

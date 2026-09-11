@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-import json
-from pathlib import Path
-
-DATA_DIR = Path(__file__).resolve().parent / "data"
+from app_paths import load_bundled_json, load_overlay_json
 
 
 def build_lookup_bundle() -> dict:
@@ -17,11 +14,8 @@ def build_lookup_bundle() -> dict:
       scripture: { "히브리서 4:1-11": "1 ...\\n2 ...", ... }  (common set)
     """
     hymns: dict[str, str] = {}
-    hymn_path = DATA_DIR / "hymn_index.json"
-    if hymn_path.exists():
-        raw = json.loads(hymn_path.read_text(encoding="utf-8"))
-        for k, v in (raw or {}).items():
-            hymns[str(k)] = str(v or "").strip()
+    for k, v in (load_bundled_json("hymn_index.json") or {}).items():
+        hymns[str(k)] = str(v or "").strip()
 
     hymn_lyrics: dict[str, dict] = {}
 
@@ -45,25 +39,16 @@ def build_lookup_bundle() -> dict:
             hymn_lyrics[key] = {"title": title, "lyrics": body}
 
     for fname in ("hymns_lyrics.json", "hymns_lyrics_cache.json"):
-        path = DATA_DIR / fname
-        if not path.exists():
-            continue
-        try:
-            _ingest_lyrics(json.loads(path.read_text(encoding="utf-8")))
-        except (OSError, json.JSONDecodeError, ValueError):
-            continue
+        _ingest_lyrics(load_overlay_json(fname))
 
     responsive: dict[str, dict] = {}
-    resp_path = DATA_DIR / "responsive_readings.json"
-    if resp_path.exists():
-        raw = json.loads(resp_path.read_text(encoding="utf-8"))
-        for k, entry in (raw or {}).items():
-            if not isinstance(entry, dict):
-                continue
-            title = str(entry.get("title") or "").strip()
-            body = str(entry.get("body") or "").strip()
-            if body:
-                responsive[str(k)] = {"title": title, "body": body}
+    for k, entry in (load_bundled_json("responsive_readings.json") or {}).items():
+        if not isinstance(entry, dict):
+            continue
+        title = str(entry.get("title") or "").strip()
+        body = str(entry.get("body") or "").strip()
+        if body:
+            responsive[str(k)] = {"title": title, "body": body}
 
     # Prefer sanitized bodies from the same sanitizer Streamlit uses
     try:
@@ -93,13 +78,7 @@ def build_lookup_bundle() -> dict:
             scripture[bare] = body
 
     for fname in ("scripture_common.json", "scripture_cache.json"):
-        sc_path = DATA_DIR / fname
-        if not sc_path.exists():
-            continue
-        try:
-            raw = json.loads(sc_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            continue
+        raw = load_overlay_json(fname) if fname.endswith("cache.json") else load_bundled_json(fname)
         for _k, entry in (raw or {}).items():
             if str(_k).startswith("_") or not isinstance(entry, dict):
                 continue

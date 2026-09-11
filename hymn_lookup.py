@@ -2,22 +2,15 @@
 
 from __future__ import annotations
 
-import json
 import re
 import threading
 from dataclasses import dataclass
-from functools import lru_cache
-from pathlib import Path
 from typing import Optional
 from urllib.error import URLError, HTTPError
 from urllib.request import Request, urlopen
 
+from app_paths import load_bundled_json, load_overlay_json, save_json
 from text_normalize import normalize_breaks, normalize_line_list
-
-DATA_DIR = Path(__file__).resolve().parent / "data"
-HYMN_INDEX_PATH = DATA_DIR / "hymn_index.json"
-HYMN_LYRICS_PATH = DATA_DIR / "hymns_lyrics.json"
-HYMN_CACHE_PATH = DATA_DIR / "hymns_lyrics_cache.json"
 
 BIBLETOPPT_URL = "https://bibletoppt.com/hymn/lyrics/{num:03d}"
 
@@ -62,32 +55,31 @@ def parse_hymn_number(raw: str) -> Optional[int]:
     return None
 
 
-@lru_cache(maxsize=1)
 def _load_index() -> dict[str, str]:
-    if not HYMN_INDEX_PATH.exists():
-        return {}
-    with HYMN_INDEX_PATH.open(encoding="utf-8") as f:
-        return json.load(f)
+    raw = load_bundled_json("hymn_index.json")
+    return {
+        str(k): str(v or "")
+        for k, v in (raw or {}).items()
+        if not str(k).startswith("_")
+    }
 
 
-@lru_cache(maxsize=1)
 def _load_lyrics() -> dict[str, dict]:
-    if not HYMN_LYRICS_PATH.exists():
-        return {}
-    with HYMN_LYRICS_PATH.open(encoding="utf-8") as f:
-        return json.load(f)
+    raw = load_overlay_json("hymns_lyrics.json")
+    return {
+        str(k): v
+        for k, v in (raw or {}).items()
+        if not str(k).startswith("_") and isinstance(v, dict)
+    }
 
 
-@lru_cache(maxsize=1)
 def _load_runtime_cache() -> dict[str, dict]:
-    if not HYMN_CACHE_PATH.exists():
-        return {}
-    try:
-        with HYMN_CACHE_PATH.open(encoding="utf-8") as f:
-            data = json.load(f)
-        return data if isinstance(data, dict) else {}
-    except (OSError, json.JSONDecodeError):
-        return {}
+    raw = load_overlay_json("hymns_lyrics_cache.json")
+    return {
+        str(k): v
+        for k, v in (raw or {}).items()
+        if not str(k).startswith("_") and isinstance(v, dict)
+    }
 
 
 def _save_runtime_cache(number: int, title: str, lyrics: list[str]) -> None:
@@ -104,10 +96,7 @@ def _save_runtime_cache(number: int, title: str, lyrics: list[str]) -> None:
             return
         cache[str(number)] = new_entry
         try:
-            DATA_DIR.mkdir(parents=True, exist_ok=True)
-            with HYMN_CACHE_PATH.open("w", encoding="utf-8") as f:
-                json.dump(cache, f, ensure_ascii=False, indent=2)
-            _load_runtime_cache.cache_clear()
+            save_json("hymns_lyrics_cache.json", cache)
         except OSError:
             pass
 
@@ -121,12 +110,7 @@ def _merge_into_local_lyrics(number: int, title: str, lyrics: list[str]) -> None
     if hangul < 60:
         return
     with _CACHE_LOCK:
-        db = {}
-        if HYMN_LYRICS_PATH.exists():
-            try:
-                db = json.loads(HYMN_LYRICS_PATH.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError):
-                db = {}
+        db = dict(_load_lyrics())
         key = str(number)
         prev = db.get(key) if isinstance(db.get(key), dict) else None
         prev_lines = list((prev or {}).get("lyrics") or [])
@@ -139,21 +123,9 @@ def _merge_into_local_lyrics(number: int, title: str, lyrics: list[str]) -> None
             return
         db[key] = {"title": (title or "").strip() or (prev or {}).get("title") or "", "lyrics": body}
         try:
-            DATA_DIR.mkdir(parents=True, exist_ok=True)
-            payload = json.dumps(db, ensure_ascii=False, indent=2) + "\n"
-            tmp = HYMN_LYRICS_PATH.with_suffix(".json.tmp")
-            tmp.write_text(payload, encoding="utf-8")
-            tmp.replace(HYMN_LYRICS_PATH)
-            _load_lyrics.cache_clear()
+            save_json("hymns_lyrics.json", db)
         except OSError:
-            try:
-                HYMN_LYRICS_PATH.write_text(
-                    json.dumps(db, ensure_ascii=False, indent=2) + "\n",
-                    encoding="utf-8",
-                )
-                _load_lyrics.cache_clear()
-            except OSError:
-                pass
+            pass
 
 
 def _persist_good_lyrics(number: int, title: str, lyrics: list[str]) -> None:

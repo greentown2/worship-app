@@ -18,10 +18,12 @@ from responsive_lookup import parse_responsive_number, sanitize_responsive_body
 from text_normalize import normalize_breaks
 from template_tokens import _creed_pages, _hymn_pages, _responsive_pages, _text_pages
 
-ROOT = Path(__file__).resolve().parent
+from app_paths import repo_root
+
+ROOT = repo_root()
 TEMPLATE_PATH = ROOT / "worship_presentation.html"
 
-_HTML_VERSION = "2026-09-02-ads-type-v24"
+_HTML_VERSION = "2026-09-06-fs-resume-v1"
 
 
 def _esc(text: str) -> str:
@@ -240,7 +242,7 @@ def _ensure_service_hymn_lyrics(bundle: dict, data: WorshipData, *, allow_remote
 
 def build_presentation_slides(data: WorshipData, *, allow_remote: bool = True) -> list[dict]:
     """
-    Slide list matching Streamlit / PPT worship order (10 steps + announcements).
+    Slide list matching Streamlit / PPT worship order (11 steps + announcements).
     Hymn slots include intro + full lyric pages for fullscreen HTML projection.
     """
     # Prefer complete lyrics: honor allow_remote (HTML generator usually passes True)
@@ -266,6 +268,7 @@ def build_presentation_slides(data: WorshipData, *, allow_remote: bool = True) -
     prep = hymn_pair_label(*data.iter_prep_hymns()) or "—"
     praise = _hymn_label(data.praise_hymn)
     hymn = _hymn_label(data.hymn)
+    choir = _hymn_label(data.choir_anthem)
     offering = _hymn_label(data.offering_hymn)
     resp_title = (data.responsive_reading_title or "교독문").strip()
     scripture_ref = _scripture_ref_clean(data.scripture_reference or "")
@@ -287,7 +290,7 @@ def build_presentation_slides(data: WorshipData, *, allow_remote: bool = True) -
         }
     )
 
-    # Order of worship (10 steps)
+    # Order of worship
     details = {
         "1": prep,
         "2": praise,
@@ -295,10 +298,11 @@ def build_presentation_slides(data: WorshipData, *, allow_remote: bool = True) -
         "4": resp_title,
         "5": hymn,
         "6": prayer_leader,
-        "7": scripture_ref,
-        "8": sermon,
-        "9": offering,
-        "10": benediction,
+        "7": choir,
+        "8": scripture_ref,
+        "9": sermon,
+        "10": offering,
+        "11": benediction,
     }
     order_rows = []
     for num, title, _en in ORDER_LABELS:
@@ -408,11 +412,22 @@ def build_presentation_slides(data: WorshipData, *, allow_remote: bool = True) -
             }
         )
 
-    # 7. 오늘의 말씀
+    # 7. 성가대 찬양
+    choir_label = choir if choir not in {"", "—"} else "성가대"
+    slides.append({"type": "section", "title": "7. 성가대 찬양", "subtitle": choir_label})
+    _append_hymn_lyric_slides(
+        slides,
+        header="7. 성가대 찬양",
+        label=choir_label,
+        hymn=data.choir_anthem,
+        allow_remote=allow_remote,
+    )
+
+    # 8. 오늘의 말씀
     slides.append(
         {
             "type": "section",
-            "title": "7. 오늘의 말씀",
+            "title": "8. 오늘의 말씀",
             "subtitle": scripture_ref or "성경 봉독",
         }
     )
@@ -423,35 +438,35 @@ def build_presentation_slides(data: WorshipData, *, allow_remote: bool = True) -
         slides.append(
             {
                 "type": "scripture",
-                "header": "7. 오늘의 말씀",
+                "header": "8. 오늘의 말씀",
                 "title": scripture_ref,
                 "content": _scripture_html(page),
             }
         )
 
-    # 8. 생명의 말씀
+    # 9. 생명의 말씀
     slides.append(
         {
             "type": "sermon",
-            "header": "8. 생명의 말씀",
+            "header": "9. 생명의 말씀",
             "title": sermon or "생명의 말씀",
             "subtitle": sermon_sub or (f"본문: {scripture_ref}" if scripture_ref else ""),
             "footer": church,
         }
     )
 
-    # 9. 감사와 봉헌 — intro + lyrics
-    slides.append({"type": "section", "title": "9. 감사와 봉헌", "subtitle": offering})
+    # 10. 감사와 봉헌 — intro + lyrics
+    slides.append({"type": "section", "title": "10. 감사와 봉헌", "subtitle": offering})
     _append_hymn_lyric_slides(
         slides,
-        header="9. 감사와 봉헌",
+        header="10. 감사와 봉헌",
         label=offering,
         hymn=data.offering_hymn,
         allow_remote=allow_remote,
     )
 
-    # 10. 축도
-    slides.append({"type": "section", "title": "10. 축도", "subtitle": benediction})
+    # 11. 축도
+    slides.append({"type": "section", "title": "11. 축도", "subtitle": benediction})
     note = normalize_breaks(data.closing_note or "").strip()
     if note:
         slides.append(
@@ -468,7 +483,7 @@ def build_presentation_slides(data: WorshipData, *, allow_remote: bool = True) -
     slides.append(
         {
             "type": "title",
-            "title": "11. 안내 및 광고",
+            "title": "12. 안내 및 광고",
             "subtitle": "Announcements",
             "content": _announce_html(ads),
         }
@@ -521,6 +536,11 @@ def build_form_prefetch(data: WorshipData) -> dict:
         "hymn2Num": _num(data.hymn),
         "hymn2Title": _hymn_label(data.hymn),
         "hymn2Lyrics": _lyrics(data.hymn),
+        "choirAnthemTitle": (
+            (data.choir_anthem.title or "").strip()
+            or ("" if _hymn_label(data.choir_anthem) in {"", "—"} else _hymn_label(data.choir_anthem))
+        ),
+        "choirAnthemLyrics": _lyrics(data.choir_anthem),
         "bibleRef": _scripture_ref_clean(data.scripture_reference or ""),
         "bibleText": normalize_breaks(data.scripture_text or ""),
         "memoryVerseRef": _scripture_ref_clean(getattr(data, "memory_verse_reference", "") or ""),

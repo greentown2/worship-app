@@ -5,20 +5,14 @@ Guarantees readable verse lines for slides/PDF — never a 'missing data' notice
 
 from __future__ import annotations
 
-import json
 import re
 from dataclasses import dataclass
-from functools import lru_cache
-from pathlib import Path
 from typing import Optional
 from urllib.error import URLError, HTTPError
 from urllib.request import Request, urlopen
 
+from app_paths import load_bundled_json, load_overlay_json, save_json
 from text_normalize import normalize_breaks, normalize_line_list
-
-DATA_DIR = Path(__file__).resolve().parent / "data"
-SCRIPTURE_PATH = DATA_DIR / "scripture_common.json"
-SCRIPTURE_CACHE_PATH = DATA_DIR / "scripture_cache.json"
 
 # Use 개역개정 (GAE). Do not use 새번역 / English WEB.
 TRANSLATION_LABEL = "개역개정"
@@ -451,16 +445,9 @@ def _looks_like_rnksv(verses: list[str] | str) -> bool:
     return hits >= 2
 
 
-@lru_cache(maxsize=1)
 def _load_common() -> dict[str, dict]:
     """Load 개역개정 local stubs (scripture_common.json)."""
-    if not SCRIPTURE_PATH.exists():
-        return {}
-    try:
-        with SCRIPTURE_PATH.open(encoding="utf-8") as f:
-            data = json.load(f)
-    except (OSError, json.JSONDecodeError):
-        return {}
+    data = load_bundled_json("scripture_common.json")
     if not isinstance(data, dict):
         return {}
     return {
@@ -471,13 +458,14 @@ def _load_common() -> dict[str, dict]:
 
 
 def _load_cache() -> dict[str, dict]:
-    if not SCRIPTURE_CACHE_PATH.exists():
+    data = load_overlay_json("scripture_cache.json")
+    if not isinstance(data, dict):
         return {}
-    try:
-        with SCRIPTURE_CACHE_PATH.open(encoding="utf-8") as f:
-            return json.load(f)
-    except (OSError, json.JSONDecodeError):
-        return {}
+    return {
+        k: v
+        for k, v in data.items()
+        if not str(k).startswith("_") and isinstance(v, dict)
+    }
 
 
 def _save_cache(key: str, reference: str, verses: list[str]) -> None:
@@ -485,12 +473,7 @@ def _save_cache(key: str, reference: str, verses: list[str]) -> None:
         return
     cache = _load_cache()
     cache[key] = {"reference": reference, "verses": list(verses)}
-    try:
-        DATA_DIR.mkdir(parents=True, exist_ok=True)
-        with SCRIPTURE_CACHE_PATH.open("w", encoding="utf-8") as f:
-            json.dump(cache, f, ensure_ascii=False, indent=2)
-    except OSError:
-        pass
+    save_json("scripture_cache.json", cache)
 
 
 def _verse_map_for_chapter(db: dict, parsed: ParsedReference) -> dict[int, str]:

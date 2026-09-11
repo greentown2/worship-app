@@ -2,18 +2,12 @@
 
 from __future__ import annotations
 
-import json
 import re
 from dataclasses import dataclass
-from functools import lru_cache
-from pathlib import Path
 from typing import Optional
 
+from app_paths import load_bundled_json
 from text_normalize import normalize_breaks
-
-DATA_DIR = Path(__file__).resolve().parent / "data"
-READINGS_PATH = DATA_DIR / "responsive_readings.json"
-INDEX_PATH = DATA_DIR / "responsive_index.json"
 
 _JUNK_MARKERS = (
     "728x90",
@@ -108,20 +102,22 @@ def _match_index_title(raw: str) -> Optional[int]:
     return None
 
 
-@lru_cache(maxsize=1)
 def _load_readings() -> dict[str, dict]:
-    if not READINGS_PATH.exists():
-        return {}
-    with READINGS_PATH.open(encoding="utf-8") as f:
-        return json.load(f)
+    raw = load_bundled_json("responsive_readings.json")
+    return {
+        str(k): v
+        for k, v in (raw or {}).items()
+        if not str(k).startswith("_") and isinstance(v, dict)
+    }
 
 
-@lru_cache(maxsize=1)
 def _load_index() -> dict[str, str]:
-    if not INDEX_PATH.exists():
-        return {}
-    with INDEX_PATH.open(encoding="utf-8") as f:
-        return json.load(f)
+    raw = load_bundled_json("responsive_index.json")
+    return {
+        str(k): str(v or "")
+        for k, v in (raw or {}).items()
+        if not str(k).startswith("_")
+    }
 
 
 def _is_junk_line(line: str) -> bool:

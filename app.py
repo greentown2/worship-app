@@ -18,6 +18,7 @@ from text_normalize import normalize_breaks, normalize_line_list
 # Streamlit can keep stale modules in memory — always reload from disk
 import importlib
 
+import app_paths
 import bulletin_parser
 import defaults
 import models
@@ -40,6 +41,7 @@ import template_tokens
 # Re-execute app.py on every Streamlit rerun, but keep imported modules (and
 # their lyric caches) unless a .py file on disk actually changed.
 _CODE_MODULES = (
+    ("app_paths", app_paths),
     ("defaults", defaults),
     ("models", models),
     ("scripture_lookup", scripture_lookup),
@@ -76,6 +78,10 @@ if _prev_stamp != _stamp:
     if _prev_stamp is not None:
         for _name, _mod in _CODE_MODULES:
             importlib.reload(_mod)
+        try:
+            app_paths.clear_json_cache()
+        except Exception:
+            pass
         for _fn in (
             getattr(scripture_lookup, "_load_common", None),
             getattr(hymn_lookup, "_load_lyrics", None),
@@ -235,6 +241,8 @@ def _init_state():
         "hymn_title": "",
         "prayer_text": DEFAULT_WORSHIP_PRAYER,
         "prayer_leader": "",
+        "choir_anthem_num": "",
+        "choir_anthem_title": "",
         "scripture_reference_input": "히브리서 4:1-11",
         "scripture_text_area": "",
         "memory_verse_ref": "",
@@ -313,6 +321,8 @@ def _init_state():
         "_p_praise_title": "praise_title",
         "_p_hymn_num": "hymn_num",
         "_p_hymn_title": "hymn_title",
+        "_p_choir_anthem_num": "choir_anthem_num",
+        "_p_choir_anthem_title": "choir_anthem_title",
         "_p_response_num": "response_num",
         "_p_response_title": "response_title",
         "_p_offering_num": "offering_num",
@@ -349,6 +359,7 @@ def _init_state():
                 *[f"prep_hymn_{i}_num" for i in range(1, PREP_HYMN_COUNT + 1)],
                 "praise_num",
                 "hymn_num",
+                "choir_anthem_num",
                 "offering_num",
             ) and value:
                 hit = lookup_hymn(str(value), allow_remote=False)
@@ -588,6 +599,9 @@ def _build_worship_data(service_date, *, allow_remote: bool, force_lyrics: bool 
         hymn=_hymn_from_keys("hymn_num", "hymn_title", allow_remote=allow_remote),
         worship_prayer=(st.session_state.get("prayer_text") or "").strip(),
         worship_prayer_leader=(st.session_state.get("prayer_leader") or "").strip(),
+        choir_anthem=_hymn_from_keys(
+            "choir_anthem_num", "choir_anthem_title", allow_remote=allow_remote
+        ),
         scripture_reference=ref,
         scripture_text=body,
         memory_verse_reference=mem_ref,
@@ -870,6 +884,7 @@ def main():
             *[(f"prep_hymn_{i}_num", f"prep_hymn_{i}_title") for i in range(1, PREP_HYMN_COUNT + 1)],
             ("praise_num", "praise_title"),
             ("hymn_num", "hymn_title"),
+            ("choir_anthem_num", "choir_anthem_title"),
             ("offering_num", "offering_title"),
         ):
             if parse_hymn_number(st.session_state.get(nk) or "") and not (
@@ -906,15 +921,32 @@ def main():
         st.header("예배 순서")
         st.markdown(
             "1. 예배 준비의 시간  \n2. 찬양과 기도  \n3. 사도신경  \n4. 교독문  \n"
-            "5. 찬송가  \n6. 예배의 기도  \n7. 오늘의 말씀  \n8. 생명의 말씀  \n"
-            "9. 감사와 봉헌  \n10. 축도 · 안내  \n11. 안내 및 광고"
+            "5. 찬송가  \n6. 예배의 기도  \n7. 성가대 찬양  \n8. 오늘의 말씀  \n9. 생명의 말씀  \n"
+            "10. 감사와 봉헌  \n11. 축도  \n12. 안내 및 광고"
         )
         allow_remote = st.toggle("온라인 보조 검색", value=True)
         st.caption("예배 직전에는 로컬 찬송 DB를 쓰는 것이 가장 안정적입니다.")
         try:
             from hymn_lookup import _load_index, _load_lyrics
 
-            st.metric("로컬 찬송 가사", f"{len(_load_lyrics())} / {len(_load_index())}")
+            n_lyrics = len(_load_lyrics())
+            n_index = len(_load_index())
+            st.metric("로컬 찬송 가사", f"{n_lyrics} / {n_index}")
+            if n_index == 0:
+                info = app_paths.debug_paths()
+                st.error(
+                    "찬송 DB 파일을 찾지 못했습니다. GitHub에 최신 코드를 푸시한 뒤 "
+                    "Streamlit Cloud에서 **Reboot app** 해 주세요."
+                )
+                st.caption(
+                    f"repo `{info['repo']}` · data `{info['data']}` · "
+                    f"marker {info['marker_exists']} · cloud {info['cloud']}"
+                )
+            elif n_lyrics < 200:
+                st.warning(
+                    "찬송 가사가 일부만 있습니다. 배포 브랜치에 `data/hymns_lyrics.json`이 "
+                    "포함돼 있는지 확인하세요."
+                )
         except Exception:
             pass
         if st.button("찬송 가사 DB 전체 업데이트", use_container_width=True, key="backfill_hymns"):
@@ -925,9 +957,7 @@ def main():
                     stats = backfill(start=1, end=645, only_missing=True, sleep_s=0.25, save_every=5)
                     # Refresh cached loaders
                     try:
-                        from hymn_lookup import _load_lyrics
-
-                        _load_lyrics.cache_clear()
+                        app_paths.clear_json_cache()
                     except Exception:
                         pass
                     st.success(
@@ -1174,7 +1204,9 @@ def main():
     with p2:
         st.text_input("기도 인도", key="prayer_leader", placeholder="인도자")
 
-    st.markdown('<p class="order-step">7. 오늘의 말씀</p>', unsafe_allow_html=True)
+    _hymn_inputs("7. 성가대 찬양", "choir_anthem_num", "choir_anthem_title", "fetch_choir", allow_remote)
+
+    st.markdown('<p class="order-step">8. 오늘의 말씀</p>', unsafe_allow_html=True)
     st.session_state["_allow_remote"] = allow_remote
 
     sc1, sc2 = st.columns([3, 1])
@@ -1190,9 +1222,7 @@ def main():
         st.write("")
         if st.button("본문 불러오기", use_container_width=True, key="fetch_scripture"):
             try:
-                from scripture_lookup import _load_common
-
-                _load_common.cache_clear()
+                app_paths.clear_json_cache()
             except Exception:
                 pass
             _on_scripture_ref_change()
@@ -1235,29 +1265,29 @@ def main():
         placeholder="한 절 본문 (직접 입력도 가능)",
     )
 
-    st.markdown('<p class="order-step">8. 생명의 말씀</p>', unsafe_allow_html=True)
+    st.markdown('<p class="order-step">9. 생명의 말씀</p>', unsafe_allow_html=True)
     s1, s2 = st.columns(2)
     with s1:
         st.text_input("설교 제목", key="sermon_title", placeholder="생명의 말씀 제목")
     with s2:
         st.text_input("부제", key="sermon_subtitle")
 
-    _hymn_inputs("9. 감사와 봉헌 (Offering)", "offering_num", "offering_title", "fetch_offering", allow_remote)
+    _hymn_inputs("10. 감사와 봉헌 (Offering)", "offering_num", "offering_title", "fetch_offering", allow_remote)
 
     st.markdown(
         '<div class="bulletin-banner" style="margin-top:0.5rem;">'
-        "<strong>10–11 · 축도 · 안내 · 소식·광고</strong> — 주보·PPT·예배화면에 같이 들어갑니다."
+        "<strong>11–12 · 축도 · 안내 · 소식·광고</strong> — 주보·PPT·예배화면에 같이 들어갑니다."
         "</div>",
         unsafe_allow_html=True,
     )
-    st.markdown('<p class="order-step">10. 축도</p>', unsafe_allow_html=True)
+    st.markdown('<p class="order-step">11. 축도</p>', unsafe_allow_html=True)
     b1, b2 = st.columns(2)
     with b1:
         st.text_input("축도", key="benediction", placeholder="예: 담임목사")
     with b2:
         st.text_input("안내", key="closing_note", placeholder="예: 다음에 또 만나요. 평안하세요.")
 
-    st.markdown('<p class="order-step">11. 안내 및 광고</p>', unsafe_allow_html=True)
+    st.markdown('<p class="order-step">12. 안내 및 광고</p>', unsafe_allow_html=True)
     st.text_area(
         "소식 / 광고 본문 (한 줄에 하나씩)",
         key="announcements",
