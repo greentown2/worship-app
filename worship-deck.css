@@ -1,0 +1,785 @@
+:root {
+            --bg-primary: #0a0f1d;
+            --bg-secondary: #131b2f;
+            --accent-gold: #d4af37;
+            --accent-blue: #3b82f6;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+        }
+        body {
+            font-family: 'Pretendard', sans-serif;
+            background-color: #0f172a;
+            color: var(--text-main);
+            margin: 0;
+            overflow-x: hidden;
+            -webkit-text-size-adjust: 100%;
+            touch-action: manipulation;
+        }
+        html {
+            box-sizing: border-box;
+        }
+        *, *::before, *::after { box-sizing: inherit; }
+        html, body {
+            height: 100%;
+            min-height: 100%;
+            min-height: -webkit-fill-available;
+            min-height: 100dvh;
+        }
+        .hidden { display: none !important; }
+        html.is-presenting,
+        body.is-presenting {
+            overflow: hidden !important;
+            height: var(--vvh, 100dvh);
+            overscroll-behavior: none;
+            background: #000;
+        }
+        body.touch-worship.is-presenting {
+            position: fixed;
+            inset: 0;
+            width: 100%;
+            height: var(--vvh, 100dvh);
+            touch-action: none;
+        }
+        .font-serif {
+            font-family: 'Noto Serif KR', serif;
+        }
+        #presentation-view {
+            display: none;
+            position: fixed;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            height: var(--vvh, 100dvh);
+            background-color: #000;
+            z-index: 9999;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            touch-action: none;
+            cursor: pointer;
+            -webkit-user-select: none;
+            user-select: none;
+            -webkit-tap-highlight-color: rgba(255,255,255,0.08);
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body.touch-worship #presentation-view {
+            padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+        }
+        #presentation-view,
+        #presentation-view * {
+            cursor: pointer;
+        }
+        #present-hit-layer {
+            position: absolute;
+            inset: 0;
+            z-index: 70;
+            /* iOS skips fully transparent nodes in hit-testing */
+            background: rgba(0, 0, 0, 0.02);
+            touch-action: none;
+            cursor: pointer;
+            -webkit-tap-highlight-color: rgba(255,255,255,0.08);
+            -webkit-user-select: none;
+            user-select: none;
+            pointer-events: auto;
+        }
+        /* Keep slide text from stealing taps on iPhone/iPad */
+        body.is-presenting #fs-slides-wrapper,
+        body.is-presenting .slide-content,
+        body.is-presenting .slide-content.active {
+            pointer-events: none !important;
+        }
+        #presentation-view.active {
+            display: flex;
+        }
+        #presentation-view:fullscreen,
+        #presentation-view:-webkit-full-screen {
+            width: 100%;
+            height: 100%;
+            background: #000;
+        }
+        /* Laptop fullscreen: fill the screen like before (seamless). */
+        #presentation-view:fullscreen .slide-container,
+        #presentation-view:-webkit-full-screen .slide-container,
+        body.standalone-worship #presentation-view.active .slide-container,
+        body.touch-worship #presentation-view.active .slide-container {
+            width: 100%;
+            height: 100%;
+            max-width: none;
+            max-height: none;
+            box-shadow: none;
+            border-radius: 0;
+        }
+        @media all and (display-mode: standalone), all and (display-mode: fullscreen) {
+            header.app-chrome, .dashboard-layout, #mobile-present-gate {
+                display: none !important;
+            }
+        }
+        .slide-container {
+            width: 100vw;
+            height: 56.25vw;
+            max-height: 100vh;
+            max-height: 100dvh;
+            max-width: 177.78vh;
+            background: radial-gradient(circle at center, #1a233a 0%, #0a0f1d 100%);
+            position: relative;
+            overflow: hidden;
+            box-shadow: 0 0 50px rgba(0,0,0,0.8);
+            display: flex;
+            flex-direction: column;
+        }
+        body.touch-worship #presentation-view.active .slide-container,
+        body.standalone-worship #presentation-view.active .slide-container {
+            width: 100%;
+            height: 100%;
+            max-width: none;
+            max-height: none;
+            box-shadow: none;
+            border-radius: 0;
+        }
+        #fs-slides-wrapper {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+        }
+        #mobile-present-gate {
+            display: none;
+            position: fixed;
+            inset: 0;
+            z-index: 8000;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 18px;
+            padding: 28px 24px;
+            padding-bottom: max(28px, env(safe-area-inset-bottom));
+            background: radial-gradient(circle at center, #1a233a 0%, #0a0f1d 100%);
+            text-align: center;
+        }
+        #mobile-present-gate .gate-btn {
+            width: min(420px, 92vw);
+            padding: 18px 22px;
+            border: 0;
+            border-radius: 14px;
+            background: linear-gradient(135deg, #2563eb, #4f46e5);
+            color: #fff;
+            font-size: 1.25rem;
+            font-weight: 700;
+            box-shadow: 0 10px 30px rgba(37, 99, 235, 0.35);
+        }
+        #mobile-present-gate .gate-hint {
+            color: #94a3b8;
+            font-size: 0.95rem;
+            line-height: 1.5;
+            max-width: 28rem;
+        }
+        .hidden-gate { display: none !important; }
+        /* iPad landscape is often >1024px — do not hide the worship gate behind that breakpoint */
+        body.touch-worship header.app-chrome,
+        body.touch-worship .dashboard-layout {
+            display: none !important;
+        }
+        body.touch-worship #mobile-present-gate:not(.hidden-gate) {
+            display: flex !important;
+        }
+        body.touch-worship.is-presenting #mobile-present-gate {
+            display: none !important;
+        }
+        @media (max-width: 900px) {
+            body:not(.is-presenting):not(.touch-worship) {
+                overflow-y: auto;
+                overflow-x: hidden;
+            }
+            header.app-chrome {
+                height: auto;
+                min-height: 72px;
+                max-height: none;
+                flex-wrap: wrap;
+                overflow: visible;
+                gap: 10px;
+                padding: 10px 12px;
+            }
+            header.app-chrome .header-actions { flex-wrap: wrap; }
+            .dashboard-layout {
+                flex-direction: column;
+                height: auto;
+            }
+            .dashboard-layout > div,
+            #editor-form-col,
+            #editor-preview-col {
+                width: 100% !important;
+                flex: none !important;
+                height: auto !important;
+                max-height: none !important;
+            }
+        }
+        .present-nav-hint {
+            display: none;
+            position: absolute;
+            bottom: max(12px, env(safe-area-inset-bottom));
+            left: 0;
+            right: 0;
+            text-align: center;
+            color: rgba(255,255,255,0.45);
+            font-size: 12px;
+            z-index: 60;
+            pointer-events: none;
+        }
+        body.touch-worship.is-presenting .present-nav-hint {
+            display: block;
+            bottom: max(16px, env(safe-area-inset-bottom));
+        }
+        .slide-bg-decoration {
+            position: absolute;
+            inset: 0;
+            opacity: 0.15;
+            background-image:
+                linear-gradient(45deg, transparent 45%, rgba(212, 175, 55, 0.2) 50%, transparent 55%),
+                linear-gradient(-45deg, transparent 45%, rgba(212, 175, 55, 0.2) 50%, transparent 55%);
+            background-size: 200% 200%;
+            pointer-events: none;
+            z-index: 1;
+        }
+        .slide-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            z-index: 10;
+            opacity: 0;
+            transform: translateY(20px);
+            transition: opacity 0.5s ease-out, transform 0.5s ease-out;
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+        }
+        .slide-content.active {
+            opacity: 1;
+            transform: translateY(0);
+            pointer-events: auto;
+        }
+        .slide-header {
+            padding: 3% 5%;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 2px solid rgba(255, 255, 255, 0.05);
+        }
+        .slide-body {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding: 2% 8% 5.5vh;
+            text-align: center;
+            min-height: 0;
+            overflow: hidden;
+            box-sizing: border-box;
+            touch-action: none;
+        }
+        body.is-presenting .slide-body {
+            overflow: hidden;
+            touch-action: none;
+            -webkit-overflow-scrolling: auto;
+        }
+        .slide-body.scripture-body {
+            justify-content: flex-start;
+            padding-top: 4%;
+            padding-bottom: 8vh;
+        }
+        /* iPad / iPhone: non-scripture ~center; scripture stays a bit higher */
+        body.touch-worship.is-presenting .slide-body {
+            justify-content: center;
+            padding-top: 4vmin;
+            padding-bottom: 8vmin;
+            padding-left: 5%;
+            padding-right: 5%;
+        }
+        body.touch-worship.is-presenting .slide-body.scripture-body {
+            justify-content: flex-start;
+            padding-top: 4.5vmin; /* one line higher so the last line stays visible */
+            padding-bottom: 16vmin;
+        }
+        body.touch-worship.is-presenting .slide-body > .text-body,
+        body.touch-worship.is-presenting .slide-body > .text-lyric {
+            margin-top: 0;
+            max-height: none;
+        }
+        body.touch-worship.is-presenting .text-lyric {
+            font-size: 4.3vmin;
+            line-height: 1.42;
+            font-weight: 600;
+        }
+        body.touch-worship.is-presenting .text-body {
+            font-size: 3.9vmin;
+            line-height: 1.45;
+        }
+        body.touch-worship.is-presenting .text-huge {
+            font-size: 6.5vmin;
+        }
+        body.touch-worship.is-presenting .text-title {
+            font-size: 5vmin;
+        }
+        .cover-main {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            width: 100%;
+        }
+        .cover-footer {
+            position: absolute;
+            bottom: 2.5rem;
+            left: 0;
+            right: 0;
+            width: 100%;
+            text-align: center;
+            font-size: 1.25rem;
+            font-weight: 500;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            color: #94a3b8;
+            font-family: 'Noto Serif KR', serif;
+            line-height: 1.4;
+            padding: 0 5%;
+        }
+        .slide-body.cover-body {
+            justify-content: center;
+            padding-top: 6%;
+            padding-bottom: 5%;
+        }
+        /* Cover: keep church name at the bottom so it never overlaps the title */
+        body.touch-worship.is-presenting .slide-body.cover-body {
+            justify-content: space-between;
+            padding-top: 7vmin;
+            padding-bottom: 12vmin;
+        }
+        body.touch-worship.is-presenting .cover-body .text-huge {
+            font-size: 7.6vmin;
+            line-height: 1.25;
+            margin-bottom: 2.2vmin;
+        }
+        body.touch-worship.is-presenting .cover-body .text-title {
+            font-size: 4.4vmin;
+            line-height: 1.35;
+        }
+        body.touch-worship.is-presenting .cover-body .cover-leader {
+            font-size: 3.1vmin;
+            margin-top: 2vmin;
+            line-height: 1.4;
+        }
+        body.touch-worship.is-presenting .cover-footer {
+            position: relative;
+            bottom: auto;
+            font-size: 2.6vmin;
+            font-weight: 600;
+        }
+        body.touch-worship.is-presenting .order-list {
+            text-align: left !important;
+            margin-left: 0;
+            margin-right: 0;
+            font-size: 5.3vmin !important;
+            font-weight: 700 !important;
+            line-height: 1.35 !important;
+            gap: 0.55vmin !important;
+            row-gap: 0.55vmin !important;
+        }
+        body.touch-worship.is-presenting .order-stack > h2 {
+            font-size: 6.2vmin;
+            font-weight: 800;
+            margin-bottom: 0.4vmin;
+        }
+        body.touch-worship.is-presenting .order-stack > p {
+            font-size: 2.5vmin;
+            margin-bottom: 2vmin;
+        }
+        body.touch-worship.is-presenting .slide-body.order-slide-body {
+            justify-content: center;
+            padding-top: 4vmin;
+            padding-bottom: 5vmin;
+        }
+        body.touch-worship.is-presenting .text-responsive {
+            font-size: 4.3vmin;
+            line-height: 1.42;
+        }
+        .slide-body.order-slide-body {
+            align-items: center;
+            text-align: left;
+        }
+        .order-stack {
+            display: inline-flex;
+            flex-direction: column;
+            align-items: flex-start;
+            text-align: left;
+            max-width: min(56rem, 92%);
+        }
+        .order-stack > h2,
+        .order-stack > p {
+            text-align: left;
+            width: 100%;
+        }
+        .order-list {
+            text-align: left;
+            width: max-content;
+            max-width: 100%;
+            margin-left: 0;
+            margin-right: 0;
+            font-size: 3.6vh;
+            font-weight: 700;
+            line-height: 1.4;
+            color: #e2e8f0;
+            gap: 0.85vh !important;
+            row-gap: 0.85vh !important;
+        }
+        .order-stack > h2 {
+            font-weight: 800;
+        }
+        .present-exit-btn {
+            display: none;
+            position: absolute;
+            top: max(10px, env(safe-area-inset-top));
+            right: max(12px, env(safe-area-inset-right));
+            z-index: 80;
+            width: 40px;
+            height: 40px;
+            border: 0;
+            border-radius: 999px;
+            background: rgba(15, 23, 42, 0.55);
+            color: rgba(255,255,255,0.75);
+            font-size: 18px;
+            line-height: 1;
+            pointer-events: auto;
+        }
+        .present-fs-btn {
+            display: none;
+            position: absolute;
+            left: 50%;
+            bottom: max(28px, env(safe-area-inset-bottom));
+            transform: translateX(-50%);
+            z-index: 90;
+            border: 0;
+            border-radius: 999px;
+            padding: 14px 28px;
+            background: linear-gradient(135deg, #2563eb, #4f46e5);
+            color: #fff;
+            font-size: 1.05rem;
+            font-weight: 700;
+            letter-spacing: 0.02em;
+            box-shadow: 0 10px 28px rgba(37, 99, 235, 0.45);
+            pointer-events: auto;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+        body.is-presenting .present-exit-btn {
+            display: block;
+        }
+        body.is-presenting:not(.native-fs) .present-fs-btn {
+            display: block;
+        }
+        .slide-footer {
+            padding: 2% 5%;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 1.5vh;
+            color: var(--text-muted);
+            opacity: 0.6;
+        }
+        .text-huge { font-size: 7.5vh; line-height: 1.3; }
+        .text-title { font-size: 5.5vh; line-height: 1.4; }
+        .text-lyric { font-size: 7.4vh; line-height: 1.5; font-weight: 600; text-shadow: 2px 2px 8px rgba(0,0,0,0.8); }
+        .text-body { font-size: 4.2vh; line-height: 1.7; }
+        .text-responsive { font-size: 7.4vh; line-height: 1.5; font-weight: 600; }
+
+        .leader-text { color: #ffe066; font-weight: 600; }
+        .congregation-text { color: #ff5c5c; font-weight: 600; }
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: var(--bg-primary); }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #475569; }
+        /* Editor dashboard — complete fallback so layout works if Tailwind CDN is skipped/late */
+        .dashboard-layout {
+            display: flex;
+            flex-direction: row;
+            height: calc(100vh - 80px);
+            min-height: 0;
+            overflow: hidden;
+            background: #0f172a;
+        }
+        #editor-form-col {
+            width: 33.333%;
+            flex: 0 0 33.333%;
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+            min-height: 0;
+            height: 100%;
+            overflow: hidden;
+            background: rgba(30, 41, 59, 0.5);
+            border-right: 1px solid #334155;
+        }
+        #editor-preview-col {
+            flex: 1 1 auto;
+            width: auto;
+            min-width: 0;
+            min-height: 0;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            background: #0f172a;
+        }
+        #editor-form-col > .form-toolbar {
+            flex-shrink: 0;
+            padding: 1rem;
+            border-bottom: 1px solid #334155;
+        }
+        #editor-form-col .form-scroll {
+            flex: 1 1 auto;
+            min-height: 0;
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
+            padding: 1.5rem;
+        }
+        #editor-form-col .form-scroll.space-y-4 > * + * {
+            margin-top: 1rem;
+        }
+        #editor-form-col .form-card {
+            background: rgba(15, 23, 42, 0.8);
+            padding: 1rem;
+            border-radius: 0.75rem;
+            border: 1px solid rgba(51, 65, 85, 0.5);
+        }
+        #leftActionButtons {
+            flex: 0 0 auto;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            padding: 12px;
+            background: #020617;
+            border-top: 2px solid rgba(217, 119, 6, 0.4);
+        }
+        #leftActionButtons > * + * { margin-top: 0; }
+        #leftActionButtons button {
+            width: 100%;
+            padding: 0.5rem 0.75rem;
+            font-size: 0.875rem;
+            line-height: 1.25;
+            font-weight: 700;
+            color: #fff;
+            border: 0;
+            border-radius: 0.5rem;
+            cursor: pointer;
+            font-family: inherit;
+        }
+        #leftActionButtons button:nth-of-type(1) { background: #2563eb; }
+        #leftActionButtons button:nth-of-type(2) { background: #d97706; }
+        #leftActionButtons button:nth-of-type(3) { background: #047857; }
+        #leftActionButtons button:nth-of-type(4) { background: #6d28d9; border: 2px solid #a78bfa; }
+        #leftActionButtons button:nth-of-type(5) { background: #0369a1; border: 2px solid #38bdf8; }
+        #mini-preview-wrap {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 1.5rem;
+            background: #020617;
+            border-bottom: 1px solid #1e293b;
+            position: relative;
+            flex-shrink: 0;
+        }
+        #mini-preview-wrap .mini-preview-badge {
+            background: #1e293b;
+            color: #cbd5e1;
+            font-size: 0.75rem;
+            padding: 0.25rem 0.625rem;
+            border-radius: 0.25rem;
+            border: 1px solid #334155;
+        }
+        #mini-preview-wrap > div:first-child {
+            position: absolute;
+            top: 1rem;
+            left: 1rem;
+            z-index: 2;
+        }
+        #mini-preview-container {
+            position: relative;
+            aspect-ratio: 16 / 9;
+            width: 100%;
+            max-width: 48rem;
+            background: #000;
+            border-radius: 0.75rem;
+            overflow: hidden;
+            border: 4px solid #1e293b;
+            box-shadow: 0 25px 50px rgba(0,0,0,.5);
+        }
+        #slide-list-panel {
+            flex: 1 1 auto;
+            min-height: 0;
+            overflow-y: auto;
+            padding: 1.5rem;
+            background: #0f172a;
+        }
+        #slide-list {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 1rem;
+        }
+        @media (min-width: 1024px) {
+            #slide-list { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+        }
+        @media (min-width: 1280px) {
+            #slide-list { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+        }
+        #slide-list > div {
+            background: #1e293b;
+            border-radius: 0.5rem;
+            padding: 0.75rem;
+            cursor: pointer;
+            border: 2px solid #334155;
+            min-width: 0;
+        }
+        #slide-list > div.border-blue-500 {
+            border-color: #3b82f6;
+            box-shadow: 0 0 15px rgba(59,130,246,0.5);
+        }
+        .form-scroll {
+            min-height: 0;
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+        header.app-chrome {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            height: 80px;
+            min-height: 80px;
+            max-height: 80px;
+            padding: 0 1.5rem;
+            background: #1e293b;
+            border-bottom: 1px solid #334155;
+            box-shadow: 0 4px 6px rgba(0,0,0,.25);
+            position: relative;
+            z-index: 20;
+            overflow: hidden;
+        }
+        header.app-chrome > div:first-child {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            min-width: 0;
+        }
+        header.app-chrome .header-actions {
+            display: flex;
+            flex-wrap: nowrap;
+            justify-content: flex-end;
+            align-items: center;
+            gap: 8px;
+            flex-shrink: 0;
+        }
+        header.app-chrome h1 { color: #fff; font-size: 1.25rem; font-weight: 700; margin: 0; }
+        header.app-chrome p { color: #94a3b8; font-size: 0.75rem; margin: 0; }
+        header.app-chrome .w-10.h-10 {
+            width: 2.5rem;
+            height: 2.5rem;
+            background: linear-gradient(135deg, #eab308, #a16207);
+            border-radius: 0.5rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #fff;
+            box-shadow: 0 4px 10px rgba(0,0,0,.35);
+            flex-shrink: 0;
+        }
+        header.app-chrome button {
+            color: #fff;
+            font-weight: 600;
+            font-size: 0.875rem;
+            padding: 0.5rem 1rem;
+            border-radius: 0.5rem;
+            cursor: pointer;
+            white-space: nowrap;
+            font-family: inherit;
+        }
+        header.app-chrome button[onclick="printBulletin()"] {
+            background: #047857;
+            border: 1px solid rgba(16, 185, 129, 0.4);
+        }
+        header.app-chrome #btnDownloadPdf,
+        header.app-chrome button[onclick="downloadStandaloneFile()"],
+        header.app-chrome button[onclick="togglePptLibraryPanel()"] {
+            background: #334155;
+            border: 1px solid #475569;
+            color: #e2e8f0;
+        }
+        header.app-chrome button[onclick="togglePptLibraryPanel()"] { color: #fde68a; border-color: rgba(245, 158, 11, 0.5); }
+        header.app-chrome #btnDownloadPptx {
+            background: #b45309;
+            border: 1px solid rgba(245, 158, 11, 0.4);
+        }
+        header.app-chrome [data-start-presentation] {
+            background: linear-gradient(90deg, #2563eb, #4f46e5);
+            border: 1px solid rgba(96, 165, 250, 0.35);
+            font-weight: 700;
+            padding: 0.625rem 1.5rem;
+            box-shadow: 0 10px 15px rgba(30, 58, 138, 0.35);
+        }
+        .dashboard-layout input,
+        .dashboard-layout textarea {
+            background: #1e293b;
+            color: #fff;
+            border: 1px solid #475569;
+            border-radius: 0.25rem;
+            padding: 0.5rem;
+            font-family: inherit;
+        }
+        .dashboard-layout h2 { color: #e2e8f0; margin: 0; }
+        .dashboard-layout h3 { margin: 0 0 0.5rem; }
+        .dashboard-layout .text-yellow-500 { color: #eab308; }
+        .dashboard-layout .text-yellow-400 { color: #facc15; }
+        .dashboard-layout .text-blue-400 { color: #60a5fa; }
+        .dashboard-layout .text-amber-200 { color: #fde68a; }
+        .dashboard-layout .text-amber-300 { color: #fcd34d; }
+        .dashboard-layout .text-amber-400 { color: #fbbf24; }
+        .dashboard-layout .text-emerald-400 { color: #34d399; }
+        .dashboard-layout .text-slate-200 { color: #e2e8f0; }
+        .dashboard-layout .text-slate-300 { color: #cbd5e1; }
+        .dashboard-layout .text-slate-400 { color: #94a3b8; }
+        .dashboard-layout .text-slate-500 { color: #64748b; }
+        .dashboard-layout .flex { display: flex; }
+        .dashboard-layout .flex-col { flex-direction: column; }
+        .dashboard-layout .items-center { align-items: center; }
+        .dashboard-layout .justify-between { justify-content: space-between; }
+        .dashboard-layout .justify-center { justify-content: center; }
+        .dashboard-layout .gap-2 { gap: 0.5rem; }
+        .dashboard-layout .w-full { width: 100%; }
+        .dashboard-layout .w-24 { width: 6rem; }
+        .dashboard-layout .flex-1 { flex: 1 1 auto; min-width: 0; }
+        .dashboard-layout .shrink-0 { flex-shrink: 0; }
+        .dashboard-layout .block { display: block; }
+        .dashboard-layout .truncate {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .dashboard-layout .text-xs { font-size: 0.75rem; }
+        .dashboard-layout .text-sm { font-size: 0.875rem; }
+        .dashboard-layout .text-lg { font-size: 1.125rem; }
+        .dashboard-layout .font-bold { font-weight: 700; }
+        .dashboard-layout .font-semibold { font-weight: 600; }
+        .dashboard-layout .mb-1 { margin-bottom: 0.25rem; }
+        .dashboard-layout .mb-2 { margin-bottom: 0.5rem; }
+        .dashboard-layout .mt-1 { margin-top: 0.25rem; }
+        .dashboard-layout .mt-2 { margin-top: 0.5rem; }
+        .dashboard-layout .space-y-2 > * + * { margin-top: 0.5rem; }
+        .dashboard-layout .space-y-3 > * + * { margin-top: 0.75rem; }
+        .dashboard-layout .space-y-4 > * + * { margin-top: 1rem; }
+        .dashboard-layout button.bg-blue-600 {
+            background: #2563eb;
+            color: #fff;
+            border: 0;
+            border-radius: 0.375rem;
+            cursor: pointer;
+            font-family: inherit;
+        }

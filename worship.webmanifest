@@ -1,0 +1,11 @@
+{
+  "name": "주일 예배 화면",
+  "short_name": "주일예배",
+  "start_url": "./index.html?present=1",
+  "scope": "./",
+  "display": "fullscreen",
+  "orientation": "any",
+  "background_color": "#000000",
+  "theme_color": "#000000",
+  "lang": "ko"
+}

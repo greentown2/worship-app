@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Worship PPT & PDF Generator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Noto Sans KR', sans-serif;
+            background-color: #0f172a;
+            color: #f8fafc;
+        }
+        /* 16:9 Slide Preview Container with centered contents */
+        .slide-preview {
+            width: 100%;
+            aspect-ratio: 16 / 9;
+            background-color: #1e293b;
+            border: 2px solid #334155;
+            border-radius: 12px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding: 40px;
+            text-align: center;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5);
+            position: relative;
+            overflow: hidden;
+        }
+        @media print {
+            body { background: white; color: black; }
+            .no-print { display: none !important; }
+            .print-container { display: block !important; width: 100%; }
+        }
+    </style>
+</head>
+<body class="p-4 md:p-8">
+    <div class="max-w-6xl mx-auto no-print">
+        <header class="text-center mb-8">
+            <h1 class="text-2xl md:text-3xl font-bold text-blue-400 mb-2">Worship PPT & PDF Generator</h1>
+            <p class="text-slate-400 text-sm md:text-base">10단계 전체 주보 순서 자동완성, 찬송가 전 절(1~4절) 가사 수록 및 완벽한 중앙 정렬 자막</p>
+        </header>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <!-- Input Form Panel -->
+            <div class="md:col-span-1 bg-slate-800 p-5 rounded-xl border border-slate-700 shadow-lg">
+                <h2 class="text-lg font-bold text-slate-200 mb-4 pb-2 border-b border-slate-700">주보 정보 입력</h2>
+                
+                <div class="space-y-3 text-sm">
+                    <div>
+                        <label class="block font-semibold text-slate-300 mb-1">교회 이름</label>
+                        <input type="text" id="churchName" value="Fullerton Villa Community Church (플러톤 빌라 교회)" oninput="generateSlides()" class="w-full p-2.5 bg-slate-900 border border-slate-700 rounded-lg text-white focus:outline-none focus:border-blue-500">
+                    </div>
+                    <div>
+                        <label class="block font-semibold text-slate-300 mb-1">예배 일시</label>
+                        <input type="text" id="worshipDate" value="2026년 08월 07일 · 오전 11:00" oninput="generateSlides()" class="w-full p-2.5 bg-slate-900 border border-slate-700 rounded-lg text-white focus:outline-none focus:border-blue-500">
+                    </div>
+                    <div>
+                        <label class="block font-semibold text-slate-300 mb-1">1. 찬양과 기도 찬송 번호</label>
+                        <input type="text" id="hymn1" value="7" oninput="generateSlides()" class="w-full p-2.5 bg-slate-900 border border-slate-700 rounded-lg text-white focus:outline-none focus:border-blue-500" placeholder="예: 7">
+                    </div>
+                    <div>
+                        <label class="block font-semibold text-slate-300 mb-1">3. 교독문 제목</label>
+                        <input type="text" id="responsive" value="교독문 (시편 23편)" oninput="generateSlides()" class="w-full p-2.5 bg-slate-900 border border-slate-700 rounded-lg text-white focus:outline-none focus:border-blue-500">
+                    </div>
+                    <div>
+                        <label class="block font-semibold text-slate-300 mb-1">4. 찬송가 번호</label>
+                        <input type="text" id="hymn2" value="30" oninput="generateSlides()" class="w-full p-2.5 bg-slate-900 border border-slate-700 rounded-lg text-white focus:outline-none focus:border-blue-500">
+                    </div>
+                    <div>
+                        <label class="block font-semibold text-slate-300 mb-1">6. 성경 본문</label>
+                        <input type="text" id="bible" value="히브리서 4:1-11" oninput="generateSlides()" class="w-full p-2.5 bg-slate-900 border border-slate-700 rounded-lg text-white focus:outline-none focus:border-blue-500">
+                    </div>
+                    <div>
+                        <label class="block font-semibold text-slate-300 mb-1">7. 찬양 찬송 번호</label>
+                        <input type="text" id="hymn3" value="50" oninput="generateSlides()" class="w-full p-2.5 bg-slate-900 border border-slate-700 rounded-lg text-white focus:outline-none focus:border-blue-500">
+                    </div>
+                    <div>
+                        <label class="block font-semibold text-slate-300 mb-1">8. 생명의 말씀 (설교 제목)</label>
+                        <input type="text" id="sermon" value="귀향" oninput="generateSlides()" class="w-full p-2.5 bg-slate-900 border border-slate-700 rounded-lg text-white focus:outline-none focus:border-blue-500">
+                    </div>
+                    <div>
+                        <label class="block font-semibold text-slate-300 mb-1">9. 감사와 봉헌 찬송 번호</label>
+                        <input type="text" id="hymn4" value="35" oninput="generateSlides()" class="w-full p-2.5 bg-slate-900 border border-slate-700 rounded-lg text-white focus:outline-none focus:border-blue-500">
+                    </div>
+                    <button onclick="generateSlides()" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-2.5 px-4 rounded-lg transition duration-200 shadow-md mt-2">
+                        슬라이드 전체 자동 갱신
+                    </button>
+                    
+                    <button onclick="downloadHtmlReport()" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2.5 px-4 rounded-lg transition duration-200 shadow-md">
+                        전체 슬라이드 HTML 다운로드
+                    </button>
+                </div>
+            </div>
+            <!-- Slide Preview & Navigation Panel -->
+            <div class="md:col-span-2 flex flex-col justify-between bg-slate-800 p-5 rounded-xl border border-slate-700 shadow-lg">
+                <div>
+                    <div class="flex justify-between items-center mb-3 pb-2 border-b border-slate-700">
+                        <h2 class="text-lg font-bold text-slate-200" id="slideIndicator">미리보기 (1 / 1)</h2>
+                        <div class="flex items-center space-x-2">
+                            <button onclick="toggleDetailModal()" class="text-xs bg-slate-700 hover:bg-slate-600 text-slate-200 px-3 py-1.5 rounded-lg transition font-medium flex items-center space-x-1">
+                                <span>전체 순서 및 가사 보기</span>
+                            </button>
+                            <span class="text-xs bg-blue-900 text-blue-300 px-2.5 py-1 rounded-full font-semibold">16:9 와이드</span>
+                        </div>
+                    </div>
+                    <!-- Live Slide Preview Box (Centered) -->
+                    <div id="slidePreviewBox" class="slide-preview">
+                        <!-- Content dynamically rendered -->
+                    </div>
+                </div>
+                <!-- Navigation Controls -->
+                <div class="flex justify-between items-center mt-4 pt-3 border-t border-slate-700">
+                    <button onclick="prevSlide()" class="bg-slate-700 hover:bg-slate-600 text-white font-semibold py-2 px-5 rounded-lg transition text-sm">
+                        ◀ 이전 슬라이드
+                    </button>
+                    <div id="quickLinks" class="text-xs md:text-sm text-blue-400 font-medium truncate max-w-[200px] md:max-w-xs text-center">
+                        <!-- Summary indicator -->
+                    </div>
+                    <button onclick="nextSlide()" class="bg-slate-700 hover:bg-slate-600 text-white font-semibold py-2 px-5 rounded-lg transition text-sm">
+                        다음 슬라이드 ▶
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- Detail View Modal -->
+    <div id="detailModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm hidden flex items-center justify-center p-4 z-50">
+        <div class="bg-slate-800 border border-slate-700 rounded-2xl max-w-2xl w-full p-6 shadow-2xl">
+            <div class="flex justify-between items-center mb-4 pb-3 border-b border-slate-700">
+                <h3 class="text-lg font-bold text-blue-400 flex items-center space-x-2">
+                    <span>10단계 주보 순서 및 슬라이드 구성 목록</span>
+                </h3>
+                <button onclick="toggleDetailModal()" class="text-slate-400 hover:text-white text-xl font-bold px-2">&times;</button>
+            </div>
+            <div id="modalContentList" class="space-y-2.5 max-h-[60vh] overflow-y-auto pr-2">
+                <!-- Dynamically populated checklist -->
+            </div>
+            <div class="mt-6 pt-4 border-t border-slate-700 flex justify-end">
+                <button onclick="toggleDetailModal()" class="bg-blue-600 hover:bg-blue-500 text-white px-5 py-2 rounded-lg font-semibold transition text-sm">
+                    확인
+                </button>
+            </div>
+        </div>
+    </div>
+    <script>
+        let slides = [];
+        let currentSlideIndex = 0;
+        // 찬송가 번호별 상세 4절 가사 데이터베이스
+        const hymnDatabase = {
+            "7": {
+                title: "새찬송가 7장 - 성부 성자 성령",
+                verses: [
+                    "1절. 성부 성자 성령\n삼위일체께\n입을 모아 찬양 경배 드리세",
+                    "2절. 태초부터 지금까지\n또 영원토록\n영광 영광 아멘",
+                    "3절. 성부 성자 성령께\n영광과 찬송을\n영원히 돌리옵나이다",
+                    "4절. 거룩하신 삼위일체\n우리 찬양 받으소서\n아멘"
+                ],
+                link: "https://hymnary.org/hymn/KHC1983/7"
+            },
+            "30": {
+                title: "새찬송가 30장 - 전능하고 놀라우신",
+                verses: [
+                    "1절. 전능하고 놀라우신\n나의 주님 구세주\n거룩하신 은혜의 왕\n주를 경배합니다\n영광 영광 주의 이름 찬양해\n영광 영광 귀한 이름 찬양해",
+                    "2절. 하늘 위에 계신 주님\n참된 빛이 되시니\n이 세상의 모든 나라\n주께 영광 돌리네\n영광 영광 주의 이름 찬양해\n영광 영광 귀한 이름 찬양해",
+                    "3절. 하늘나라 보좌에서\n죄악 많은 세상에\n우리 구원하시려고\n주님 세상 오셨네\n영광 영광 주의 이름 찬양해\n영광 영광 귀한 이름 찬양해",
+                    "4절. 영원하신 우리 주님\n어서 속히 오셔서\n주의 모든 성도들을\n천국 인도하소서\n영광 영광 주의 이름 찬양해\n영광 영광 귀한 이름 찬양해 아멘"
+                ],
+                link: "https://hymnary.org/hymn/KHC1983/30"
+            },
+            "50": {
+                title: "새찬송가 50장 - 내게 있는 모든 것을",
+                verses: [
+                    "1절. 내게 있는 모든 것을\n아낌없이 주께 바치네\n사랑하고 의지하여\n주만 바라보리라",
+                    "2절. 믿음으로 주를 따르며\n감사 찬송 부르세\n주의 귀한 은혜 받아\n기쁨 충만하도다",
+                    "3절. 주님이 함께 하시니\n늘 찬양하며 살리라\n하늘 소망 품고 사는\n주의 자녀 되리라",
+                    "4절. 모든 영광 주님께\n세세토록 돌리세\n아멘 할렐루야\n찬양 드립니다"
+                ],
+                link: "https://hymnary.org/hymn/KHC1983/50"
+            },
+            "35": {
+                title: "새찬송가 35장 - 큰 영화로신 주",
+                verses: [
+                    "1절. 큰 영화로신 주\n이 곳에 오셔서\n이 모인 자들로\n주 백성 삼으사\n그 중에 항상 계시고\n그 중에 항상 계시고\n큰 영광 나타내소서",
+                    "2절. 이 백성 기도와\n또 예물 드림이\n향내와 같으니\n곧 받으옵소서\n주 예수 크신 복음을\n주 예수 크신 복음을\n만백성 듣게 하소서",
+                    "3절. 또 우리 자손들\n다 주를 기리고\n저 성전 돌같이\n견고하게 하소서\n주 구원하신 능력을\n주 구원하신 능력을\n늘 끝날까지 주소서",
+                    "4절. 주 믿는 만민이\n참 진리 지키며\n옛 성도들 같이\n주 찬송하다가\n저 천국 보좌 앞에서\n저 천국 보좌 앞에서\n늘 찬송하게 하소서 아멘"
+                ],
+                link: "https://hymnary.org/hymn/KHC1983/35"
+            }
+        };
+        function getHymnContent(num) {
+            const cleanNum = num.replace(/[^0-9]/g, '') || "7";
+            if (hymnDatabase[cleanNum]) {
+                return hymnDatabase[cleanNum];
+            }
+            return {
+                title: `새찬송가 ${cleanNum}장`,
+                verses: [
+                    `1절. 찬송가 ${cleanNum}장 1절 가사`,
+                    `2절. 찬송가 ${cleanNum}장 2절 가사`,
+                    `3절. 찬송가 ${cleanNum}장 3절 가사`,
+                    `4절. 찬송가 ${cleanNum}장 4절 가사`
+                ],
+                link: `https://hymnary.org/search?qu=number:${cleanNum}`
+            };
+        }
+        function escapeHtml(text) {
+            return String(text)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;');
+        }
+        function generateSlides() {
+            const church = document.getElementById('churchName').value.trim();
+            const date = document.getElementById('worshipDate').value.trim();
+            const h1 = document.getElementById('hymn1').value.trim();
+            const resp = document.getElementById('responsive').value.trim();
+            const h2 = document.getElementById('hymn2').value.trim();
+            const bible = document.getElementById('bible').value.trim();
+            const h3 = document.getElementById('hymn3').value.trim();
+            const sermon = document.getElementById('sermon').value.trim();
+            const h4 = document.getElementById('hymn4').value.trim();
+            const hymn1Data = getHymnContent(h1);
+            const hymn2Data = getHymnContent(h2);
+            const hymn3Data = getHymnContent(h3);
+            const hymn4Data = getHymnContent(h4);
+            slides = [];
+            // 0. 표지
+            slides.push({
+                title: church,
+                content: `주일 예배\n${date}`,
+                type: "cover"
+            });
+            // 1. 찬양과 기도
+            slides.push({
+                title: "1. 찬양과 기도",
+                content: `[ ${hymn1Data.title} ]\n마음을 다하여 하나님께 찬양을 드립니다.`,
+                type: "normal"
+            });
+            hymn1Data.verses.forEach((verse, idx) => {
+                slides.push({
+                    title: `1. 찬양과 기도 · 가사 (${idx + 1}/4절)`,
+                    content: verse,
+                    type: "hymn",
+                    link: hymn1Data.link
+                });
+            });
+            // 2. 사도신경
+            slides.push({
+                title: "2. 사도신경",
+                content: "전능하사 천지를 만드신 하나님 아버지를 내가 믿사오며,\n그 외아들 우리 주 예수 그리스도를 믿사오니,\n이는 성령으로 잉태하사 동정녀 마리아에게 나시고,\n본디오 빌라도에게 고난을 받으사 십자가에 못 박혀 죽으시고,\n장사한 지 사흘 만에 죽은 자 가운데서 다시 살아나시며,\n하늘에 오르사 전능하신 하나님 우편에 앉아 계시다가,\n거기로부터 산 자와 죽은 자를 심판하러 오시리라.\n성령을 믿사오며, 거룩한 공회와, 성도가 서로 교통하는 것과,\n죄를 사하여 주시는 것과, 몸이 다시 사는 것과, 영원히 사는 것을 믿사옵나이다. 아멘.",
+                type: "creed"
+            });
+            // 3. 교독문
+            slides.push({
+                title: "3. 교독문",
+                content: `[ ${resp} ]\n\n인도자: 여호와는 나의 목자시니 내게 부족함이 없으리로다\n회중: 그가 나를 푸른 풀밭에 누이시며 쉴 만한 물 가로 인도하시는도다\n인도자: 내 영혼을 소생시키시고 자기 이름을 위하여 의의 길로 인도하시는도다\n회중: 내가 사망의 음침한 골짜기로 다닐지라도 해를 두려워하지 않을 것은 주께서 나와 함께 하심이라\n인도자: 주의 지팡이와 막대기가 나를 안위하시나이다\n회중: 내 평생에 선하심과 인자하심이 반드시 나를 따르리니 내가 여호와의 집에 영원히 살리로다`,
+                type: "responsive"
+            });
+            // 4. 찬송가
+            slides.push({
+                title: "4. 찬송가",
+                content: `[ ${hymn2Data.title} ]`,
+                type: "normal"
+            });
+            hymn2Data.verses.forEach((verse, idx) => {
+                slides.push({
+                    title: `4. 찬송가 · 가사 (${idx + 1}/4절)`,
+                    content: verse,
+                    type: "hymn",
+                    link: hymn2Data.link
+                });
+            });
+            // 5. 예배의 기도
+            slides.push({
+                title: "5. 예배의 기도",
+                content: "살아계신 하나님 아버지,\n오늘 이 자리에 모인 성도들을 주님의 사랑으로 품어 주시고,\n예배를 통해 주님을 만나며 새 힘을 얻게 하옵소서.\n예수님의 이름으로 기도드립니다. 아멘.",
+                type: "normal"
+            });
+            // 6. 오늘의 말씀
+            slides.push({
+                title: "6. 오늘의 말씀",
+                content: `[ ${bible} ]\n\n1 그러므로 우리는 두려워할지니 그의 안식에 들어갈 약속이 남아 있을지라도 너희 중에는 혹 이르지 못할 자가 있을까 함이라\n2 그들과 같이 우리도 복음 전함을 받았으되 들은 바 그 말씀이 그들에게 유익하지 못한 것은 듣는 자가 믿음과 결부시키지 아니함이라\n3 이미 믿는 우리들은 저 안식에 들어가는도다\n4 제칠일에 관하여는 어딘가에 이같이 일렀으되 하나님이 제칠일에 그의 모든 일을 쉬셨다 하였으며\n5 또 다시 거기에 그들이 내 안식에 들어오지 못하리라 하였으니\n6 그러면 거기에 들어갈 자들이 남아 있거니와\n7 오늘 너희가 그의 음성을 듣거든 너희 마음을 완고하게 하지 말라 하였나니\n8 만일 여호수아가 그들에게 안식을 주었더라면 그 후에 다른 날을 말씀하지 아니하셨으리라\n9 그런즉 안식할 때가 하나님의 백성에게 남아 있도다\n10 이미 그의 안식에 들어간 자는 하나님이 자기의 일을 쉬심과 같이 자기 일을 쉬느니라\n11 그러므로 우리가 저 안식에 들어가기를 힘쓸지니 이는 누구든지 저 순종하지 아니하는 본에 빠지지 않게 하려 함이라`,
+                type: "normal"
+            });
+            // 7. 찬양
+            slides.push({
+                title: "7. 찬양",
+                content: `[ ${hymn3Data.title} ]`,
+                type: "normal"
+            });
+            hymn3Data.verses.forEach((verse, idx) => {
+                slides.push({
+                    title: `7. 찬양 · 가사 (${idx + 1}/4절)`,
+                    content: verse,
+                    type: "hymn",
+                    link: hymn3Data.link
+                });
+            });
+            // 8. 생명의 말씀
+            slides.push({
+                title: "8. 생명의 말씀",
+                content: `[ ${bible} ]\n\n설교 제목: "${sermon}"`,
+                type: "normal"
+            });
+            // 9. 감사와 봉헌
+            slides.push({
+                title: "9. 감사와 봉헌",
+                content: `[ ${hymn4Data.title} ]`,
+                type: "normal"
+            });
+            hymn4Data.verses.forEach((verse, idx) => {
+                slides.push({
+                    title: `9. 감사와 봉헌 · 가사 (${idx + 1}/4절)`,
+                    content: verse,
+                    type: "hymn",
+                    link: hymn4Data.link
+                });
+            });
+            // 10. 축도 및 광고
+            slides.push({
+                title: "10. 축도",
+                content: "우리 주 예수 그리스도의 은혜와 하나님의 사랑과\n성령님의 교통하심이 무리와 함께 영원히 있을지어다. 아멘",
+                type: "normal"
+            });
+            slides.push({
+                title: "소식 및 광고",
+                content: "• 주일 예배에 오신 모든 분들을 주님의 이름으로 환영합니다.\n• 예배 후 맛있는 식사와 교제가 있습니다.",
+                type: "normal"
+            });
+            if (currentSlideIndex >= slides.length) {
+                currentSlideIndex = 0;
+            }
+            renderSlide();
+            buildModalList();
+        }
+        function renderSlide() {
+            if (slides.length === 0) generateSlides();
+            const slide = slides[currentSlideIndex];
+            
+            document.getElementById('slideIndicator').innerText = `미리보기 (${currentSlideIndex + 1} / ${slides.length})`;
+            const previewBox = document.getElementById('slidePreviewBox');
+            const title = escapeHtml(slide.title);
+            const content = escapeHtml(slide.content);
+            if (slide.type === 'cover') {
+                previewBox.style.backgroundColor = "#1e293b";
+                previewBox.style.color = "#ffffff";
+                previewBox.innerHTML = `
+                    <div class="my-auto flex flex-col items-center justify-center space-y-4">
+                        <h2 class="text-3xl md:text-4xl font-bold text-blue-400 mb-2">${title}</h2>
+                        <div class="w-24 h-1 bg-blue-500 rounded-full my-2"></div>
+                        <p class="text-xl md:text-2xl text-slate-200 whitespace-pre-line font-medium">${content}</p>
+                    </div>
+                `;
+            } else if (slide.type === 'hymn') {
+                previewBox.style.backgroundColor = "#ffffff";
+                previewBox.style.color = "#0f172a";
+                previewBox.innerHTML = `
+                    <div class="my-auto w-full max-w-4xl flex flex-col items-center justify-center space-y-4">
+                        <div class="flex items-center space-x-3">
+                            <span class="bg-blue-100 text-blue-800 text-sm md:text-base font-bold px-4 py-1.5 rounded-full">
+                                ${title}
+                            </span>
+                            ${slide.link ? `<a href="${escapeHtml(slide.link)}" target="_blank" rel="noopener" class="text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-1.5 rounded-md border border-slate-300 font-semibold transition">악보/자료 보기</a>` : ''}
+                        </div>
+                        
+                        <div class="w-full bg-slate-50 border-2 border-slate-200 p-6 md:p-10 rounded-2xl shadow-inner flex flex-col items-center justify-center space-y-3">
+                            <p class="text-2xl md:text-4xl font-bold text-slate-900 leading-relaxed whitespace-pre-line text-center">
+                                ${content}
+                            </p>
+                        </div>
+                    </div>
+                `;
+            } else if (slide.type === 'creed' || slide.type === 'responsive') {
+                previewBox.style.backgroundColor = "#1e293b";
+                previewBox.style.color = "#ffffff";
+                previewBox.innerHTML = `
+                    <div class="my-auto w-full max-w-4xl flex flex-col items-center justify-center space-y-3">
+                        <h3 class="text-2xl md:text-3xl font-bold text-blue-400 mb-2">${title}</h3>
+                        <div class="w-full bg-slate-900/80 border border-slate-700 p-6 md:p-8 rounded-2xl max-h-[50vh] overflow-y-auto flex flex-col items-center justify-center">
+                            <p class="text-lg md:text-xl text-slate-100 leading-relaxed whitespace-pre-line text-center">
+                                ${content}
+                            </p>
+                        </div>
+                    </div>
+                `;
+            } else {
+                previewBox.style.backgroundColor = "#1e293b";
+                previewBox.style.color = "#ffffff";
+                previewBox.innerHTML = `
+                    <div class="my-auto w-full max-w-4xl flex flex-col items-center justify-center space-y-4">
+                        <h3 class="text-2xl md:text-3xl font-bold text-blue-400 mb-3">${title}</h3>
+                        <p class="text-xl md:text-2xl text-white font-medium leading-relaxed whitespace-pre-line text-center max-w-3xl">
+                            ${content}
+                        </p>
+                    </div>
+                `;
+            }
+            document.getElementById('quickLinks').innerText = `${slide.title}`;
+        }
+        function nextSlide() {
+            if (slides.length === 0) generateSlides();
+            currentSlideIndex = (currentSlideIndex + 1) % slides.length;
+            renderSlide();
+        }
+        function prevSlide() {
+            if (slides.length === 0) generateSlides();
+            currentSlideIndex = (currentSlideIndex - 1 + slides.length) % slides.length;
+            renderSlide();
+        }
+        function toggleDetailModal() {
+            document.getElementById('detailModal').classList.toggle('hidden');
+        }
+        function buildModalList() {
+            const container = document.getElementById('modalContentList');
+            container.innerHTML = '';
+            slides.forEach((s, idx) => {
+                container.innerHTML += `
+                    <div class="bg-slate-900/80 p-3 rounded-xl border border-slate-700/60 flex items-center justify-between text-xs md:text-sm">
+                        <div class="truncate mr-2 text-left">
+                            <span class="bg-slate-700 text-blue-300 px-2 py-0.5 rounded-full font-bold mr-2">${idx + 1}</span>
+                            <strong class="text-slate-200">${escapeHtml(s.title)}</strong>
+                            <p class="text-slate-400 truncate mt-0.5">${escapeHtml(s.content.replace(/\n/g, ' '))}</p>
+                        </div>
+                        <button onclick="goToSlide(${idx})" class="bg-blue-600/30 hover:bg-blue-600 text-blue-300 hover:text-white px-3 py-1.5 rounded-lg transition whitespace-nowrap font-medium">
+                            이동
+                        </button>
+                    </div>
+                `;
+            });
+        }
+        function goToSlide(idx) {
+            currentSlideIndex = idx;
+            renderSlide();
+            toggleDetailModal();
+        }
+        function downloadHtmlReport() {
+            const htmlContent = document.documentElement.outerHTML;
+            const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'Fullerton_Villa_Community_Church_Worship.html';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+        window.onload = function() {
+            generateSlides();
+        };
+    </script>
+</body>
+</html>
