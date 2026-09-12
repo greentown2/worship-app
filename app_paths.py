@@ -155,17 +155,36 @@ def _github_json(name: str) -> dict:
 
 def _from_bundled_module(name: str) -> dict:
     try:
-        from bundled_catalogs import CATALOGS
+        import hymn_catalog
     except Exception:
+        try:
+            from bundled_catalogs import CATALOGS
+        except Exception:
+            return {}
+        data = CATALOGS.get(name)
+        return data if isinstance(data, dict) and data else {}
+    mapping = {
+        "hymn_index.json": "INDEX",
+        "hymns_lyrics.json": "LYRICS",
+        "responsive_index.json": "RESPONSIVE_INDEX",
+        "responsive_readings.json": "RESPONSIVE_READINGS",
+    }
+    attr = mapping.get(name)
+    if not attr:
         return {}
-    data = CATALOGS.get(name)
+    data = getattr(hymn_catalog, attr, None)
     return data if isinstance(data, dict) and data else {}
 
 
 def load_bundled_json(name: str) -> dict:
-    """Load a data/*.json catalog from disk, embedded catalogs, then GitHub raw."""
+    """Load embedded catalogs first, then disk, then GitHub raw."""
     if name in _JSON_MEMO:
         return _JSON_MEMO[name]
+
+    bundled = _from_bundled_module(name)
+    if bundled:
+        _JSON_MEMO[name] = bundled
+        return bundled
 
     for path in (
         Path.cwd() / "data" / name,
@@ -179,11 +198,6 @@ def load_bundled_json(name: str) -> dict:
             if name in _BUNDLED_JSON:
                 _JSON_MEMO[name] = data
             return data
-
-    bundled = _from_bundled_module(name)
-    if bundled:
-        _JSON_MEMO[name] = bundled
-        return bundled
 
     fetched = _github_json(name) if name in _BUNDLED_JSON else {}
     if fetched:

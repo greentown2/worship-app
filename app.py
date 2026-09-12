@@ -945,29 +945,41 @@ def main():
         )
         allow_remote = st.toggle("온라인 보조 검색", value=True)
         st.caption("예배 직전에는 로컬 찬송 DB를 쓰는 것이 가장 안정적입니다.")
+        n_lyrics = 0
+        n_index = 0
+        catalog_error = ""
         try:
-            from hymn_lookup import _load_index, _load_lyrics
+            import hymn_catalog as _hymn_catalog
 
-            n_lyrics = len(_load_lyrics())
-            n_index = len(_load_index())
-            st.metric("로컬 찬송 가사", f"{n_lyrics} / {n_index}")
-            if n_index == 0:
-                info = app_paths.debug_paths()
-                st.error(
-                    "찬송 DB 파일을 찾지 못했습니다. GitHub에 최신 코드를 푸시한 뒤 "
-                    "Streamlit Cloud에서 **Reboot app** 해 주세요."
-                )
-                st.caption(
-                    f"repo `{info['repo']}` · data `{info['data']}` · "
-                    f"marker {info['marker_exists']} · cloud {info['cloud']}"
-                )
-            elif n_lyrics < 200:
-                st.warning(
-                    "찬송 가사가 일부만 있습니다. 배포 브랜치에 `data/hymns_lyrics.json`이 "
-                    "포함돼 있는지 확인하세요."
-                )
-        except Exception:
-            pass
+            n_index = len(getattr(_hymn_catalog, "INDEX", {}) or {})
+            n_lyrics = len(getattr(_hymn_catalog, "LYRICS", {}) or {})
+        except Exception as exc:
+            catalog_error = f"{type(exc).__name__}: {exc}"
+            try:
+                from hymn_lookup import _load_index, _load_lyrics
+
+                n_lyrics = len(_load_lyrics())
+                n_index = len(_load_index())
+            except Exception as exc2:
+                catalog_error = f"{catalog_error} / {type(exc2).__name__}: {exc2}"
+        st.metric("로컬 찬송 가사", f"{n_lyrics} / {n_index}")
+        if n_index == 0:
+            info = app_paths.debug_paths()
+            st.error(
+                "찬송 DB를 아직 읽지 못했습니다. Streamlit 설정에서 브랜치를 "
+                "`master` 또는 `feature/worship-html-hymn-pptx`로 맞춘 뒤 Reboot 하세요."
+            )
+            if catalog_error:
+                st.caption(f"import 오류: {catalog_error}")
+            st.caption(
+                f"repo `{info['repo']}` · data `{info['data']}` · "
+                f"marker {info['marker_exists']} · cloud {info['cloud']}"
+            )
+        elif n_lyrics < 200:
+            st.warning(
+                "찬송 가사가 일부만 있습니다. 배포 브랜치에 `data/hymns_lyrics.json`이 "
+                "포함돼 있는지 확인하세요."
+            )
         if st.button("찬송 가사 DB 전체 업데이트", use_container_width=True, key="backfill_hymns"):
             with st.spinner("찬송가 전곡 가사를 로컬 DB에 받는 중… (수 분 소요)"):
                 try:
