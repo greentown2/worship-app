@@ -135,24 +135,25 @@ def read_json(path: Path) -> dict:
 
 
 def _github_json(name: str) -> dict:
-    """Private GitHub repos 404 on raw URLs and stall Streamlit. Skip without a token."""
+    """Fetch catalog JSON from public GitHub/jsDelivr. Short timeouts for Streamlit."""
     token = (
         os.environ.get("GITHUB_TOKEN")
         or os.environ.get("GH_TOKEN")
         or os.environ.get("GITHUB_PAT")
         or ""
     ).strip()
-    if not token:
-        return {}
     headers = {
         "User-Agent": "Mozilla/5.0 (compatible; GraceWorshipPPT/1.0)",
         "Accept": "application/json,text/plain,*/*",
-        "Authorization": f"Bearer {token}",
     }
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
     urls = [
         f"https://raw.githubusercontent.com/{_GITHUB_REPO}/{branch}/data/{name}"
         for branch in _GITHUB_BRANCHES
     ]
+    urls.append(f"https://cdn.jsdelivr.net/gh/{_GITHUB_REPO}@master/data/{name}")
+    urls.append(f"https://raw.githubusercontent.com/{_GITHUB_REPO}/master/hymn_assets/{name}")
     seen: set[str] = set()
     for url in urls:
         if url in seen:
@@ -160,7 +161,7 @@ def _github_json(name: str) -> dict:
         seen.add(url)
         req = Request(url, headers=headers)
         try:
-            with urlopen(req, timeout=4) as resp:
+            with urlopen(req, timeout=8) as resp:
                 raw = resp.read().decode("utf-8", errors="replace")
             data = json.loads(raw)
             if isinstance(data, dict) and data:

@@ -49,28 +49,29 @@ def _better(new: dict, old: dict) -> bool:
 
 
 def _fetch_json(name: str) -> dict:
-    """Last-resort GitHub fetch. Skipped without a token (private repo 404s)."""
+    """GitHub raw fallback. Repo is public; keep timeouts short so Cloud does not stall."""
     token = (
         os.environ.get("GITHUB_TOKEN")
         or os.environ.get("GH_TOKEN")
         or os.environ.get("GITHUB_PAT")
         or ""
     ).strip()
-    if not token:
-        return {}
     headers = {
         "User-Agent": "Mozilla/5.0 (compatible; GraceWorshipPPT/1.0)",
-        "Accept": "application/vnd.github+json",
-        "Authorization": f"Bearer {token}",
+        "Accept": "application/json,text/plain,*/*",
     }
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
     urls = [
         f"https://raw.githubusercontent.com/{_GITHUB_REPO}/{ref}/data/{name}"
         for ref in _GITHUB_REFS
     ]
+    urls.append(f"https://cdn.jsdelivr.net/gh/{_GITHUB_REPO}@master/data/{name}")
+    urls.append(f"https://raw.githubusercontent.com/{_GITHUB_REPO}/master/hymn_assets/{name}")
     for url in urls:
         req = Request(url, headers=headers)
         try:
-            with urlopen(req, timeout=4) as resp:
+            with urlopen(req, timeout=8) as resp:
                 raw = resp.read().decode("utf-8", errors="replace")
             data = json.loads(raw)
             if isinstance(data, dict) and data:
