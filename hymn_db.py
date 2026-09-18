@@ -15,10 +15,13 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 
 HYMN_INDEX_FILE = "hymn_index.json"
 HYMN_LYRICS_FILE = "hymns_lyrics.json"
 _FOLDERS = ("hymn_assets", "data")
+_GITHUB_REPO = "pastoreom2-hue/senir-hotel-worship-order"
 _LAST_ERROR = ""
 
 
@@ -69,16 +72,63 @@ def _from_files(filename: str) -> dict:
     return {}
 
 
+def _from_package(filename: str) -> dict:
+    try:
+        import hymn_assets
+        data = hymn_assets.load_json(filename)
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def _from_github(filename: str) -> dict:
+    urls = [
+        f"https://raw.githubusercontent.com/{_GITHUB_REPO}/master/hymn_assets/{filename}",
+        f"https://raw.githubusercontent.com/{_GITHUB_REPO}/master/data/{filename}",
+        f"https://cdn.jsdelivr.net/gh/{_GITHUB_REPO}@master/hymn_assets/{filename}",
+    ]
+    headers = {
+        "User-Agent": "Mozilla/5.0 (compatible; GraceWorshipPPT/1.0)",
+        "Accept": "application/json,text/plain,*/*",
+    }
+    for url in urls:
+        try:
+            with urlopen(Request(url, headers=headers), timeout=8) as resp:
+                raw = resp.read().decode("utf-8", errors="replace")
+            data = json.loads(raw)
+            if isinstance(data, dict) and data:
+                return data
+        except (URLError, HTTPError, TimeoutError, OSError, json.JSONDecodeError, ValueError):
+            continue
+    return {}
+
+
+def _digit_dict(raw: dict, *, values_are_dict: bool) -> dict:
+    out = {}
+    for k, v in (raw or {}).items():
+        if not str(k).isdigit():
+            continue
+        if values_are_dict:
+            if isinstance(v, dict):
+                out[str(k)] = v
+        else:
+            out[str(k)] = str(v or "")
+    return out
+
+
 def load_index() -> dict[str, str]:
     global _LAST_ERROR
     _ensure_sys_path()
-    raw = _from_files(HYMN_INDEX_FILE)
-    out = {str(k): str(v or "") for k, v in raw.items() if str(k).isdigit()}
-    if out:
-        return out
+    for loader in (_from_package, _from_files, _from_github):
+        try:
+            out = _digit_dict(loader(HYMN_INDEX_FILE), values_are_dict=False)
+            if out:
+                return out
+        except Exception as exc:
+            _LAST_ERROR = f"{loader.__name__} {type(exc).__name__}: {exc}"
     try:
         from hymn_index_embed import INDEX as embedded
-        return {str(k): str(v or "") for k, v in embedded.items() if str(k).isdigit()}
+        return _digit_dict(embedded, values_are_dict=False)
     except Exception as exc:
         _LAST_ERROR = f"hymn_index_embed {type(exc).__name__}: {exc}"
         return {}
@@ -87,24 +137,16 @@ def load_index() -> dict[str, str]:
 def load_lyrics() -> dict:
     global _LAST_ERROR
     _ensure_sys_path()
-    raw = _from_files(HYMN_LYRICS_FILE)
-    out = {
-        str(k): v
-        for k, v in (raw or {}).items()
-        if str(k).isdigit() and isinstance(v, dict)
-    }
-    if out:
-        return out
+    for loader in (_from_package, _from_files, _from_github):
+        try:
+            out = _digit_dict(loader(HYMN_LYRICS_FILE), values_are_dict=True)
+            if out:
+                return out
+        except Exception as exc:
+            _LAST_ERROR = f"{loader.__name__} {type(exc).__name__}: {exc}"
     try:
         from hymn_lyrics_embed import load as load_embed
-        data = load_embed()
-        if not isinstance(data, dict):
-            return {}
-        return {
-            str(k): v
-            for k, v in data.items()
-            if str(k).isdigit() and isinstance(v, dict)
-        }
+        return _digit_dict(load_embed(), values_are_dict=True)
     except Exception as exc:
         _LAST_ERROR = f"hymn_lyrics_embed {type(exc).__name__}: {exc}"
         return {}

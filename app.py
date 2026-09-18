@@ -58,7 +58,10 @@ import build_master_templates
 import data_enrich
 import hymn_assets
 import hymn_catalog
-import hymn_db
+try:
+    import hymn_db
+except Exception:
+    hymn_db = None
 import hymn_lookup
 import html_presentation
 import lookup_bundle
@@ -75,28 +78,31 @@ import template_tokens
 
 # Re-execute app.py on every Streamlit rerun, but keep imported modules (and
 # their lyric caches) unless a .py file on disk actually changed.
-_CODE_MODULES = (
-    ("app_paths", app_paths),
-    ("defaults", defaults),
-    ("models", models),
-    ("scripture_lookup", scripture_lookup),
-    ("hymn_db", hymn_db),
-    ("hymn_catalog", hymn_catalog),
-    ("hymn_lookup", hymn_lookup),
-    ("responsive_lookup", responsive_lookup),
-    ("data_enrich", data_enrich),
-    ("bulletin_parser", bulletin_parser),
-    ("lookup_bundle", lookup_bundle),
-    ("build_master_templates", build_master_templates),
-    ("template_tokens", template_tokens),
-    ("pdf_generator", pdf_generator),
-    ("ppt_library", ppt_library),
-    ("pptx_slide_copy", pptx_slide_copy),
-    ("pptx_polish", pptx_polish),
-    ("pptx_html_capture", pptx_html_capture),
-    ("pptx_from_slides", pptx_from_slides),
-    ("pptx_generator", pptx_generator),
-    ("html_presentation", html_presentation),
+_CODE_MODULES = tuple(
+    pair for pair in (
+        ("app_paths", app_paths),
+        ("defaults", defaults),
+        ("models", models),
+        ("scripture_lookup", scripture_lookup),
+        ("hymn_db", hymn_db),
+        ("hymn_catalog", hymn_catalog),
+        ("hymn_lookup", hymn_lookup),
+        ("responsive_lookup", responsive_lookup),
+        ("data_enrich", data_enrich),
+        ("bulletin_parser", bulletin_parser),
+        ("lookup_bundle", lookup_bundle),
+        ("build_master_templates", build_master_templates),
+        ("template_tokens", template_tokens),
+        ("pdf_generator", pdf_generator),
+        ("ppt_library", ppt_library),
+        ("pptx_slide_copy", pptx_slide_copy),
+        ("pptx_polish", pptx_polish),
+        ("pptx_html_capture", pptx_html_capture),
+        ("pptx_from_slides", pptx_from_slides),
+        ("pptx_generator", pptx_generator),
+        ("html_presentation", html_presentation),
+    )
+    if pair[1] is not None
 )
 
 
@@ -165,7 +171,7 @@ DEFAULT_WORSHIP_LEADER = getattr(defaults, "DEFAULT_WORSHIP_LEADER", "엄영민 
 
 _PDF_VERSION = getattr(pdf_generator, "_PDF_VERSION", "folded-letter")
 
-HYMN_DB_BUILD = "20260918i"
+HYMN_DB_BUILD = "20260918j"
 
 st.set_page_config(
     page_title=f"Grace Worship · 찬송DB {HYMN_DB_BUILD}",
@@ -210,12 +216,19 @@ st.markdown(
       font-size: 0.98rem;
       letter-spacing: -0.01em;
     }
-    [data-testid="stSidebar"] {
-      background: linear-gradient(180deg, #1c2a21 0%, #24362b 100%);
-      border-right: 1px solid #314539;
+    section[data-testid="stSidebar"],
+    [data-testid="stSidebar"],
+    [data-testid="stSidebarContent"],
+    [data-testid="stSidebarUserContent"] {
+      background: #f4f7f5 !important;
+      color: #152019 !important;
+      border-right: 1px solid #d5ddd7;
     }
-    [data-testid="stSidebar"] * { color: #e7eee9 !important; }
-    [data-testid="stSidebar"] .stMarkdown p { color: #c5d2ca !important; }
+    [data-testid="stSidebar"] h1,
+    [data-testid="stSidebar"] h2,
+    [data-testid="stSidebar"] h3 {
+      color: #152019 !important;
+    }
     .bulletin-banner {
         background: linear-gradient(135deg, #f8fbf9 0%, var(--accent-soft) 100%);
         border: 1px solid var(--line);
@@ -236,6 +249,8 @@ st.markdown(
     div[data-testid="stButton"] button {
         border-radius: 8px !important;
         border-color: var(--line) !important;
+        color: #152019 !important;
+        background: #fff !important;
     }
     .order-step {
         font-weight: 700;
@@ -934,79 +949,42 @@ def _hymn_inputs(label: str, num_key: str, title_key: str, fetch_key: str, allow
         st.caption("찬송가는 장번호만 넣으면 됩니다. 복음성가는 번호를 비우고 제목과 가사를 넣으세요.")
 
 
+def _hydrate_hymn_db() -> tuple[int, int, str]:
+    """Load titles/lyrics without blocking the first paint on remote scrapes."""
+    catalog_error = ""
+    idx: dict = {}
+    lyr: dict = {}
+    try:
+        if hymn_db is not None:
+            idx = hymn_db.load_index()
+            lyr = hymn_db.load_lyrics()
+        else:
+            catalog_error = "hymn_db import failed"
+            idx = hymn_assets.index()
+            lyr = hymn_assets.lyrics()
+    except Exception as exc:
+        catalog_error = f"{type(exc).__name__}: {exc}"
+        try:
+            idx = idx or hymn_assets.index()
+            lyr = lyr or hymn_assets.lyrics()
+        except Exception:
+            pass
+    n_index = sum(1 for k in idx if str(k).isdigit())
+    n_lyrics = sum(1 for k in lyr if str(k).isdigit())
+    if idx:
+        hymn_catalog.INDEX = idx
+    if lyr:
+        hymn_catalog.LYRICS = lyr
+    if n_index:
+        hymn_catalog.SOURCE = "hymn_db"
+    return n_index, n_lyrics, catalog_error
+
+
 def main():
     _init_state()
 
-    catalog_error = ""
-    n_show_ly = n_show_idx = 0
-    try:
-        idx = hymn_db.load_index()
-        lyr = hymn_db.load_lyrics()
-        n_show_idx = sum(1 for k in idx if str(k).isdigit())
-        n_show_ly = sum(1 for k in lyr if str(k).isdigit())
-        hymn_catalog.INDEX = idx or hymn_catalog.INDEX
-        hymn_catalog.LYRICS = lyr or hymn_catalog.LYRICS
-        if n_show_idx:
-            hymn_catalog.SOURCE = "hymn_db"
-        for _fn in (hymn_lookup._load_index, hymn_lookup._load_lyrics):
-            try:
-                _fn.cache_clear()
-            except Exception:
-                pass
-    except Exception as exc:
-        catalog_error = f"{type(exc).__name__}: {exc}"
-
-    if n_show_ly < 200:
-        st.error(
-            f"배포된 앱이 찬송 DB를 못 읽었습니다 ({n_show_ly}/{n_show_idx}). "
-            "share.streamlit.io 에서 브랜치를 `master` 로, Main file 을 `app.py` 로 맞춘 뒤 "
-            "Reboot 하세요."
-        )
-        if catalog_error:
-            st.caption(f"로드 오류: {catalog_error}")
-        with st.expander("찬송 파일 경로 진단", expanded=True):
-            st.code("\n".join(hymn_db.debug_lines()), language="text")
-
-    # Warm local/embedded catalogs before filling default hymn titles
-    try:
-        from hymn_lookup import _load_index, _load_lyrics
-
-        _load_index()
-        _load_lyrics()
-    except Exception:
-        pass
-
-    # First load: fill titles/bodies from default numbers without waiting for Enter
-    if not st.session_state.get("_bootstrapped_lookups"):
-        for nk, tk in (
-            *[(f"prep_hymn_{i}_num", f"prep_hymn_{i}_title") for i in range(1, PREP_HYMN_COUNT + 1)],
-            ("praise_num", "praise_title"),
-            ("hymn_num", "hymn_title"),
-            ("choir_anthem_num", "choir_anthem_title"),
-            ("offering_num", "offering_title"),
-        ):
-            if parse_hymn_number(st.session_state.get(nk) or "") and not (
-                st.session_state.get(tk) or ""
-            ).strip():
-                _on_hymn_num_change(nk, tk)
-        if parse_responsive_number(st.session_state.get("responsive_num") or "") and not (
-            st.session_state.get("responsive_body") or ""
-        ).strip():
-            _on_responsive_num_change()
-        if (st.session_state.get("scripture_reference_input") or "").strip() and not (
-            st.session_state.get("scripture_text_area") or ""
-        ).strip():
-            _on_scripture_ref_change()
-        st.session_state["_bootstrapped_lookups"] = True
-
-    st.title("Worship PPT & PDF Generator")
-    st.markdown(
-        '<p class="subtitle">'
-        "① 다중 페이지 주보 업로드 → ② 번호만으로 찬송·교독·성경 자동 채움 → "
-        "③ 주보 PDF · PPT · 예배화면 HTML을 <strong>한 번에</strong> 생성"
-        "</p>",
-        unsafe_allow_html=True,
-    )
+    n_show_idx, n_show_ly, catalog_error = _hydrate_hymn_db()
+    n_index, n_lyrics = n_show_idx, n_show_ly
 
     with st.sidebar:
         st.header("통합 흐름")
@@ -1025,34 +1003,19 @@ def main():
         allow_remote = st.toggle("온라인 보조 검색", value=True)
         st.caption("예배 직전에는 로컬 찬송 DB를 쓰는 것이 가장 안정적입니다.")
         src = getattr(hymn_catalog, "SOURCE", "") or "hymn_db"
-        n_index = n_show_idx
-        n_lyrics = n_show_ly
-        if not n_index or not n_lyrics:
-            try:
-                n_index = max(n_index, sum(1 for k in hymn_db.load_index() if str(k).isdigit()))
-                n_lyrics = max(n_lyrics, sum(1 for k in hymn_db.load_lyrics() if str(k).isdigit()))
-            except Exception as exc:
-                extra = f"{type(exc).__name__}: {exc}"
-                catalog_error = f"{catalog_error} / {extra}" if catalog_error else extra
-        st.caption(f"찬송 DB 빌드 {HYMN_DB_BUILD} · cwd `{Path.cwd()}`")
+        st.caption(f"찬송 DB 빌드 {HYMN_DB_BUILD}")
         if src:
             st.caption(f"DB 출처: {src}")
-        st.caption("파일명: `data/hymn_index.json` · `data/hymns_lyrics.json` (소문자)")
         st.metric("로컬 찬송 가사", f"{n_lyrics} / {n_index}")
         if catalog_error:
             st.caption(f"로드 오류: {catalog_error}")
-        if n_index == 0 or n_lyrics < 200:
+        if (n_index == 0 or n_lyrics < 200) and hymn_db is not None:
             with st.expander("경로 진단", expanded=n_index == 0):
                 st.code("\n".join(hymn_db.debug_lines()), language="text")
         if n_index == 0:
             st.error(
-                "찬송 DB를 아직 읽지 못했습니다. Streamlit 설정에서 브랜치를 "
-                "`master`로 맞춘 뒤 Reboot 하세요."
-            )
-        elif n_lyrics < 200:
-            st.warning(
-                "찬송 가사가 일부만 있습니다. 배포 브랜치에 `data/hymns_lyrics.json`과 "
-                "`hymn_lyrics_embed.py`가 포함돼 있는지 확인하세요."
+                "지금 화면이 예전 배포입니다. share.streamlit.io 에서 앱을 지운 뒤 "
+                "GitHub `master` / Main file `app.py` 로 다시 Deploy 하세요."
             )
         if st.button("찬송 가사 DB 전체 받기 (645곡)", use_container_width=True, key="backfill_hymns"):
             with st.spinner("저장된 찬송 645곡을 앱에 복사하는 중…"):
@@ -1081,6 +1044,48 @@ def main():
         if st.button("이번 주 사용할 PPT 열기", use_container_width=True, key="sidebar_ppt_week"):
             ppt_library.open_folder("this_week")
             st.toast("이번 주 사용할 PPT 폴더를 열었습니다.")
+
+    st.title("Worship PPT & PDF Generator")
+    st.caption(f"빌드 {HYMN_DB_BUILD} · 로컬 찬송 {n_lyrics}/{n_index}")
+    st.markdown(
+        '<p class="subtitle">'
+        "① 다중 페이지 주보 업로드 → ② 번호만으로 찬송·교독·성경 자동 채움 → "
+        "③ 주보 PDF · PPT · 예배화면 HTML을 <strong>한 번에</strong> 생성"
+        "</p>",
+        unsafe_allow_html=True,
+    )
+    if n_lyrics < 200:
+        st.error(
+            f"찬송 DB {n_lyrics}/{n_index}. 이 숫자가 0/0 이고 빌드가 {HYMN_DB_BUILD}가 "
+            "아니면 Streamlit이 예전 코드를 실행 중입니다. "
+            "https://share.streamlit.io 에서 앱을 삭제한 뒤 "
+            "`pastoreom2-hue/senir-hotel-worship-order` / 브랜치 `master` / "
+            "Main file `app.py` 로 다시 Deploy 하세요."
+        )
+
+    st.session_state["_allow_remote"] = False
+    if not st.session_state.get("_bootstrapped_lookups"):
+        for nk, tk in (
+            *[(f"prep_hymn_{i}_num", f"prep_hymn_{i}_title") for i in range(1, PREP_HYMN_COUNT + 1)],
+            ("praise_num", "praise_title"),
+            ("hymn_num", "hymn_title"),
+            ("choir_anthem_num", "choir_anthem_title"),
+            ("offering_num", "offering_title"),
+        ):
+            if parse_hymn_number(st.session_state.get(nk) or "") and not (
+                st.session_state.get(tk) or ""
+            ).strip():
+                _on_hymn_num_change(nk, tk)
+        if parse_responsive_number(st.session_state.get("responsive_num") or "") and not (
+            st.session_state.get("responsive_body") or ""
+        ).strip():
+            _on_responsive_num_change()
+        if (st.session_state.get("scripture_reference_input") or "").strip() and not (
+            st.session_state.get("scripture_text_area") or ""
+        ).strip():
+            _on_scripture_ref_change()
+        st.session_state["_bootstrapped_lookups"] = True
+    st.session_state["_allow_remote"] = allow_remote
 
     # ===== TOP: Custom bulletin upload & auto-template parser =====
     st.markdown(
