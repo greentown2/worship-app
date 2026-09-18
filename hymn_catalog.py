@@ -17,11 +17,16 @@ from urllib.request import Request, urlopen
 _GITHUB_REPO = "pastoreom2-hue/senir-hotel-worship-order"
 _GITHUB_REFS = ("master", "feature/worship-html-hymn-pptx")
 
-INDEX: dict = {}
+try:
+    from hymn_index_embed import INDEX as _EMBEDDED_INDEX
+except Exception:
+    _EMBEDDED_INDEX = {}
+
+INDEX: dict = {str(k): str(v or "") for k, v in _EMBEDDED_INDEX.items() if str(k).isdigit()}
 LYRICS: dict = {}
 RESPONSIVE_INDEX: dict = {}
 RESPONSIVE_READINGS: dict = {}
-SOURCE = "empty"
+SOURCE = "embed" if INDEX else "empty"
 ERROR = ""
 
 
@@ -135,10 +140,11 @@ def load() -> str:
                 if label not in sources:
                     sources.append(label)
 
-    embedded = _embedded_index()
+    embedded = _embedded_index() or dict(INDEX)
     if embedded and _better(embedded, loaded["INDEX"]):
         loaded["INDEX"] = embedded
-        sources.append("embed")
+        if "embed" not in sources:
+            sources.append("embed")
 
     if _numeric_len(loaded["INDEX"]) < 200 or _numeric_len(loaded["LYRICS"]) < 200:
         for name, attr in files.items():
@@ -149,6 +155,11 @@ def load() -> str:
                 loaded[attr] = fetched
                 if "github" not in sources:
                     sources.append("github")
+
+    if _numeric_len(INDEX) > _numeric_len(loaded["INDEX"]):
+        loaded["INDEX"] = dict(INDEX)
+        if "embed" not in sources:
+            sources.append("embed")
 
     INDEX = loaded["INDEX"]
     LYRICS = loaded["LYRICS"]

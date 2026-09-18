@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import date
 from pathlib import Path
+import json
 
 import streamlit as st
 
@@ -130,8 +131,10 @@ DEFAULT_WORSHIP_LEADER = getattr(defaults, "DEFAULT_WORSHIP_LEADER", "엄영민 
 
 _PDF_VERSION = getattr(pdf_generator, "_PDF_VERSION", "folded-letter")
 
+HYMN_DB_BUILD = "20260918c"
+
 st.set_page_config(
-    page_title="Worship PPT & PDF Generator",
+    page_title=f"Grace Worship · 찬송DB {HYMN_DB_BUILD}",
     page_icon="✝",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -962,45 +965,44 @@ def main():
         catalog_error = ""
         src = ""
         try:
+            from hymn_index_embed import INDEX as _embed_idx
+            n_index = sum(1 for k in _embed_idx if str(k).isdigit())
+        except Exception as exc:
+            catalog_error = f"embed {type(exc).__name__}: {exc}"
+        here = Path(__file__).resolve().parent
+        for data_dir in (here / "data", Path("/mount/src/data"), Path.cwd() / "data"):
+            try:
+                idx_path = data_dir / "hymn_index.json"
+                lyr_path = data_dir / "hymns_lyrics.json"
+                if idx_path.is_file():
+                    idx = json.loads(idx_path.read_text(encoding="utf-8"))
+                    n_index = max(n_index, sum(1 for k in idx if str(k).isdigit()))
+                if lyr_path.is_file():
+                    lyr = json.loads(lyr_path.read_text(encoding="utf-8"))
+                    n_lyrics = max(n_lyrics, sum(1 for k in lyr if str(k).isdigit()))
+            except Exception:
+                continue
+        try:
             import hymn_catalog as _hymn_catalog
 
             try:
                 _hymn_catalog.load()
             except Exception:
                 pass
-            try:
-                app_paths.clear_json_cache()
-            except Exception:
-                pass
-            from hymn_lookup import _load_index, _load_lyrics
-
-            idx = _load_index() or {}
-            lyr = _load_lyrics() or {}
             cat_idx = getattr(_hymn_catalog, "INDEX", {}) or {}
             cat_lyr = getattr(_hymn_catalog, "LYRICS", {}) or {}
-            n_index = max(
-                sum(1 for k in idx if str(k).isdigit()),
-                sum(1 for k in cat_idx if str(k).isdigit()),
-            )
-            n_lyrics = max(
-                sum(1 for k in lyr if str(k).isdigit()),
-                sum(1 for k in cat_lyr if str(k).isdigit()),
-            )
-            src = getattr(_hymn_catalog, "SOURCE", "")
-            if src:
-                st.caption(f"DB 출처: {src}")
+            n_index = max(n_index, sum(1 for k in cat_idx if str(k).isdigit()))
+            n_lyrics = max(n_lyrics, sum(1 for k in cat_lyr if str(k).isdigit()))
+            src = getattr(_hymn_catalog, "SOURCE", "") or src
             err = getattr(_hymn_catalog, "ERROR", "")
-            if err:
+            if err and not catalog_error:
                 catalog_error = err
         except Exception as exc:
-            catalog_error = f"{type(exc).__name__}: {exc}"
-            try:
-                from hymn_lookup import _load_index, _load_lyrics
-
-                n_lyrics = sum(1 for k in (_load_lyrics() or {}) if str(k).isdigit())
-                n_index = sum(1 for k in (_load_index() or {}) if str(k).isdigit())
-            except Exception as exc2:
-                catalog_error = f"{catalog_error} / {type(exc2).__name__}: {exc2}"
+            extra = f"{type(exc).__name__}: {exc}"
+            catalog_error = f"{catalog_error} / {extra}" if catalog_error else extra
+        st.caption(f"찬송 DB 빌드 {HYMN_DB_BUILD}")
+        if src:
+            st.caption(f"DB 출처: {src}")
         st.metric("로컬 찬송 가사", f"{n_lyrics} / {n_index}")
         if n_index == 0:
             info = app_paths.debug_paths()

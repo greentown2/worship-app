@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import json
 import re
 import threading
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Optional
 from urllib.error import URLError, HTTPError
 from urllib.request import Request, urlopen
@@ -55,15 +57,42 @@ def parse_hymn_number(raw: str) -> Optional[int]:
     return None
 
 
+def _direct_json(name: str) -> dict:
+    """Read data/*.json next to this file — works on Streamlit Cloud even if cwd is wrong."""
+    here = Path(__file__).resolve().parent
+    for path in (
+        here / "data" / name,
+        Path("/mount/src/data") / name,
+        Path("/app/data") / name,
+        Path.cwd() / "data" / name,
+    ):
+        try:
+            if not path.is_file():
+                continue
+            data = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(data, dict) and data:
+                return data
+        except (OSError, json.JSONDecodeError, UnicodeError, TypeError):
+            continue
+    return {}
+
+
 def _load_index() -> dict[str, str]:
-    raw = load_bundled_json("hymn_index.json")
-    out = {
-        str(k): str(v or "")
-        for k, v in (raw or {}).items()
-        if not str(k).startswith("_")
-    }
-    if len([k for k in out if str(k).isdigit()]) < 200:
-        lyrics = load_overlay_json("hymns_lyrics.json")
+    out: dict[str, str] = {}
+    try:
+        from hymn_index_embed import INDEX as embedded
+        out.update({str(k): str(v or "") for k, v in embedded.items() if str(k).isdigit()})
+    except Exception:
+        pass
+    for raw in (load_bundled_json("hymn_index.json"), _direct_json("hymn_index.json")):
+        for k, v in (raw or {}).items():
+            if str(k).startswith("_"):
+                continue
+            title = str(v or "").strip()
+            if title:
+                out[str(k)] = title
+    if sum(1 for k in out if str(k).isdigit()) < 200:
+        lyrics = _load_lyrics()
         for k, v in (lyrics or {}).items():
             if not str(k).isdigit() or out.get(str(k)):
                 continue
@@ -75,12 +104,20 @@ def _load_index() -> dict[str, str]:
 
 
 def _load_lyrics() -> dict[str, dict]:
-    raw = load_overlay_json("hymns_lyrics.json")
-    return {
-        str(k): v
-        for k, v in (raw or {}).items()
-        if not str(k).startswith("_") and isinstance(v, dict)
-    }
+    best: dict[str, dict] = {}
+    for raw in (_direct_json("hymns_lyrics.json"), load_overlay_json("hymns_lyrics.json")):
+        if not isinstance(raw, dict):
+            continue
+        cleaned = {
+            str(k): v
+            for k, v in raw.items()
+            if not str(k).startswith("_") and isinstance(v, dict)
+        }
+        if sum(1 for k in cleaned if k.isdigit()) > sum(1 for k in best if str(k).isdigit()):
+            best = cleaned
+        elif cleaned:
+            best.update({k: v for k, v in cleaned.items() if k not in best})
+    return best
 
 
 def _load_runtime_cache() -> dict[str, dict]:
