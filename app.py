@@ -1426,7 +1426,7 @@ def main():
 
     st.caption(
         f"주보 {_PDF_VERSION} · PPT {getattr(pptx_from_slides, '_PPTX_SLIDES_VERSION', 'dev')} · "
-        "Letter 11×8.5 접지 + 예배 PPT (찬송 소개만)"
+        "Letter 11×8.5 접지 + 예배 PPT (HTML 화면과 동일)"
     )
 
     data = _build_worship_data(
@@ -1460,6 +1460,7 @@ def main():
 
     content_fingerprint = (
         f"{_PDF_VERSION}|{getattr(pptx_from_slides, '_PPTX_SLIDES_VERSION', '')}|"
+        f"{getattr(pptx_html_capture, '_CAPTURE_VERSION', '')}|"
         f"{getattr(pptx_generator, '_INJECT_VERSION', '')}|"
         f"{data.church_name_ko}|{data.worship_leader}|{data.sermon_title}|{data.sermon_subtitle}|"
         f"{data.scripture_reference}|{(data.scripture_text or '')[:120]}|"
@@ -1546,6 +1547,7 @@ def main():
 
     engine_key = (
         f"{_PDF_VERSION}|{design_ver}|{getattr(pptx_from_slides, '_PPTX_SLIDES_VERSION', '')}|"
+        f"{getattr(pptx_html_capture, '_CAPTURE_VERSION', '')}|"
         f"{getattr(pptx_generator, '_INJECT_VERSION', '')}|"
         f"{getattr(html_presentation, '_HTML_VERSION', 'html')}|hymn-intro"
     )

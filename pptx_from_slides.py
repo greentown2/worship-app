@@ -8,7 +8,6 @@ from __future__ import annotations
 import html as html_lib
 import re
 from io import BytesIO
-from pathlib import Path
 from typing import Optional
 
 from pptx import Presentation
@@ -44,7 +43,7 @@ from html_presentation import build_presentation_slides
 from models import WorshipData
 from text_normalize import normalize_breaks
 
-_PPTX_SLIDES_VERSION = "2026-09-18-office-safe-v2"
+_PPTX_SLIDES_VERSION = "2026-09-18-html-capture-cloud-v1"
 
 
 def _rect(slide, left, top, width, height, color: RGBColor):
@@ -450,23 +449,14 @@ def generate_pptx_from_slides(
     allow_remote: bool = True,
 ) -> BytesIO:
     """Build a 16:9 deck that looks like the HTML presentation."""
-    import os
-    on_cloud = bool(
-        os.environ.get("STREAMLIT_SHARING_MODE")
-        or str(os.environ.get("HOME") or "").startswith("/home/appuser")
-        or Path("/mount/src").is_dir()
-    )
-    if not on_cloud:
-        try:
-            from pptx_html_capture import generate_pptx_from_html_capture
+    try:
+        from pptx_html_capture import generate_pptx_from_html_capture
 
-            out = generate_pptx_from_html_capture(data, allow_remote=allow_remote)
-            generate_pptx_from_slides.last_mode = "html-capture"  # type: ignore[attr-defined]
-            return out
-        except Exception as exc:
-            generate_pptx_from_slides.last_mode = f"native-fallback:{type(exc).__name__}"  # type: ignore[attr-defined]
-    else:
-        generate_pptx_from_slides.last_mode = "native-cloud"  # type: ignore[attr-defined]
+        out = generate_pptx_from_html_capture(data, allow_remote=allow_remote)
+        generate_pptx_from_slides.last_mode = "html-capture"  # type: ignore[attr-defined]
+        return out
+    except Exception as exc:
+        generate_pptx_from_slides.last_mode = f"native-fallback:{type(exc).__name__}"  # type: ignore[attr-defined]
 
     specs = build_presentation_slides(data, allow_remote=bool(allow_remote))
     prs = Presentation()
@@ -507,4 +497,8 @@ def generate_worship_pptx_slides_first(
         f"PPT {_PPTX_SLIDES_VERSION}: HTML 화면을 그대로 담음"
         + (f" ({note})" if note else "")
     ]
+    if note.startswith("native-fallback"):
+        generate_worship_pptx_slides_first.last_insert_notes.append(  # type: ignore[attr-defined]
+            "HTML 캡처를 쓰지 못해 레이아웃이 예배화면과 다를 수 있습니다."
+        )
     return out

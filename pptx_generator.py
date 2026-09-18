@@ -27,7 +27,7 @@ from template_tokens import (
 MasterSource = Union[bytes, bytearray, BinaryIO, str, Path]
 
 # Reload marker for Streamlit — bump when injection logic changes
-_INJECT_VERSION = "2026-09-18-office-safe-v2"
+_INJECT_VERSION = "2026-09-18-html-capture-cloud-v1"
 
 _PLACEHOLDER_ONLY_RE = re.compile(r"^\s*\{\{([A-Za-z0-9_]+)\}\}\s*$")
 

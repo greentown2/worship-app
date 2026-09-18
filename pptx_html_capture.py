@@ -21,7 +21,7 @@ from pptx.util import Inches
 from html_presentation import TEMPLATE_PATH, build_presentation_slides
 from models import WorshipData
 
-_CAPTURE_VERSION = "2026-09-06-fs-resume-v1"
+_CAPTURE_VERSION = "2026-09-18-html-capture-cloud-v1"
 
 ROOT = Path(__file__).resolve().parent
 SLIDE_W_PX = 1920
@@ -36,7 +36,7 @@ html, body {
   width: 1920px !important;
   background: #0a0f1d !important;
   overflow: hidden !important;
-  font-family: Pretendard, "Noto Sans KR", "Malgun Gothic", sans-serif;
+  font-family: Pretendard, "Noto Sans KR", NanumGothic, "Malgun Gothic", sans-serif;
   color: #f8fafc;
   position: relative !important;
   inset: auto !important;
@@ -148,11 +148,30 @@ html, body {
 """
 
 
+def _on_cloud() -> bool:
+    return bool(
+        os.environ.get("STREAMLIT_SHARING_MODE")
+        or str(os.environ.get("HOME") or "").startswith("/home/appuser")
+        or Path("/mount/src").is_dir()
+    )
+
+
 def _browser() -> str | None:
-    env = os.environ.get("WORSHIP_CHROME") or os.environ.get("CHROME_PATH")
+    env = (
+        os.environ.get("WORSHIP_CHROME")
+        or os.environ.get("CHROME_PATH")
+        or os.environ.get("CHROMIUM_PATH")
+    )
     if env and Path(env).exists():
         return env
     candidates = [
+        Path("/usr/bin/chromium"),
+        Path("/usr/bin/chromium-browser"),
+        Path("/usr/lib/chromium/chromium"),
+        Path("/usr/lib/chromium-browser/chromium-browser"),
+        Path("/snap/bin/chromium"),
+        Path("/usr/bin/google-chrome"),
+        Path("/usr/bin/google-chrome-stable"),
         Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / "Google/Chrome/Application/chrome.exe",
         Path(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")) / "Google/Chrome/Application/chrome.exe",
         Path(os.environ.get("LOCALAPPDATA", "")) / "Google/Chrome/Application/chrome.exe",
@@ -162,7 +181,42 @@ def _browser() -> str | None:
     for path in candidates:
         if path and path.exists():
             return str(path)
-    return shutil.which("chrome") or shutil.which("msedge")
+    for name in (
+        "chromium",
+        "chromium-browser",
+        "google-chrome",
+        "google-chrome-stable",
+        "chrome",
+        "msedge",
+    ):
+        found = shutil.which(name)
+        if found:
+            return found
+    return None
+
+
+def _bundled_font_css() -> str:
+    """Point capture HTML at Nanum files copied next to the deck HTML."""
+    parts: list[str] = []
+    for filename, weight in (
+        ("NanumGothic-Regular.ttf", 400),
+        ("NanumGothic-Bold.ttf", 700),
+    ):
+        if (ROOT / "fonts" / filename).exists():
+            parts.append(
+                f"@font-face {{ font-family: 'NanumGothic'; "
+                f"src: url('{filename}') format('truetype'); "
+                f"font-weight: {weight}; font-style: normal; }}"
+            )
+    return "\n".join(parts)
+
+
+def _prepare_capture_dir(tmp_path: Path) -> None:
+    fonts_dir = ROOT / "fonts"
+    for filename in ("NanumGothic-Regular.ttf", "NanumGothic-Bold.ttf"):
+        src = fonts_dir / filename
+        if src.exists():
+            shutil.copy2(src, tmp_path / filename)
 
 
 def _get_slide_html_js() -> str:
@@ -191,6 +245,7 @@ def build_capture_html(slides: list[dict]) -> str:
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.8/dist/web/static/pretendard.css">
 <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@400;600;700&display=swap" rel="stylesheet">
 <style>{_deck_css()}</style>
+<style>{_bundled_font_css()}</style>
 <style>{_CAPTURE_CSS}</style>
 </head>
 <body>
@@ -225,33 +280,50 @@ const SLIDES = {payload};
 def _run_chrome_screenshot(browser: str, html_path: Path, png_path: Path, *, height: int) -> None:
     html_uri = html_path.resolve().as_uri()
     png_path.parent.mkdir(parents=True, exist_ok=True)
-    cmd = [
-        browser,
-        "--headless=new",
+    if png_path.exists():
+        png_path.unlink()
+    profile = png_path.parent / "chrome-profile"
+    profile.mkdir(exist_ok=True)
+    budget = "3000" if _on_cloud() else "2500"
+    common = [
+        "--no-sandbox",
+        "--disable-setuid-sandbox",
+        "--disable-dev-shm-usage",
         "--disable-gpu",
         "--hide-scrollbars",
         "--disable-extensions",
         "--no-first-run",
         "--no-default-browser-check",
+        "--disable-crash-reporter",
+        "--allow-file-access-from-files",
+        f"--user-data-dir={str(profile)}",
         "--force-device-scale-factor=1",
         "--high-dpi-support=1",
         f"--window-size={SLIDE_W_PX},{height}",
         f"--screenshot={str(png_path)}",
-        "--virtual-time-budget=1500",
+        f"--virtual-time-budget={budget}",
         html_uri,
     ]
     creation = 0
     if os.name == "nt":
         creation = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-    proc = subprocess.run(
-        cmd,
-        capture_output=True,
-        timeout=120,
-        creationflags=creation,
-    )
-    if proc.returncode != 0 or not png_path.exists() or png_path.stat().st_size < 1000:
-        err = (proc.stderr or b"").decode("utf-8", "ignore")[-500:]
-        raise RuntimeError(f"Chrome screenshot failed (code {proc.returncode}): {err}")
+    last_err = ""
+    for headless in ("--headless=new", "--headless"):
+        proc = subprocess.run(
+            [browser, headless, *common],
+            capture_output=True,
+            timeout=120,
+            creationflags=creation,
+        )
+        if proc.returncode == 0 and png_path.exists() and png_path.stat().st_size >= 1000:
+            return
+        last_err = (proc.stderr or b"").decode("utf-8", "ignore")[-800:]
+        if png_path.exists():
+            try:
+                png_path.unlink()
+            except OSError:
+                pass
+    raise RuntimeError(f"Chrome screenshot failed: {last_err}")
 
 
 def capture_slide_pngs(slides: list[dict]) -> list[bytes]:
@@ -291,9 +363,11 @@ def capture_slide_pngs(slides: list[dict]) -> list[bytes]:
 
     n = len(slides)
     pngs: list[bytes] = [b""] * n
-    batch = min(n, 20)
+    # Cloud Chromium OOMs on a tall stacked screenshot — capture one slide at a time.
+    batch = 6 if _on_cloud() else min(n, 20)
     with tempfile.TemporaryDirectory(prefix="worship_ppt_") as tmp:
         tmp_path = Path(tmp)
+        _prepare_capture_dir(tmp_path)
         start = 0
         while start < n:
             size = min(batch, n - start)
