@@ -963,6 +963,12 @@ def main():
 
             n_index = len(getattr(_hymn_catalog, "INDEX", {}) or {})
             n_lyrics = len(getattr(_hymn_catalog, "LYRICS", {}) or {})
+            src = getattr(_hymn_catalog, "SOURCE", "")
+            if src:
+                st.caption(f"DB 출처: {src}")
+            err = getattr(_hymn_catalog, "ERROR", "")
+            if err:
+                catalog_error = err
         except Exception as exc:
             catalog_error = f"{type(exc).__name__}: {exc}"
             try:

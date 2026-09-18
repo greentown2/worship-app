@@ -170,12 +170,7 @@ def _from_bundled_module(name: str) -> dict:
     try:
         import hymn_catalog
     except Exception:
-        try:
-            from bundled_catalogs import CATALOGS
-        except Exception:
-            return {}
-        data = CATALOGS.get(name)
-        return data if isinstance(data, dict) and data else {}
+        return {}
     mapping = {
         "hymn_index.json": "INDEX",
         "hymns_lyrics.json": "LYRICS",
