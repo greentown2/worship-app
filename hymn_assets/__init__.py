@@ -9,6 +9,15 @@ _HERE = Path(__file__).resolve().parent
 
 
 def load_json(name: str) -> dict:
+    try:
+        from importlib.resources import files
+
+        raw = files(__name__).joinpath(name).read_text(encoding="utf-8-sig")
+        data = json.loads(raw)
+        if isinstance(data, dict) and data:
+            return data
+    except Exception:
+        pass
     path = _HERE / name
     try:
         if not path.is_file():

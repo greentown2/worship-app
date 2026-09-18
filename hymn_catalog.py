@@ -132,6 +132,15 @@ def load() -> str:
     sources: list[str] = []
 
     try:
+        from hymn_lyrics_embed import load as _load_embedded_lyrics
+        data = _load_embedded_lyrics()
+        if data and _better(data, loaded["LYRICS"]):
+            loaded["LYRICS"] = data
+            sources.append("py-embed")
+    except Exception:
+        pass
+
+    try:
         from app_paths import load_local_hymn_json
         for name, attr in files.items():
             data = load_local_hymn_json(name)

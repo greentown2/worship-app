@@ -141,7 +141,7 @@ DEFAULT_WORSHIP_LEADER = getattr(defaults, "DEFAULT_WORSHIP_LEADER", "엄영민 
 
 _PDF_VERSION = getattr(pdf_generator, "_PDF_VERSION", "folded-letter")
 
-HYMN_DB_BUILD = "20260918g"
+HYMN_DB_BUILD = "20260918h"
 
 st.set_page_config(
     page_title=f"Grace Worship · 찬송DB {HYMN_DB_BUILD}",
@@ -912,6 +912,35 @@ def _hymn_inputs(label: str, num_key: str, title_key: str, fetch_key: str, allow
 
 def main():
     _init_state()
+
+    # Cloud often has no data/ files. Load gzip-embedded lyrics / GitHub here
+    # (not at import time) so Streamlit does not kill the process.
+    try:
+        import hymn_catalog as _hc
+
+        n_ly = sum(1 for k in (_hc.LYRICS or {}) if str(k).isdigit())
+        if n_ly < 200:
+            _hc.install_catalog()
+            n_ly = sum(1 for k in (_hc.LYRICS or {}) if str(k).isdigit())
+        if n_ly < 200:
+            _hc.load()
+    except Exception:
+        pass
+
+    n_show_ly = n_show_idx = 0
+    try:
+        import hymn_catalog as _hc2
+        n_show_idx = sum(1 for k in (_hc2.INDEX or {}) if str(k).isdigit())
+        n_show_ly = sum(1 for k in (_hc2.LYRICS or {}) if str(k).isdigit())
+    except Exception:
+        pass
+    if n_show_ly < 200:
+        st.error(
+            f"배포된 앱이 찬송 DB를 못 읽었습니다 ({n_show_ly}/{n_show_idx}). "
+            "share.streamlit.io 에서 이 앱을 지운 뒤 GitHub "
+            "`pastoreom2-hue/senir-hotel-worship-order` / 브랜치 `master` / "
+            "Main file `app.py` 로 다시 Deploy 해 주세요."
+        )
 
     # Warm local/embedded catalogs before filling default hymn titles
     try:
