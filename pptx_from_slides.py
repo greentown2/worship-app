@@ -8,6 +8,7 @@ from __future__ import annotations
 import html as html_lib
 import re
 from io import BytesIO
+from pathlib import Path
 from typing import Optional
 
 from pptx import Presentation
@@ -444,14 +445,23 @@ def generate_pptx_from_slides(
     allow_remote: bool = True,
 ) -> BytesIO:
     """Build a 16:9 deck that looks like the HTML presentation."""
-    try:
-        from pptx_html_capture import generate_pptx_from_html_capture
+    import os
+    on_cloud = bool(
+        os.environ.get("STREAMLIT_SHARING_MODE")
+        or str(os.environ.get("HOME") or "").startswith("/home/appuser")
+        or Path("/mount/src").is_dir()
+    )
+    if not on_cloud:
+        try:
+            from pptx_html_capture import generate_pptx_from_html_capture
 
-        out = generate_pptx_from_html_capture(data, allow_remote=allow_remote)
-        generate_pptx_from_slides.last_mode = "html-capture"  # type: ignore[attr-defined]
-        return out
-    except Exception as exc:
-        generate_pptx_from_slides.last_mode = f"native-fallback:{type(exc).__name__}"  # type: ignore[attr-defined]
+            out = generate_pptx_from_html_capture(data, allow_remote=allow_remote)
+            generate_pptx_from_slides.last_mode = "html-capture"  # type: ignore[attr-defined]
+            return out
+        except Exception as exc:
+            generate_pptx_from_slides.last_mode = f"native-fallback:{type(exc).__name__}"  # type: ignore[attr-defined]
+    else:
+        generate_pptx_from_slides.last_mode = "native-cloud"  # type: ignore[attr-defined]
 
     specs = build_presentation_slides(data, allow_remote=bool(allow_remote))
     prs = Presentation()

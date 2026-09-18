@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-_PDF_VERSION = "2026-09-04-choir-anthem-v1"
+_PDF_VERSION = "2026-09-18-nanum-cloud-v1"
 
 from io import BytesIO
 from pathlib import Path
@@ -93,9 +93,13 @@ def _ensure_fonts() -> None:
         return
 
     def _find_font(*names: str) -> Path | None:
+        here = Path(__file__).resolve().parent
         roots = [
+            here / "fonts",
+            Path("/mount/src") / "fonts",
             Path(r"C:\Windows\Fonts"),
             Path("/usr/share/fonts/truetype/nanum"),
+            Path("/usr/share/fonts/truetype/nanum-gothic"),
             Path("/usr/share/fonts/truetype/noto"),
             Path("/usr/share/fonts/opentype/noto"),
             Path("/usr/share/fonts/truetype/dejavu"),
@@ -113,10 +117,8 @@ def _ensure_fonts() -> None:
                 direct = root / name
                 if direct.is_file():
                     return direct
-            if root.name in {"fonts", "share"}:
-                continue
             try:
-                for p in root.iterdir():
+                for p in root.rglob("*"):
                     if p.is_file() and p.name.lower() in wanted:
                         return p
             except OSError:
@@ -124,16 +126,18 @@ def _ensure_fonts() -> None:
         return None
 
     regular = _find_font(
-        "malgun.ttf",
+        "NanumGothic-Regular.ttf",
         "NanumGothic.ttf",
+        "malgun.ttf",
         "NanumBarunGothic.ttf",
         "NotoSansKR-Regular.otf",
         "NotoSansKR-Regular.ttf",
         "NotoSansCJK-Regular.ttc",
     )
     bold = _find_font(
-        "malgunbd.ttf",
+        "NanumGothic-Bold.ttf",
         "NanumGothicBold.ttf",
+        "malgunbd.ttf",
         "NanumBarunGothicBold.ttf",
         "NotoSansKR-Bold.otf",
         "NotoSansKR-Bold.ttf",

@@ -1502,8 +1502,8 @@ def main():
         st.write("")
         if st.button("최신 배경 마스터 다시 불러오기", use_container_width=True, key="reload_master"):
             try:
-                build_master_templates.build_master_pptx(bundled_master)
-                st.session_state["master_pptx_bytes"] = bundled_master.read_bytes()
+                saved = build_master_templates.build_master_pptx(bundled_master)
+                st.session_state["master_pptx_bytes"] = Path(saved).read_bytes()
                 st.session_state["master_pptx_name"] = "master_worship.pptx"
                 st.session_state["master_design_version"] = design_ver
                 st.session_state.pop("pptx_file", None)
@@ -1578,8 +1578,8 @@ def main():
         is_manual_upload = str(st.session_state.get("master_design_version") or "").startswith("upload:")
         if not is_manual_upload and st.session_state.get("master_design_version") != design_ver:
             try:
-                build_master_templates.build_master_pptx(bundled_master)
-                st.session_state["master_pptx_bytes"] = bundled_master.read_bytes()
+                saved = build_master_templates.build_master_pptx(bundled_master)
+                st.session_state["master_pptx_bytes"] = Path(saved).read_bytes()
                 st.session_state["master_pptx_name"] = "master_worship.pptx"
                 st.session_state["master_design_version"] = design_ver
             except Exception as exc:

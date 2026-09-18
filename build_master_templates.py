@@ -16,7 +16,10 @@ from reportlab.pdfgen import canvas
 
 ROOT = Path(__file__).resolve().parent
 TEMPLATES = ROOT / "templates"
-TEMPLATES.mkdir(exist_ok=True)
+try:
+    TEMPLATES.mkdir(exist_ok=True)
+except OSError:
+    pass
 
 # Bump when slide background / type system changes — app auto-reloads master
 MASTER_DESIGN_VERSION = "2026-08-24-worship-prep"
@@ -828,9 +831,16 @@ def build_master_pptx(path: Path) -> Path:
         motif="news",
     )
 
-    path.parent.mkdir(parents=True, exist_ok=True)
-    prs.save(str(path))
-    return path
+    path = Path(path)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        prs.save(str(path))
+        return path
+    except OSError:
+        import tempfile
+        tmp = Path(tempfile.gettempdir()) / "master_worship.pptx"
+        prs.save(str(tmp))
+        return tmp
 
 
 def build_master_pdf(path: Path) -> Path:
