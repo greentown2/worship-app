@@ -5,8 +5,17 @@ from __future__ import annotations
 from datetime import date
 from pathlib import Path
 import json
+import os
 
 import streamlit as st
+
+# Streamlit Cloud cwd is not always the repo. Pin it to this file's folder
+# so relative paths like data/hymn_index.json resolve.
+_APP_DIR = Path(__file__).resolve().parent
+try:
+    os.chdir(_APP_DIR)
+except OSError:
+    pass
 
 from bulletin_parser import (
     PAGE_ROLES,
@@ -132,7 +141,7 @@ DEFAULT_WORSHIP_LEADER = getattr(defaults, "DEFAULT_WORSHIP_LEADER", "엄영민 
 
 _PDF_VERSION = getattr(pdf_generator, "_PDF_VERSION", "folded-letter")
 
-HYMN_DB_BUILD = "20260918f"
+HYMN_DB_BUILD = "20260918g"
 
 st.set_page_config(
     page_title=f"Grace Worship · 찬송DB {HYMN_DB_BUILD}",
@@ -981,21 +990,32 @@ def main():
             extra = f"assets {type(exc).__name__}: {exc}"
             catalog_error = f"{catalog_error} / {extra}" if catalog_error else extra
         here = Path(__file__).resolve().parent
+        try:
+            from app_paths import load_local_hymn_json
+
+            local_idx = load_local_hymn_json("hymn_index.json")
+            local_lyr = load_local_hymn_json("hymns_lyrics.json")
+            n_index = max(n_index, sum(1 for k in local_idx if str(k).isdigit()))
+            n_lyrics = max(n_lyrics, sum(1 for k in local_lyr if str(k).isdigit()))
+        except Exception as exc:
+            extra = f"path {type(exc).__name__}: {exc}"
+            catalog_error = f"{catalog_error} / {extra}" if catalog_error else extra
         for data_dir in (
             here / "hymn_assets",
             here / "data",
-            Path("/mount/src/hymn_assets"),
-            Path("/mount/src/data"),
+            Path("/mount/src") / "hymn_assets",
+            Path("/mount/src") / "data",
+            Path.cwd() / "hymn_assets",
             Path.cwd() / "data",
         ):
             try:
                 idx_path = data_dir / "hymn_index.json"
                 lyr_path = data_dir / "hymns_lyrics.json"
                 if idx_path.is_file():
-                    idx = json.loads(idx_path.read_text(encoding="utf-8"))
+                    idx = json.loads(idx_path.read_text(encoding="utf-8-sig"))
                     n_index = max(n_index, sum(1 for k in idx if str(k).isdigit()))
                 if lyr_path.is_file():
-                    lyr = json.loads(lyr_path.read_text(encoding="utf-8"))
+                    lyr = json.loads(lyr_path.read_text(encoding="utf-8-sig"))
                     n_lyrics = max(n_lyrics, sum(1 for k in lyr if str(k).isdigit()))
             except Exception:
                 continue
@@ -1020,10 +1040,13 @@ def main():
         st.caption(f"찬송 DB 빌드 {HYMN_DB_BUILD}")
         if src:
             st.caption(f"DB 출처: {src}")
+        idx_rel = (here / "data" / "hymn_index.json").is_file()
+        lyr_rel = (here / "data" / "hymns_lyrics.json").is_file()
         assets_lyrics = (here / "hymn_assets" / "hymns_lyrics.json").is_file()
         st.caption(
-            f"패키지 가사파일 {'있음' if assets_lyrics else '없음'} · "
-            f"app `{here.name}`"
+            f"data/hymn_index.json {'있음' if idx_rel else '없음'} · "
+            f"data/hymns_lyrics.json {'있음' if lyr_rel else '없음'} · "
+            f"hymn_assets/hymns_lyrics.json {'있음' if assets_lyrics else '없음'}"
         )
         st.metric("로컬 찬송 가사", f"{n_lyrics} / {n_index}")
         if n_lyrics < 200 and not st.session_state.get("_hymn_db_install_tried"):

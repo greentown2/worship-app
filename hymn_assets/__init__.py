@@ -13,7 +13,7 @@ def load_json(name: str) -> dict:
     try:
         if not path.is_file():
             return {}
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads(path.read_text(encoding="utf-8-sig"))
         return data if isinstance(data, dict) else {}
     except (OSError, json.JSONDecodeError, UnicodeError, TypeError):
         return {}

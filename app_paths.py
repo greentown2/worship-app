@@ -46,7 +46,12 @@ def is_streamlit_cloud() -> bool:
 
 def _has_data(root: Path) -> bool:
     try:
-        return (root / "data" / _MARKER).is_file()
+        return (
+            (root / "data" / "hymn_index.json").is_file()
+            or (root / "data" / "hymns_lyrics.json").is_file()
+            or (root / "hymn_assets" / "hymn_index.json").is_file()
+            or (root / "hymn_assets" / "hymns_lyrics.json").is_file()
+        )
     except OSError:
         return False
 
@@ -128,10 +133,41 @@ def read_json(path: Path) -> dict:
     try:
         if not path.is_file():
             return {}
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads(path.read_text(encoding="utf-8-sig"))
         return data if isinstance(data, dict) else {}
     except (OSError, json.JSONDecodeError, UnicodeError, TypeError):
         return {}
+
+
+def app_dir() -> Path:
+    """Directory that contains app.py / hymn_catalog.py (repo root on Streamlit)."""
+    return Path(__file__).resolve().parent
+
+
+def hymn_json_paths(filename: str) -> list[Path]:
+    """Exact hymn JSON filenames, resolved from this file — not from cwd."""
+    root = app_dir()
+    cwd = Path.cwd()
+    return [
+        root / "hymn_assets" / filename,
+        root / "data" / filename,
+        Path("/mount/src") / "hymn_assets" / filename,
+        Path("/mount/src") / "data" / filename,
+        cwd / "hymn_assets" / filename,
+        cwd / "data" / filename,
+        writable_data_dir() / filename,
+    ]
+
+
+def load_local_hymn_json(filename: str) -> dict:
+    """Load hymn_index.json or hymns_lyrics.json from paths next to the app."""
+    best: dict = {}
+    for path in hymn_json_paths(filename):
+        data = read_json(path)
+        n = sum(1 for k in data if str(k).isdigit())
+        if n > sum(1 for k in best if str(k).isdigit()):
+            best = data
+    return best
 
 
 def _github_json(name: str) -> dict:
@@ -199,7 +235,7 @@ def load_bundled_json(name: str) -> dict:
     if bundled:
         candidates.append(bundled)
 
-    here = Path(__file__).resolve().parent
+    here = app_dir()
     try:
         import hymn_assets
         packaged = hymn_assets.load_json(name)
@@ -207,16 +243,10 @@ def load_bundled_json(name: str) -> dict:
             candidates.append(packaged)
     except Exception:
         pass
-    for path in (
-        here / "hymn_assets" / name,
-        here / "data" / name,
-        Path.cwd() / "data" / name,
-        Path("/mount/src/hymn_assets") / name,
-        Path("/mount/src/data") / name,
-        Path("/app/data") / name,
-        data_dir() / name,
-        writable_data_dir() / name,
-    ):
+    local = load_local_hymn_json(name)
+    if local:
+        candidates.append(local)
+    for path in hymn_json_paths(name):
         data = read_json(path)
         if data:
             candidates.append(data)

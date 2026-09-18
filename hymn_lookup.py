@@ -58,7 +58,14 @@ def parse_hymn_number(raw: str) -> Optional[int]:
 
 
 def _direct_json(name: str) -> dict:
-    """Read bundled JSON first, then data/*.json next to this file."""
+    """Read hymn JSON from paths next to this file: hymn_assets/ then data/."""
+    try:
+        from app_paths import load_local_hymn_json
+        local = load_local_hymn_json(name)
+        if local:
+            return local
+    except Exception:
+        pass
     try:
         import hymn_assets
         packaged = hymn_assets.load_json(name)
@@ -70,15 +77,15 @@ def _direct_json(name: str) -> dict:
     for path in (
         here / "hymn_assets" / name,
         here / "data" / name,
-        Path("/mount/src/hymn_assets") / name,
-        Path("/mount/src/data") / name,
-        Path("/app/data") / name,
+        Path("/mount/src") / "hymn_assets" / name,
+        Path("/mount/src") / "data" / name,
+        Path.cwd() / "hymn_assets" / name,
         Path.cwd() / "data" / name,
     ):
         try:
             if not path.is_file():
                 continue
-            data = json.loads(path.read_text(encoding="utf-8"))
+            data = json.loads(path.read_text(encoding="utf-8-sig"))
             if isinstance(data, dict) and data:
                 return data
         except (OSError, json.JSONDecodeError, UnicodeError, TypeError):

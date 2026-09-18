@@ -34,7 +34,7 @@ def _read_json(path: Path) -> dict:
     try:
         if not path.is_file():
             return {}
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads(path.read_text(encoding="utf-8-sig"))
         return data if isinstance(data, dict) else {}
     except (OSError, json.JSONDecodeError, UnicodeError, TypeError):
         return {}
@@ -82,30 +82,29 @@ def _fetch_json(name: str) -> dict:
 
 
 def _search_data_dirs() -> list[Path]:
+    """Folders that contain hymn_index.json / hymns_lyrics.json next to the app."""
     here = Path(__file__).resolve().parent
     cwd = Path.cwd().resolve()
-    roots = [
-        here,
-        cwd,
-        Path("/mount/src"),
-        Path("/app"),
-        Path("/workspace"),
-        cwd.parent,
-        here.parent,
+    folders = [
+        here / "hymn_assets",
+        here / "data",
+        Path("/mount/src") / "hymn_assets",
+        Path("/mount/src") / "data",
+        cwd / "hymn_assets",
+        cwd / "data",
         Path(tempfile.gettempdir()) / "worship-data",
     ]
     out: list[Path] = []
     seen: set[Path] = set()
-    for root in roots:
+    for folder in folders:
         try:
-            root = root.resolve()
+            folder = folder.resolve()
         except OSError:
             continue
-        data_dir = root if root.name == "data" or root.name == "worship-data" else root / "data"
-        if data_dir in seen:
+        if folder in seen:
             continue
-        seen.add(data_dir)
-        out.append(data_dir)
+        seen.add(folder)
+        out.append(folder)
     return out
 
 
@@ -133,13 +132,25 @@ def load() -> str:
     sources: list[str] = []
 
     try:
+        from app_paths import load_local_hymn_json
+        for name, attr in files.items():
+            data = load_local_hymn_json(name)
+            if data and _better(data, loaded[attr]):
+                loaded[attr] = data
+        if _numeric_len(loaded["LYRICS"]) or _numeric_len(loaded["INDEX"]):
+            sources.append("app-dir")
+    except Exception:
+        pass
+
+    try:
         import hymn_assets
         for name, attr in files.items():
             data = hymn_assets.load_json(name)
             if data and _better(data, loaded[attr]):
                 loaded[attr] = data
         if _numeric_len(loaded["LYRICS"]) or _numeric_len(loaded["INDEX"]):
-            sources.append("package")
+            if "package" not in sources:
+                sources.append("package")
     except Exception:
         pass
 
