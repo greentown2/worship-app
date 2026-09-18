@@ -116,7 +116,7 @@ from defaults import (
     DEFAULT_WORSHIP_PRAYER,
 )
 from models import PREP_HYMN_COUNT, HymnEntry, WorshipData
-from hymn_lookup import lookup_hymn, parse_hymn_number
+from hymn_lookup import lookup_hymn, parse_hymn_number, _looks_like_error_lyrics
 from html_presentation import generate_worship_html
 import html_share
 from pdf_generator import bulletin_preview_text, generate_worship_pdf
@@ -232,6 +232,7 @@ def _init_state():
         },
         "praise_num": "7",
         "praise_title": "",
+        "_allow_remote": True,
         "apostles_creed": DEFAULT_APOSTLES_CREED,
         "responsive_num": "13",
         "responsive_title": "교독문 13번  ·  시편 23편",
@@ -710,17 +711,16 @@ def _render_device_share_panel() -> None:
 
 
 def _on_hymn_num_change(num_key: str, title_key: str) -> None:
-    """Streamlit widget callback: hymn number → catalog title (ignore previous title)."""
+    """Streamlit widget callback: hymn number → catalog title + lyrics."""
     want = parse_hymn_number(st.session_state.get(num_key) or "")
     if not want:
         return
-    # Title fill must stay local so typing a hymn number is instant.
     prev = st.session_state.get(f"resolved_hymn_{num_key}") or {}
-    # Number drives the title — never keep the previous hymn's title as override
     if prev.get("number") != want:
         st.session_state.pop(f"lyrics_cache_{num_key}", None)
         st.session_state.pop(f"lyrics_text_{num_key}", None)
-    hit = lookup_hymn(str(want), "", allow_remote=False)
+    allow_remote = bool(st.session_state.get("_allow_remote", True))
+    hit = lookup_hymn(str(want), "", allow_remote=allow_remote)
     if not hit or not hit.number:
         st.session_state[f"resolved_hymn_{num_key}"] = {
             "number": want,
@@ -732,13 +732,21 @@ def _on_hymn_num_change(num_key: str, title_key: str) -> None:
     st.session_state[num_key] = str(hit.number)
     if hit.title:
         st.session_state[title_key] = hit.title
-    if hit.lyrics and getattr(hit, "found_lyrics", True):
-        st.session_state[f"lyrics_cache_{num_key}"] = list(hit.lyrics)
+    lyrics = list(hit.lyrics or [])
+    usable = (
+        bool(lyrics)
+        and getattr(hit, "found_lyrics", True)
+        and hit.source != "generated"
+        and not _looks_like_error_lyrics(lyrics)
+    )
+    if usable:
+        st.session_state[f"lyrics_cache_{num_key}"] = lyrics
+        st.session_state[f"lyrics_text_{num_key}"] = "\n".join(lyrics)
     st.session_state[f"resolved_hymn_{num_key}"] = {
         "number": hit.number,
         "title": hit.title,
         "source": getattr(hit, "source", "") or "",
-        "lyrics": len(hit.lyrics or []),
+        "lyrics": len(lyrics) if usable else 0,
     }
 
 
@@ -855,7 +863,7 @@ def _hymn_inputs(label: str, num_key: str, title_key: str, fetch_key: str, allow
         st.write("")
         st.write("")
         st.button(
-            "제목 불러오기",
+            "가사 불러오기",
             key=fetch_key,
             use_container_width=True,
             on_click=_on_hymn_num_change,
@@ -878,7 +886,9 @@ def _hymn_inputs(label: str, num_key: str, title_key: str, fetch_key: str, allow
     resolved = st.session_state.get(f"resolved_hymn_{num_key}")
     h = _hymn_from_keys(num_key, title_key, allow_remote=False)
     if parse_hymn_number(st.session_state.get(num_key) or "") and resolved and resolved.get("source") != "missing":
-        st.caption(f"자동 제목: **{hymn_label(h) or resolved.get('title')}**")
+        n_lines = int(resolved.get("lyrics") or 0)
+        extra = f" · 가사 {n_lines}줄" if n_lines else " · 가사 없음 → 가사 불러오기를 누르세요"
+        st.caption(f"자동 제목: **{hymn_label(h) or resolved.get('title')}**{extra}")
     elif h.title or h.lyrics:
         st.caption(f"표시: **{hymn_label(h) or h.title}**")
     else:

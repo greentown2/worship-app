@@ -136,14 +136,27 @@ def read_json(path: Path) -> dict:
 
 def _github_json(name: str) -> dict:
     headers = {
-        "User-Agent": "GraceWorshipPPT/1.0 (streamlit-cloud data fallback)",
-        "Accept": "application/json",
+        "User-Agent": "Mozilla/5.0 (compatible; GraceWorshipPPT/1.0)",
+        "Accept": "application/json,text/plain,*/*",
     }
+    urls = []
     for branch in _GITHUB_BRANCHES:
-        url = f"https://raw.githubusercontent.com/{_GITHUB_REPO}/{branch}/data/{name}"
+        urls.append(f"https://raw.githubusercontent.com/{_GITHUB_REPO}/{branch}/data/{name}")
+        urls.append(
+            f"https://cdn.jsdelivr.net/gh/{_GITHUB_REPO}@master/data/{name}"
+            if branch == "master"
+            else f"https://raw.githubusercontent.com/{_GITHUB_REPO}/{branch}/data/{name}"
+        )
+    # jsDelivr only for master (branch names with slashes are unreliable)
+    urls.append(f"https://cdn.jsdelivr.net/gh/{_GITHUB_REPO}@master/data/{name}")
+    seen: set[str] = set()
+    for url in urls:
+        if url in seen:
+            continue
+        seen.add(url)
         req = Request(url, headers=headers)
         try:
-            with urlopen(req, timeout=20) as resp:
+            with urlopen(req, timeout=25) as resp:
                 raw = resp.read().decode("utf-8", errors="replace")
             data = json.loads(raw)
             if isinstance(data, dict) and data:
