@@ -396,7 +396,7 @@ def refine_slide(slide, spec: dict | None = None) -> None:
     else:
         _layout_centered_title(roles)
 
-    _bring_roles_front(slide)
+    # Do not detach/re-append XML nodes — Office 365 rejects those packages.
 
 
 def refine_presentation(prs, specs: list[dict] | None = None) -> None:

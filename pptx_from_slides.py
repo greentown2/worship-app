@@ -86,19 +86,7 @@ def _set_run(
         run.font.color.rgb = color
     except Exception:
         pass
-    try:
-        from pptx.oxml import OxmlElement
-        from pptx.oxml.ns import qn
-
-        rPr = run._r.get_or_add_rPr()  # noqa: SLF001
-        for tag in ("latin", "ea", "cs"):
-            el = rPr.find(qn(f"a:{tag}"))
-            if el is None:
-                el = OxmlElement(f"a:{tag}")
-                rPr.append(el)
-            el.set("typeface", font_name)
-    except Exception:
-        pass
+    # Skip a:ea XML injection — some Office builds treat it as a corrupt package.
 
 
 def _textbox(
@@ -118,7 +106,6 @@ def _textbox(
     tf = box.text_frame
     tf.word_wrap = word_wrap
     try:
-        tf.auto_size = None
         tf.vertical_anchor = anchor
         tf.margin_left = Inches(0.06)
         tf.margin_right = Inches(0.06)
@@ -475,7 +462,11 @@ def generate_pptx_from_slides(
         except Exception:
             _bg(slide, "default")
             _add_title_bar(slide, (spec.get("title") or spec.get("header") or "예배").strip())
-    refine_presentation(prs, specs)
+    if not on_cloud:
+        try:
+            refine_presentation(prs, specs)
+        except Exception:
+            pass
     buf = BytesIO()
     prs.save(buf)
     buf.seek(0)

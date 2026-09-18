@@ -117,16 +117,7 @@ def _set_run_font(
             run.font.color.rgb = color
     except Exception:
         pass
-    try:
-        rPr = run._r.get_or_add_rPr()  # noqa: SLF001
-        for tag in ("latin", "ea", "cs"):
-            el = rPr.find(qn(f"a:{tag}"))
-            if el is None:
-                el = OxmlElement(f"a:{tag}")
-                rPr.append(el)
-            el.set("typeface", name)
-    except Exception:
-        pass
+    # Skip a:ea XML injection — Office 365 may refuse the file.
 
 
 def _wrap_phrase_line(line: str, max_chars: int) -> list[str]:

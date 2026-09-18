@@ -718,9 +718,8 @@ def _rebuild_pptx_for_data(data: WorshipData, *, allow_remote: bool, service_dat
         insert_this_week=False,
     )
     pptx_bytes = out.getvalue()
-    base = Path(st.session_state.get("master_pptx_name") or "worship").stem
     st.session_state["pptx_file"] = pptx_bytes
-    st.session_state["pptx_name"] = f"{base}_{service_date.strftime('%Y%m%d')}.pptx"
+    st.session_state["pptx_name"] = f"worship_{service_date.strftime('%Y%m%d')}.pptx"
     return pptx_bytes
 
 
@@ -1593,8 +1592,7 @@ def main():
                 insert_this_week=False,
             )
             st.session_state["pptx_file"] = out.getvalue()
-            base = Path(st.session_state.get("master_pptx_name") or "worship").stem
-            st.session_state["pptx_name"] = f"{base}_{service_date.strftime('%Y%m%d')}.pptx"
+            st.session_state["pptx_name"] = f"worship_{service_date.strftime('%Y%m%d')}.pptx"
             st.session_state["pptx_fingerprint"] = content_fingerprint
             notes = getattr(generate_worship_pptx, "last_insert_notes", None) or []
             if notes:
@@ -1689,8 +1687,7 @@ def main():
                         insert_this_week=False,
                     )
                     st.session_state["pptx_file"] = out.getvalue()
-                    base = Path(st.session_state.get("master_pptx_name") or "worship").stem
-                    st.session_state["pptx_name"] = f"{base}_{service_date.strftime('%Y%m%d')}.pptx"
+                    st.session_state["pptx_name"] = f"worship_{service_date.strftime('%Y%m%d')}.pptx"
                     st.session_state["pptx_fingerprint"] = content_fingerprint
                     st.rerun()
                 except Exception as exc:
