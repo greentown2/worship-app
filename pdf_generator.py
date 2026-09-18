@@ -117,8 +117,10 @@ def _ensure_fonts() -> None:
                 direct = root / name
                 if direct.is_file():
                     return direct
+            if root.name in {"fonts", "share"}:
+                continue
             try:
-                for p in root.rglob("*"):
+                for p in root.iterdir():
                     if p.is_file() and p.name.lower() in wanted:
                         return p
             except OSError:
