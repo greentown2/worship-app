@@ -159,14 +159,9 @@ def load() -> str:
             sources.append("embed")
 
     if _numeric_len(loaded["INDEX"]) < 200 or _numeric_len(loaded["LYRICS"]) < 200:
-        for name, attr in files.items():
-            if _numeric_len(loaded[attr]) >= 200:
-                continue
-            fetched = _fetch_json(name)
-            if fetched and _better(fetched, loaded[attr]):
-                loaded[attr] = fetched
-                if "github" not in sources:
-                    sources.append("github")
+        # Do not fetch GitHub during import — Streamlit Cloud kills slow imports.
+        # Sidebar install_catalog() downloads after the page is up.
+        pass
 
     if _numeric_len(INDEX) > _numeric_len(loaded["INDEX"]):
         loaded["INDEX"] = dict(INDEX)
@@ -185,6 +180,53 @@ def load() -> str:
     elif _numeric_len(INDEX) == 0:
         ERROR = "hymn index missing"
     return SOURCE
+
+
+def install_catalog() -> dict:
+    """Copy packaged or GitHub hymn JSON into a writable folder (Streamlit /tmp)."""
+    from app_paths import clear_json_cache, save_json, writable_data_dir
+
+    names = {
+        "hymn_index.json": "INDEX",
+        "hymns_lyrics.json": "LYRICS",
+        "responsive_index.json": "RESPONSIVE_INDEX",
+        "responsive_readings.json": "RESPONSIVE_READINGS",
+    }
+    got: dict[str, dict] = {}
+    source = ""
+    try:
+        import hymn_assets
+        for name in names:
+            data = hymn_assets.load_json(name)
+            if data:
+                got[name] = data
+        if got:
+            source = "package"
+    except Exception:
+        pass
+    for name in names:
+        if _numeric_len(got.get(name, {})) >= 200:
+            continue
+        fetched = _fetch_json(name)
+        if fetched:
+            got[name] = fetched
+            source = source or "github"
+            if source == "package":
+                source = "package+github"
+    writable_data_dir()
+    for name, data in got.items():
+        save_json(name, data)
+    try:
+        clear_json_cache()
+    except Exception:
+        pass
+    load()
+    return {
+        "source": source or "empty",
+        "index": _numeric_len(INDEX),
+        "lyrics": _numeric_len(LYRICS),
+        "files": {name: _numeric_len(data) for name, data in got.items()},
+    }
 
 
 load()

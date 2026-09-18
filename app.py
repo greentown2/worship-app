@@ -132,7 +132,7 @@ DEFAULT_WORSHIP_LEADER = getattr(defaults, "DEFAULT_WORSHIP_LEADER", "엄영민 
 
 _PDF_VERSION = getattr(pdf_generator, "_PDF_VERSION", "folded-letter")
 
-HYMN_DB_BUILD = "20260918e"
+HYMN_DB_BUILD = "20260918f"
 
 st.set_page_config(
     page_title=f"Grace Worship · 찬송DB {HYMN_DB_BUILD}",
@@ -1026,6 +1026,19 @@ def main():
             f"app `{here.name}`"
         )
         st.metric("로컬 찬송 가사", f"{n_lyrics} / {n_index}")
+        if n_lyrics < 200 and not st.session_state.get("_hymn_db_install_tried"):
+            st.session_state["_hymn_db_install_tried"] = True
+            with st.spinner("찬송 DB 645곡을 받는 중…"):
+                try:
+                    import hymn_catalog as _install_cat
+                    info = _install_cat.install_catalog()
+                    app_paths.clear_json_cache()
+                    st.session_state["_hymn_db_install_result"] = info
+                    st.rerun()
+                except Exception as exc:
+                    st.session_state["_hymn_db_install_error"] = f"{type(exc).__name__}: {exc}"
+        if st.session_state.get("_hymn_db_install_error"):
+            st.caption(f"DB 설치 오류: {st.session_state['_hymn_db_install_error']}")
         if n_index == 0:
             info = app_paths.debug_paths()
             st.error(
@@ -1043,21 +1056,23 @@ def main():
                 "찬송 가사가 일부만 있습니다. 배포 브랜치에 `data/hymns_lyrics.json`이 "
                 "포함돼 있는지 확인하세요."
             )
-        if st.button("찬송 가사 DB 전체 업데이트", use_container_width=True, key="backfill_hymns"):
-            with st.spinner("찬송가 전곡 가사를 로컬 DB에 받는 중… (수 분 소요)"):
+        if st.button("찬송 가사 DB 전체 받기 (645곡)", use_container_width=True, key="backfill_hymns"):
+            with st.spinner("저장된 찬송 645곡을 앱에 복사하는 중…"):
                 try:
-                    from backfill_hymn_lyrics import backfill
+                    import hymn_catalog as _install_cat
 
-                    stats = backfill(start=1, end=645, only_missing=True, sleep_s=0.25, save_every=5)
-                    # Refresh cached loaders
+                    info = _install_cat.install_catalog()
                     try:
                         app_paths.clear_json_cache()
                     except Exception:
                         pass
+                    st.session_state["_hymn_db_install_tried"] = True
+                    st.session_state["_hymn_db_install_result"] = info
                     st.success(
-                        f"완료 · 신규 {stats['ok']} · 개선 {stats['improved']} · "
-                        f"유지 {stats['skip']} · 실패 {stats['fail']} · 총 {stats['total']}곡"
+                        f"완료 · 가사 {info.get('lyrics', 0)}곡 · 제목 {info.get('index', 0)}곡 · "
+                        f"출처 {info.get('source') or '-'}"
                     )
+                    st.rerun()
                 except Exception as exc:
                     st.error(f"DB 업데이트 실패: {exc}")
         st.divider()
