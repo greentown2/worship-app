@@ -75,10 +75,10 @@ def _direct_json(name: str) -> dict:
         pass
     here = Path(__file__).resolve().parent
     for path in (
-        here / "hymn_assets" / name,
-        here / "data" / name,
         Path("/mount/src") / "hymn_assets" / name,
         Path("/mount/src") / "data" / name,
+        here / "hymn_assets" / name,
+        here / "data" / name,
         Path.cwd() / "hymn_assets" / name,
         Path.cwd() / "data" / name,
     ):
@@ -94,6 +94,13 @@ def _direct_json(name: str) -> dict:
 
 
 def _load_index() -> dict[str, str]:
+    try:
+        from hymn_db import load_index as _db_index
+        out = _db_index()
+        if out:
+            return out
+    except Exception:
+        pass
     out: dict[str, str] = {}
     try:
         from hymn_index_embed import INDEX as embedded
@@ -120,6 +127,13 @@ def _load_index() -> dict[str, str]:
 
 
 def _load_lyrics() -> dict[str, dict]:
+    try:
+        from hymn_db import load_lyrics as _db_lyrics
+        packaged = _db_lyrics()
+        if packaged:
+            return packaged
+    except Exception:
+        pass
     best: dict[str, dict] = {}
     for raw in (_direct_json("hymns_lyrics.json"), load_overlay_json("hymns_lyrics.json")):
         if not isinstance(raw, dict):

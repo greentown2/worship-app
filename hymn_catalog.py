@@ -86,10 +86,10 @@ def _search_data_dirs() -> list[Path]:
     here = Path(__file__).resolve().parent
     cwd = Path.cwd().resolve()
     folders = [
-        here / "hymn_assets",
-        here / "data",
         Path("/mount/src") / "hymn_assets",
         Path("/mount/src") / "data",
+        here / "hymn_assets",
+        here / "data",
         cwd / "hymn_assets",
         cwd / "data",
         Path(tempfile.gettempdir()) / "worship-data",
@@ -132,11 +132,16 @@ def load() -> str:
     sources: list[str] = []
 
     try:
-        from hymn_lyrics_embed import load as _load_embedded_lyrics
-        data = _load_embedded_lyrics()
-        if data and _better(data, loaded["LYRICS"]):
-            loaded["LYRICS"] = data
-            sources.append("py-embed")
+        from hymn_db import load_index as _db_index, load_lyrics as _db_lyrics
+        idx = _db_index()
+        lyr = _db_lyrics()
+        if idx:
+            loaded["INDEX"] = idx
+            sources.append("hymn_db")
+        if lyr:
+            loaded["LYRICS"] = lyr
+            if "hymn_db" not in sources:
+                sources.append("hymn_db")
     except Exception:
         pass
 
@@ -187,6 +192,8 @@ def load() -> str:
         loaded["INDEX"] = dict(INDEX)
         if "embed" not in sources:
             sources.append("embed")
+    if _numeric_len(LYRICS) > _numeric_len(loaded["LYRICS"]):
+        loaded["LYRICS"] = dict(LYRICS)
 
     INDEX = loaded["INDEX"]
     LYRICS = loaded["LYRICS"]
@@ -249,4 +256,5 @@ def install_catalog() -> dict:
     }
 
 
-load()
+# Do not load lyrics at import — Streamlit Cloud kills slow imports.
+# app.py / hymn_db load JSON from data/ and hymn_assets/ after the page starts.

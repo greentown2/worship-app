@@ -60,10 +60,10 @@ def _discover_root() -> Path:
     here = Path(__file__).resolve().parent
     cwd = Path.cwd().resolve()
     candidates: list[Path] = [
-        cwd,  # Streamlit Cloud always runs from the repo root
-        here,
         Path("/mount/src"),
         Path("/app"),
+        here,
+        cwd,
         Path("/workspace"),
     ]
     p = here
@@ -149,10 +149,10 @@ def hymn_json_paths(filename: str) -> list[Path]:
     root = app_dir()
     cwd = Path.cwd()
     return [
-        root / "hymn_assets" / filename,
-        root / "data" / filename,
         Path("/mount/src") / "hymn_assets" / filename,
         Path("/mount/src") / "data" / filename,
+        root / "hymn_assets" / filename,
+        root / "data" / filename,
         cwd / "hymn_assets" / filename,
         cwd / "data" / filename,
         writable_data_dir() / filename,

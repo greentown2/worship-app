@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 # Auto-generated gzip of data/hymns_lyrics.json. Do not edit by hand.
 from __future__ import annotations
 

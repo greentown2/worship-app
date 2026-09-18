@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 # Auto-generated from data/hymn_index.json. Do not edit by hand.
 INDEX = {
   "1": "만복의 근원 하나님",

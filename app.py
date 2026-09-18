@@ -9,13 +9,35 @@ import os
 
 import streamlit as st
 
-# Streamlit Cloud cwd is not always the repo. Pin it to this file's folder
-# so relative paths like data/hymn_index.json resolve.
-_APP_DIR = Path(__file__).resolve().parent
-try:
-    os.chdir(_APP_DIR)
-except OSError:
-    pass
+# Streamlit Cloud clones to /mount/src. __file__ can be a temp copy without data/.
+def _pin_workdir() -> Path:
+    here = Path(__file__).resolve().parent
+    for raw in (Path("/mount/src"), Path("/app"), here, Path.cwd()):
+        try:
+            cand = Path(raw).resolve()
+        except OSError:
+            continue
+        if (
+            (cand / "hymn_index_embed.py").is_file()
+            or (cand / "data" / "hymn_index.json").is_file()
+            or (cand / "hymn_assets" / "hymn_index.json").is_file()
+        ):
+            try:
+                os.chdir(cand)
+            except OSError:
+                pass
+            return cand
+    try:
+        os.chdir(here)
+    except OSError:
+        pass
+    return here
+
+
+_APP_DIR = _pin_workdir()
+import sys
+if str(_APP_DIR) not in sys.path:
+    sys.path.insert(0, str(_APP_DIR))
 
 from bulletin_parser import (
     PAGE_ROLES,
@@ -36,6 +58,7 @@ import build_master_templates
 import data_enrich
 import hymn_assets
 import hymn_catalog
+import hymn_db
 import hymn_lookup
 import html_presentation
 import lookup_bundle
@@ -57,6 +80,7 @@ _CODE_MODULES = (
     ("defaults", defaults),
     ("models", models),
     ("scripture_lookup", scripture_lookup),
+    ("hymn_db", hymn_db),
     ("hymn_catalog", hymn_catalog),
     ("hymn_lookup", hymn_lookup),
     ("responsive_lookup", responsive_lookup),
@@ -141,7 +165,7 @@ DEFAULT_WORSHIP_LEADER = getattr(defaults, "DEFAULT_WORSHIP_LEADER", "엄영민 
 
 _PDF_VERSION = getattr(pdf_generator, "_PDF_VERSION", "folded-letter")
 
-HYMN_DB_BUILD = "20260918h"
+HYMN_DB_BUILD = "20260918i"
 
 st.set_page_config(
     page_title=f"Grace Worship · 찬송DB {HYMN_DB_BUILD}",
@@ -913,34 +937,35 @@ def _hymn_inputs(label: str, num_key: str, title_key: str, fetch_key: str, allow
 def main():
     _init_state()
 
-    # Cloud often has no data/ files. Load gzip-embedded lyrics / GitHub here
-    # (not at import time) so Streamlit does not kill the process.
-    try:
-        import hymn_catalog as _hc
-
-        n_ly = sum(1 for k in (_hc.LYRICS or {}) if str(k).isdigit())
-        if n_ly < 200:
-            _hc.install_catalog()
-            n_ly = sum(1 for k in (_hc.LYRICS or {}) if str(k).isdigit())
-        if n_ly < 200:
-            _hc.load()
-    except Exception:
-        pass
-
+    catalog_error = ""
     n_show_ly = n_show_idx = 0
     try:
-        import hymn_catalog as _hc2
-        n_show_idx = sum(1 for k in (_hc2.INDEX or {}) if str(k).isdigit())
-        n_show_ly = sum(1 for k in (_hc2.LYRICS or {}) if str(k).isdigit())
-    except Exception:
-        pass
+        idx = hymn_db.load_index()
+        lyr = hymn_db.load_lyrics()
+        n_show_idx = sum(1 for k in idx if str(k).isdigit())
+        n_show_ly = sum(1 for k in lyr if str(k).isdigit())
+        hymn_catalog.INDEX = idx or hymn_catalog.INDEX
+        hymn_catalog.LYRICS = lyr or hymn_catalog.LYRICS
+        if n_show_idx:
+            hymn_catalog.SOURCE = "hymn_db"
+        for _fn in (hymn_lookup._load_index, hymn_lookup._load_lyrics):
+            try:
+                _fn.cache_clear()
+            except Exception:
+                pass
+    except Exception as exc:
+        catalog_error = f"{type(exc).__name__}: {exc}"
+
     if n_show_ly < 200:
         st.error(
             f"배포된 앱이 찬송 DB를 못 읽었습니다 ({n_show_ly}/{n_show_idx}). "
-            "share.streamlit.io 에서 이 앱을 지운 뒤 GitHub "
-            "`pastoreom2-hue/senir-hotel-worship-order` / 브랜치 `master` / "
-            "Main file `app.py` 로 다시 Deploy 해 주세요."
+            "share.streamlit.io 에서 브랜치를 `master` 로, Main file 을 `app.py` 로 맞춘 뒤 "
+            "Reboot 하세요."
         )
+        if catalog_error:
+            st.caption(f"로드 오류: {catalog_error}")
+        with st.expander("찬송 파일 경로 진단", expanded=True):
+            st.code("\n".join(hymn_db.debug_lines()), language="text")
 
     # Warm local/embedded catalogs before filling default hymn titles
     try:
@@ -999,114 +1024,35 @@ def main():
         )
         allow_remote = st.toggle("온라인 보조 검색", value=True)
         st.caption("예배 직전에는 로컬 찬송 DB를 쓰는 것이 가장 안정적입니다.")
-        n_lyrics = 0
-        n_index = 0
-        catalog_error = ""
-        src = ""
-        try:
-            from hymn_index_embed import INDEX as _embed_idx
-            n_index = sum(1 for k in _embed_idx if str(k).isdigit())
-        except Exception as exc:
-            catalog_error = f"embed {type(exc).__name__}: {exc}"
-        try:
-            pkg_idx = hymn_assets.index()
-            pkg_lyr = hymn_assets.lyrics()
-            n_index = max(n_index, sum(1 for k in pkg_idx if str(k).isdigit()))
-            n_lyrics = max(n_lyrics, sum(1 for k in pkg_lyr if str(k).isdigit()))
-            if n_lyrics or n_index:
-                src = "package"
-        except Exception as exc:
-            extra = f"assets {type(exc).__name__}: {exc}"
-            catalog_error = f"{catalog_error} / {extra}" if catalog_error else extra
-        here = Path(__file__).resolve().parent
-        try:
-            from app_paths import load_local_hymn_json
-
-            local_idx = load_local_hymn_json("hymn_index.json")
-            local_lyr = load_local_hymn_json("hymns_lyrics.json")
-            n_index = max(n_index, sum(1 for k in local_idx if str(k).isdigit()))
-            n_lyrics = max(n_lyrics, sum(1 for k in local_lyr if str(k).isdigit()))
-        except Exception as exc:
-            extra = f"path {type(exc).__name__}: {exc}"
-            catalog_error = f"{catalog_error} / {extra}" if catalog_error else extra
-        for data_dir in (
-            here / "hymn_assets",
-            here / "data",
-            Path("/mount/src") / "hymn_assets",
-            Path("/mount/src") / "data",
-            Path.cwd() / "hymn_assets",
-            Path.cwd() / "data",
-        ):
+        src = getattr(hymn_catalog, "SOURCE", "") or "hymn_db"
+        n_index = n_show_idx
+        n_lyrics = n_show_ly
+        if not n_index or not n_lyrics:
             try:
-                idx_path = data_dir / "hymn_index.json"
-                lyr_path = data_dir / "hymns_lyrics.json"
-                if idx_path.is_file():
-                    idx = json.loads(idx_path.read_text(encoding="utf-8-sig"))
-                    n_index = max(n_index, sum(1 for k in idx if str(k).isdigit()))
-                if lyr_path.is_file():
-                    lyr = json.loads(lyr_path.read_text(encoding="utf-8-sig"))
-                    n_lyrics = max(n_lyrics, sum(1 for k in lyr if str(k).isdigit()))
-            except Exception:
-                continue
-        try:
-            import hymn_catalog as _hymn_catalog
-
-            try:
-                _hymn_catalog.load()
-            except Exception:
-                pass
-            cat_idx = getattr(_hymn_catalog, "INDEX", {}) or {}
-            cat_lyr = getattr(_hymn_catalog, "LYRICS", {}) or {}
-            n_index = max(n_index, sum(1 for k in cat_idx if str(k).isdigit()))
-            n_lyrics = max(n_lyrics, sum(1 for k in cat_lyr if str(k).isdigit()))
-            src = getattr(_hymn_catalog, "SOURCE", "") or src
-            err = getattr(_hymn_catalog, "ERROR", "")
-            if err and not catalog_error:
-                catalog_error = err
-        except Exception as exc:
-            extra = f"{type(exc).__name__}: {exc}"
-            catalog_error = f"{catalog_error} / {extra}" if catalog_error else extra
-        st.caption(f"찬송 DB 빌드 {HYMN_DB_BUILD}")
+                n_index = max(n_index, sum(1 for k in hymn_db.load_index() if str(k).isdigit()))
+                n_lyrics = max(n_lyrics, sum(1 for k in hymn_db.load_lyrics() if str(k).isdigit()))
+            except Exception as exc:
+                extra = f"{type(exc).__name__}: {exc}"
+                catalog_error = f"{catalog_error} / {extra}" if catalog_error else extra
+        st.caption(f"찬송 DB 빌드 {HYMN_DB_BUILD} · cwd `{Path.cwd()}`")
         if src:
             st.caption(f"DB 출처: {src}")
-        idx_rel = (here / "data" / "hymn_index.json").is_file()
-        lyr_rel = (here / "data" / "hymns_lyrics.json").is_file()
-        assets_lyrics = (here / "hymn_assets" / "hymns_lyrics.json").is_file()
-        st.caption(
-            f"data/hymn_index.json {'있음' if idx_rel else '없음'} · "
-            f"data/hymns_lyrics.json {'있음' if lyr_rel else '없음'} · "
-            f"hymn_assets/hymns_lyrics.json {'있음' if assets_lyrics else '없음'}"
-        )
+        st.caption("파일명: `data/hymn_index.json` · `data/hymns_lyrics.json` (소문자)")
         st.metric("로컬 찬송 가사", f"{n_lyrics} / {n_index}")
-        if n_lyrics < 200 and not st.session_state.get("_hymn_db_install_tried"):
-            st.session_state["_hymn_db_install_tried"] = True
-            with st.spinner("찬송 DB 645곡을 받는 중…"):
-                try:
-                    import hymn_catalog as _install_cat
-                    info = _install_cat.install_catalog()
-                    app_paths.clear_json_cache()
-                    st.session_state["_hymn_db_install_result"] = info
-                    st.rerun()
-                except Exception as exc:
-                    st.session_state["_hymn_db_install_error"] = f"{type(exc).__name__}: {exc}"
-        if st.session_state.get("_hymn_db_install_error"):
-            st.caption(f"DB 설치 오류: {st.session_state['_hymn_db_install_error']}")
+        if catalog_error:
+            st.caption(f"로드 오류: {catalog_error}")
+        if n_index == 0 or n_lyrics < 200:
+            with st.expander("경로 진단", expanded=n_index == 0):
+                st.code("\n".join(hymn_db.debug_lines()), language="text")
         if n_index == 0:
-            info = app_paths.debug_paths()
             st.error(
                 "찬송 DB를 아직 읽지 못했습니다. Streamlit 설정에서 브랜치를 "
-                "`master` 또는 `feature/worship-html-hymn-pptx`로 맞춘 뒤 Reboot 하세요."
-            )
-            if catalog_error:
-                st.caption(f"import 오류: {catalog_error}")
-            st.caption(
-                f"repo `{info['repo']}` · data `{info['data']}` · "
-                f"marker {info['marker_exists']} · cloud {info['cloud']}"
+                "`master`로 맞춘 뒤 Reboot 하세요."
             )
         elif n_lyrics < 200:
             st.warning(
-                "찬송 가사가 일부만 있습니다. 배포 브랜치에 `data/hymns_lyrics.json`이 "
-                "포함돼 있는지 확인하세요."
+                "찬송 가사가 일부만 있습니다. 배포 브랜치에 `data/hymns_lyrics.json`과 "
+                "`hymn_lyrics_embed.py`가 포함돼 있는지 확인하세요."
             )
         if st.button("찬송 가사 DB 전체 받기 (645곡)", use_container_width=True, key="backfill_hymns"):
             with st.spinner("저장된 찬송 645곡을 앱에 복사하는 중…"):
