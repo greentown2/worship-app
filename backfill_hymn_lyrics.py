@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 import time
 from pathlib import Path
@@ -17,15 +18,17 @@ ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
 
 from hymn_lookup import (  # noqa: E402
-    HYMN_INDEX_PATH,
-    HYMN_LYRICS_PATH,
     _fetch_remote_lyrics,
     _finalize_lyrics,
+    _looks_like_complete_short_hymn,
     _looks_like_error_lyrics,
     _looks_like_incomplete_stub,
     _lyrics_richness,
     _should_try_remote,
 )
+
+HYMN_INDEX_PATH = ROOT / "data" / "hymn_index.json"
+HYMN_LYRICS_PATH = ROOT / "data" / "hymns_lyrics.json"
 
 
 def _load_json(path: Path) -> dict:
@@ -63,7 +66,11 @@ def _save_json(path: Path, data: dict) -> None:
 
 
 def _is_solid(lyrics: list[str]) -> bool:
-    if not lyrics or _looks_like_error_lyrics(lyrics) or _looks_like_incomplete_stub(lyrics):
+    if not lyrics or _looks_like_error_lyrics(lyrics):
+        return False
+    if _looks_like_complete_short_hymn(lyrics):
+        return True
+    if _looks_like_incomplete_stub(lyrics):
         return False
     if _should_try_remote(lyrics) and _lyrics_richness(lyrics) < 200:
         # still accept rich multi-verse even if should_try_remote is conservative
@@ -145,15 +152,25 @@ def main() -> int:
     ap = argparse.ArgumentParser(description="Backfill full hymn lyrics into local DB")
     ap.add_argument("--start", type=int, default=1)
     ap.add_argument("--end", type=int, default=645)
+    ap.add_argument("--numbers", type=str, default="", help="Comma-separated hymn numbers to refresh")
     ap.add_argument("--all", action="store_true", help="Re-fetch even if local looks solid")
     ap.add_argument("--sleep", type=float, default=0.35)
     args = ap.parse_args()
-    stats = backfill(
-        start=args.start,
-        end=args.end,
-        only_missing=not args.all,
-        sleep_s=args.sleep,
-    )
+    if args.numbers:
+        nums = [int(x) for x in re.findall(r"\d+", args.numbers)]
+        stats = {"ok": 0, "improved": 0, "skip": 0, "fail": 0, "total": 0}
+        for n in nums:
+            part = backfill(start=n, end=n, only_missing=False, sleep_s=args.sleep, save_every=1)
+            for k in ("ok", "improved", "skip", "fail"):
+                stats[k] += part[k]
+            stats["total"] = part["total"]
+    else:
+        stats = backfill(
+            start=args.start,
+            end=args.end,
+            only_missing=not args.all,
+            sleep_s=args.sleep,
+        )
     print("DONE", stats, flush=True)
     return 0 if stats["fail"] < stats["ok"] + stats["improved"] + stats["skip"] else 1
 

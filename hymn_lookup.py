@@ -107,7 +107,7 @@ def _merge_into_local_lyrics(number: int, title: str, lyrics: list[str]) -> None
         return
     body = [str(ln).rstrip() for ln in lyrics]
     hangul = len(re.findall(r"[가-힣]", "\n".join(body)))
-    if hangul < 60:
+    if hangul < 60 and not _looks_like_complete_short_hymn(body):
         return
     with _CACHE_LOCK:
         db = dict(_load_lyrics())
@@ -168,6 +168,11 @@ def _clean_lyric_lines(lines: list[str]) -> list[str]:
 _VERSE_START_RE = re.compile(r"^\s*\d+\s*[\.．、)]\s*")
 _REFRAIN_START_RE = re.compile(r"^(후렴|합창|코러스|Refrain|Chorus)\s*[:：]?\s*", re.I)
 _AMEN_TAIL_RE = re.compile(r"\s*아멘\.?\s*$", re.I)
+_CLOSE_TAIL_RE = re.compile(
+    r"(아멘\.?|소서|드리세|기리세|하리라|하리로다|드리옵니다|알도록|비오니)$"
+)
+_HYMN_HEAD_RE = re.compile(r"^\s*(\d{1,3})\s*[\.．、)]\s+\S")
+_AMEN_ONLY_RE = re.compile(r"^(아멘)+$")
 
 
 def _split_verse_groups(lines: list[str]) -> list[list[str]]:
@@ -285,11 +290,67 @@ def _lyrics_richness(lyrics: list[str]) -> int:
     return len(lines) * 10 + hangul + verses * 40
 
 
+def _looks_like_complete_short_hymn(lyrics: list[str]) -> bool:
+    """Amen responses, doxologies, and short closing choruses that are already complete."""
+    lines = [ln.strip() for ln in (lyrics or []) if (ln or "").strip()]
+    if not lines:
+        return False
+    blob = "\n".join(lines)
+    hangul = len(re.findall(r"[가-힣]", blob))
+    amen_n = len(re.findall(r"아멘", blob))
+    compact = re.sub(r"[\s.]+", "", blob)
+    if _AMEN_ONLY_RE.fullmatch(compact):
+        return amen_n >= 1
+    verses = len(re.findall(r"(?m)^\s*\d+\s*[\.．、)]\s*", blob))
+    if verses >= 2:
+        return False
+    last = lines[-1]
+    amen = bool(_AMEN_TAIL_RE.search(last))
+    closes = bool(_CLOSE_TAIL_RE.search(last))
+    if amen_n >= 2 and hangul >= 4:
+        return True
+    if amen and hangul >= 12:
+        return True
+    if closes and 2 <= len(lines) <= 8 and hangul >= 20:
+        return True
+    if 2 <= len(lines) <= 3 and hangul >= 28:
+        return True
+    return False
+
+
+def _trim_next_hymn_bleed(number: int, lines: list[str]) -> tuple[list[str], bool]:
+    """Drop the next hymn if bibletoppt leaked it into this page."""
+    next_n = number + 1
+    out: list[str] = []
+    hit = False
+    for ln in lines:
+        stripped = str(ln).strip()
+        m = _HYMN_HEAD_RE.match(stripped)
+        if m:
+            n = int(m.group(1))
+            if n == next_n or (n >= 10 and n != number):
+                hit = True
+                break
+        glued = re.search(rf"\s+{next_n}\s*[\.．、)]\s+\S", stripped)
+        if glued and len(re.findall(r"[가-힣]", stripped[: glued.start()])) >= 8:
+            kept = stripped[: glued.start()].strip()
+            if kept:
+                out.append(kept)
+            hit = True
+            break
+        out.append(str(ln))
+    while out and not str(out[-1]).strip():
+        out.pop()
+    return out, hit
+
+
 def _looks_like_incomplete_stub(lyrics: list[str]) -> bool:
     """True when lyrics look truncated / stubby and should be replaced by a fuller source."""
     lines = [ln.strip() for ln in (lyrics or []) if (ln or "").strip()]
     if not lines:
         return True
+    if _looks_like_complete_short_hymn(lyrics):
+        return False
     blob = "\n".join(lines)
     hangul = len(re.findall(r"[가-힣]", blob))
     verses = len(re.findall(r"(?m)^\s*\d+\s*[\.．、)]\s*", blob))
@@ -303,7 +364,7 @@ def _looks_like_incomplete_stub(lyrics: list[str]) -> bool:
     if len(lines) <= 3 and hangul < 90:
         return True
     # Unnumbered 4–6 lines without 아멘 — verse 1 of a longer hymn (e.g. 8장)
-    if verses == 0 and 4 <= len(lines) <= 6 and not amen:
+    if verses == 0 and 4 <= len(lines) <= 6 and not amen and not _CLOSE_TAIL_RE.search(last):
         return True
     # Numbered verse groups that are almost empty (e.g. "1. 이 몸의" alone)
     for group in _split_verse_groups(list(lyrics or [])):
@@ -327,6 +388,8 @@ def _should_try_remote(lyrics: list[str] | None) -> bool:
     """Whether a fuller remote copy is worth attempting."""
     if not lyrics:
         return True
+    if _looks_like_complete_short_hymn(lyrics) and not _looks_like_error_lyrics(lyrics):
+        return False
     if _looks_like_error_lyrics(lyrics) or _looks_like_incomplete_stub(lyrics):
         return True
     lines = [ln.strip() for ln in lyrics if (ln or "").strip()]
@@ -352,6 +415,8 @@ def _should_try_remote(lyrics: list[str] | None) -> bool:
 def _looks_like_real_hymn(lyrics: list[str]) -> bool:
     """Reject title-filler and scrape junk; require real hymn structure."""
     lines = [ln.strip() for ln in (lyrics or []) if (ln or "").strip()]
+    if _looks_like_complete_short_hymn(lyrics):
+        return True
     if len(lines) < 4:
         return False
     if _looks_like_error_lyrics(lines):
@@ -401,12 +466,26 @@ def _fetch_remote_lyrics_once(number: int) -> Optional[list[str]]:
         },
     )
     try:
-        with urlopen(req, timeout=6) as resp:
+        with urlopen(req, timeout=12) as resp:
             raw_html = resp.read().decode("utf-8", errors="replace")
     except (URLError, HTTPError, TimeoutError, OSError):
         return None
 
     text = raw_html.replace("&nbsp;", " ").replace("&amp;", "&")
+
+    def _accept(assembled: list[str]) -> bool:
+        if not assembled or _looks_like_error_lyrics(assembled):
+            return False
+        if _looks_like_complete_short_hymn(assembled) or _looks_like_real_hymn(assembled):
+            return True
+        lines = [ln for ln in assembled if str(ln).strip()]
+        hangul = len(re.findall(r"[가-힣]", "\n".join(lines)))
+        return len(lines) >= 4 and hangul >= 24
+
+    def _body_to_lines(body: str) -> list[str]:
+        chunk = re.sub(r"<[^>]+>", "\n", body)
+        chunk = html_lib.unescape(chunk)
+        return _clean_lyric_lines(chunk.splitlines())
 
     # 1) bibletoppt structured verses: "1절" + whitespace-pre-line body
     structured = re.findall(
@@ -418,46 +497,51 @@ def _fetch_remote_lyrics_once(number: int) -> Optional[list[str]]:
     if structured:
         assembled: list[str] = []
         for verse_no, body in structured:
-            chunk = re.sub(r"<[^>]+>", "\n", body)
-            chunk = html_lib.unescape(chunk)
-            lines = _clean_lyric_lines(chunk.splitlines())
+            lines = _body_to_lines(body)
             if not lines:
                 continue
+            lines, hit = _trim_next_hymn_bleed(number, lines)
             if assembled and assembled[-1] != "":
                 assembled.append("")
-            first = lines[0]
-            if not re.match(rf"^\s*{re.escape(verse_no)}\s*[\.．、)]", first):
+            first = lines[0] if lines else ""
+            if first and not re.match(rf"^\s*{re.escape(verse_no)}\s*[\.．、)]", first):
                 lines[0] = f"{verse_no}. {first}"
             assembled.extend(lines)
-        if assembled and (
-            _looks_like_real_hymn(assembled) or len([ln for ln in assembled if ln.strip()]) >= 4
-        ):
+            if hit:
+                break
+        if _accept(assembled):
             return assembled[:240]
 
-    # 1b) Doxology / short hymns: lone whitespace-pre-line blocks (no "N절" headers)
+    # 1b) Current bibletoppt markup: one whitespace-pre-line block per verse
     pre_blocks = re.findall(
         r"<p[^>]*whitespace-pre-line[^>]*>(.*?)</p>",
         text,
         flags=re.DOTALL | re.I,
     )
     if pre_blocks:
-        assembled = []
+        verses: list[list[str]] = []
         for body in pre_blocks:
-            chunk = re.sub(r"<[^>]+>", "\n", body)
-            chunk = html_lib.unescape(chunk)
-            lines = _clean_lyric_lines(chunk.splitlines())
+            lines = _body_to_lines(body)
             if not lines:
                 continue
-            # Skip UI chrome that sneaks into pre-line
             blob = "\n".join(lines)
             if any(x in blob for x in ("다운로드", "파워포인트", "신학적", "연관 성구")):
                 continue
+            lines, hit = _trim_next_hymn_bleed(number, lines)
+            if lines:
+                verses.append(lines)
+            if hit:
+                break
+        assembled = []
+        multi = len(verses) >= 2
+        for idx, verse in enumerate(verses, 1):
             if assembled and assembled[-1] != "":
                 assembled.append("")
-            assembled.extend(lines)
-        if assembled and (
-            _looks_like_real_hymn(assembled) or len([ln for ln in assembled if ln.strip()]) >= 4
-        ):
+            first = verse[0]
+            if multi and not _VERSE_START_RE.match(first):
+                verse = [f"{idx}. {first}"] + verse[1:]
+            assembled.extend(verse)
+        if _accept(assembled):
             return assembled[:240]
 
     # 2) Markdown / heading section
@@ -590,7 +674,7 @@ def lookup_hymn(
         entry = lyrics_db[key]
         t = index_title or entry.get("title") or override or title
         lyrics = _clean_lyric_lines(list(entry.get("lyrics") or []))
-        if lyrics and not _looks_like_error_lyrics(lyrics) and len(lyrics) >= 4:
+        if lyrics and is_usable_lyrics(lyrics) and not _looks_like_error_lyrics(lyrics):
             candidates.append(
                 HymnResult(number=number, title=t, lyrics=lyrics, source="local_lyrics", found_lyrics=True)
             )
@@ -678,9 +762,11 @@ def format_hymn_label(result: HymnResult) -> str:
 def is_usable_lyrics(lyrics: list[str]) -> bool:
     """True when lyrics are suitable for projection slides."""
     cleaned = _clean_lyric_lines(list(lyrics or []))
-    if len(cleaned) < 2:
-        return False
     if _looks_like_error_lyrics(cleaned):
+        return False
+    if _looks_like_complete_short_hymn(cleaned):
+        return True
+    if len(cleaned) < 2:
         return False
     return True
 
