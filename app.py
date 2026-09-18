@@ -25,6 +25,7 @@ import defaults
 import models
 import build_master_templates
 import data_enrich
+import hymn_assets
 import hymn_catalog
 import hymn_lookup
 import html_presentation
@@ -131,7 +132,7 @@ DEFAULT_WORSHIP_LEADER = getattr(defaults, "DEFAULT_WORSHIP_LEADER", "엄영민 
 
 _PDF_VERSION = getattr(pdf_generator, "_PDF_VERSION", "folded-letter")
 
-HYMN_DB_BUILD = "20260918c"
+HYMN_DB_BUILD = "20260918d"
 
 st.set_page_config(
     page_title=f"Grace Worship · 찬송DB {HYMN_DB_BUILD}",
@@ -969,8 +970,24 @@ def main():
             n_index = sum(1 for k in _embed_idx if str(k).isdigit())
         except Exception as exc:
             catalog_error = f"embed {type(exc).__name__}: {exc}"
+        try:
+            pkg_idx = hymn_assets.index()
+            pkg_lyr = hymn_assets.lyrics()
+            n_index = max(n_index, sum(1 for k in pkg_idx if str(k).isdigit()))
+            n_lyrics = max(n_lyrics, sum(1 for k in pkg_lyr if str(k).isdigit()))
+            if n_lyrics or n_index:
+                src = "package"
+        except Exception as exc:
+            extra = f"assets {type(exc).__name__}: {exc}"
+            catalog_error = f"{catalog_error} / {extra}" if catalog_error else extra
         here = Path(__file__).resolve().parent
-        for data_dir in (here / "data", Path("/mount/src/data"), Path.cwd() / "data"):
+        for data_dir in (
+            here / "hymn_assets",
+            here / "data",
+            Path("/mount/src/hymn_assets"),
+            Path("/mount/src/data"),
+            Path.cwd() / "data",
+        ):
             try:
                 idx_path = data_dir / "hymn_index.json"
                 lyr_path = data_dir / "hymns_lyrics.json"
@@ -1003,6 +1020,11 @@ def main():
         st.caption(f"찬송 DB 빌드 {HYMN_DB_BUILD}")
         if src:
             st.caption(f"DB 출처: {src}")
+        assets_lyrics = (here / "hymn_assets" / "hymns_lyrics.json").is_file()
+        st.caption(
+            f"패키지 가사파일 {'있음' if assets_lyrics else '없음'} · "
+            f"app `{here.name}`"
+        )
         st.metric("로컬 찬송 가사", f"{n_lyrics} / {n_index}")
         if n_index == 0:
             info = app_paths.debug_paths()

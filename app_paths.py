@@ -199,9 +199,18 @@ def load_bundled_json(name: str) -> dict:
         candidates.append(bundled)
 
     here = Path(__file__).resolve().parent
+    try:
+        import hymn_assets
+        packaged = hymn_assets.load_json(name)
+        if packaged:
+            candidates.append(packaged)
+    except Exception:
+        pass
     for path in (
+        here / "hymn_assets" / name,
         here / "data" / name,
         Path.cwd() / "data" / name,
+        Path("/mount/src/hymn_assets") / name,
         Path("/mount/src/data") / name,
         Path("/app/data") / name,
         data_dir() / name,

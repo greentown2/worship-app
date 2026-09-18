@@ -58,10 +58,19 @@ def parse_hymn_number(raw: str) -> Optional[int]:
 
 
 def _direct_json(name: str) -> dict:
-    """Read data/*.json next to this file — works on Streamlit Cloud even if cwd is wrong."""
+    """Read bundled JSON first, then data/*.json next to this file."""
+    try:
+        import hymn_assets
+        packaged = hymn_assets.load_json(name)
+        if packaged:
+            return packaged
+    except Exception:
+        pass
     here = Path(__file__).resolve().parent
     for path in (
+        here / "hymn_assets" / name,
         here / "data" / name,
+        Path("/mount/src/hymn_assets") / name,
         Path("/mount/src/data") / name,
         Path("/app/data") / name,
         Path.cwd() / "data" / name,

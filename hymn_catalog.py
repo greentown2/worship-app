@@ -131,6 +131,17 @@ def load() -> str:
     loaded = {attr: {} for attr in files.values()}
     sources: list[str] = []
 
+    try:
+        import hymn_assets
+        for name, attr in files.items():
+            data = hymn_assets.load_json(name)
+            if data and _better(data, loaded[attr]):
+                loaded[attr] = data
+        if _numeric_len(loaded["LYRICS"]) or _numeric_len(loaded["INDEX"]):
+            sources.append("package")
+    except Exception:
+        pass
+
     for data_dir in _search_data_dirs():
         for name, attr in files.items():
             data = _read_json(data_dir / name)
