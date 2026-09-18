@@ -238,10 +238,11 @@ def _order_block(data: WorshipData, hymns: dict[str, ResolvedHymn]) -> str:
             _step("4", "교독문", data.responsive_reading_title),
             _step("5", "찬송가", hymns["2"].label),
             _step("6", "예배의 기도", data.worship_prayer_leader),
-            _step("7", "오늘의 말씀", data.scripture_reference),
-            _step("8", "생명의 말씀", data.sermon_title),
-            _step("9", "감사와 봉헌", hymns["3"].label),
-            _step("10", "축도", data.benediction),
+            _step("7", "성가대 찬양", hymns["CHOIR"].label),
+            _step("8", "오늘의 말씀", data.scripture_reference),
+            _step("9", "생명의 말씀", data.sermon_title),
+            _step("10", "감사와 봉헌", hymns["3"].label),
+            _step("11", "축도", data.benediction),
         ]
     )
 
@@ -272,6 +273,7 @@ def build_token_map(data: WorshipData, *, allow_remote: bool = True) -> dict[str
         },
         "1": resolve_hymn_entry(data.praise_hymn, allow_remote=allow_remote),
         "2": resolve_hymn_entry(data.hymn, allow_remote=allow_remote),
+        "CHOIR": resolve_hymn_entry(data.choir_anthem, allow_remote=allow_remote),
         # Slot 3 = offering (response hymn removed from order)
         "3": resolve_hymn_entry(data.offering_hymn, allow_remote=allow_remote),
     }
@@ -289,6 +291,7 @@ def build_token_map(data: WorshipData, *, allow_remote: bool = True) -> dict[str
         setattr(data, f"prep_hymn_{i}", _to_entry(hymns[f"PREP_{i}"]))
     data.praise_hymn = _to_entry(hymns["1"])
     data.hymn = _to_entry(hymns["2"])
+    data.choir_anthem = _to_entry(hymns["CHOIR"])
     data.offering_hymn = _to_entry(hymns["3"])
     # Keep response_hymn cleared so it never reappears in outputs
     data.response_hymn = HymnEntry()
@@ -387,6 +390,9 @@ def build_token_map(data: WorshipData, *, allow_remote: bool = True) -> dict[str
             "HYMN_LYRICS_1": tokens.get("HYMN_2_LYRICS_1", ""),
             "HYMN_LYRICS_2": tokens.get("HYMN_2_LYRICS_2", ""),
             "HYMN_SCORE": hymns["2"].score_label,
+            "CHOIR_ANTHEM": hymns["CHOIR"].label,
+            "CHOIR_ANTHEM_TITLE": hymns["CHOIR"].title,
+            "CHOIR_ANTHEM_LYRICS": tokens.get("HYMN_CHOIR_LYRICS_1", "") or hymns["CHOIR"].lyrics_text,
             "OFFERING_HYMN": hymns["3"].label,
             "OFFERING_LYRICS": tokens.get("HYMN_3_LYRICS_1", ""),
             "OFFERING_LYRICS_1": tokens.get("HYMN_3_LYRICS_1", ""),

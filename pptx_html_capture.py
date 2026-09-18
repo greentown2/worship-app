@@ -21,7 +21,7 @@ from pptx.util import Inches
 from html_presentation import TEMPLATE_PATH, build_presentation_slides
 from models import WorshipData
 
-_CAPTURE_VERSION = "2026-09-04-pptx-html-capture-v4"
+_CAPTURE_VERSION = "2026-09-06-fs-resume-v1"
 
 ROOT = Path(__file__).resolve().parent
 SLIDE_W_PX = 1920
@@ -43,7 +43,7 @@ html, body {
   height: auto !important;
   font-size: 16px;
 }
-.present-exit-btn, .present-nav-hint, header, .dashboard-layout, #mobile-present-gate {
+.present-exit-btn, .present-fs-btn, .present-nav-hint, header, .dashboard-layout, #mobile-present-gate {
   display: none !important;
 }
 .ppt-page {
@@ -132,7 +132,7 @@ html, body {
 .ppt-page .cover-leader { font-size: 38px !important; }
 .ppt-page .cover-body .text-huge { font-size: 92px !important; line-height: 1.25 !important; }
 .ppt-page .cover-body .text-title { font-size: 56px !important; line-height: 1.35 !important; }
-.ppt-page .order-list { font-size: 34px !important; line-height: 1.38 !important; row-gap: 6px !important; gap: 6px !important; }
+.ppt-page .order-list { font-size: 30px !important; line-height: 1.32 !important; row-gap: 4px !important; gap: 4px !important; }
 .ppt-page .order-stack > h2 { font-size: 48px !important; }
 .ppt-page .order-stack > p { font-size: 22px !important; margin-bottom: 18px !important; }
 .ppt-page .slide-body > .w-full {
@@ -208,7 +208,7 @@ const SLIDES = {payload};
     if (title.indexOf('축도') !== -1 || (slide.type === 'title' && prev.indexOf('축도') !== -1 && !(slide.content || '').trim())) {{
       page.classList.add('ppt-end-large');
     }}
-    if (title.indexOf('안내') !== -1 || title.indexOf('광고') !== -1 || title.indexOf('11.') === 0) {{
+    if (title.indexOf('안내') !== -1 || title.indexOf('광고') !== -1 || title.indexOf('11.') === 0 || title.indexOf('12.') === 0) {{
       page.classList.add('ppt-end-large');
     }}
     page.innerHTML = '<div class="slide-bg-decoration"></div><div class="slide-content active"></div>';

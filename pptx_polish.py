@@ -391,7 +391,7 @@ def refine_slide(slide, spec: dict | None = None) -> None:
         _layout_scripture(roles, center=True)
     elif kind == "sermon":
         _layout_sermon(roles)
-    elif title == "예배 순서" or "order-list" in content or title.startswith("11."):
+    elif title == "예배 순서" or "order-list" in content or title.startswith("11.") or title.startswith("12."):
         _layout_list(roles)
     else:
         _layout_centered_title(roles)

@@ -11,10 +11,15 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 _MARKER = "hymn_index.json"
-_GITHUB_REPO = "pastoreom2-hue/senir-hotel-worship-order"
+_GITHUB_REPOS = (
+    "greentown2/worship-app",
+    "pastoreom2-hue/senir-hotel-worship-order",
+)
+_GITHUB_REPO = _GITHUB_REPOS[0]
 _GITHUB_BRANCHES = (
-    "feature/worship-html-hymn-pptx",
+    "main",
     "master",
+    "feature/worship-html-hymn-pptx",
 )
 _BUNDLED_JSON = frozenset(
     {
@@ -185,11 +190,14 @@ def _github_json(name: str) -> dict:
     if token:
         headers["Authorization"] = f"Bearer {token}"
     urls = [
-        f"https://raw.githubusercontent.com/{_GITHUB_REPO}/{branch}/data/{name}"
+        f"https://raw.githubusercontent.com/{repo}/{branch}/data/{name}"
+        for repo in _GITHUB_REPOS
         for branch in _GITHUB_BRANCHES
     ]
-    urls.append(f"https://cdn.jsdelivr.net/gh/{_GITHUB_REPO}@master/data/{name}")
-    urls.append(f"https://raw.githubusercontent.com/{_GITHUB_REPO}/master/hymn_assets/{name}")
+    for repo in _GITHUB_REPOS:
+        urls.append(f"https://cdn.jsdelivr.net/gh/{repo}@master/data/{name}")
+        urls.append(f"https://raw.githubusercontent.com/{repo}/master/hymn_assets/{name}")
+        urls.append(f"https://raw.githubusercontent.com/{repo}/main/hymn_assets/{name}")
     seen: set[str] = set()
     for url in urls:
         if url in seen:

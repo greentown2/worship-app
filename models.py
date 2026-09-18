@@ -51,7 +51,10 @@ class WorshipData:
     worship_prayer: str = ""
     worship_prayer_leader: str = ""
 
-    # 7. 오늘의 말씀
+    # 7. 성가대 찬양
+    choir_anthem: HymnEntry = field(default_factory=HymnEntry)
+
+    # 8. 오늘의 말씀
     scripture_reference: str = ""
     scripture_text: str = ""
     # 금주의 암송구절 (one verse, shown under scripture on the bulletin)
@@ -61,14 +64,14 @@ class WorshipData:
     # (removed from numbered order — keep empty)
     response_hymn: HymnEntry = field(default_factory=HymnEntry)
 
-    # 8. 생명의 말씀
+    # 9. 생명의 말씀
     sermon_title: str = ""
     sermon_subtitle: str = ""
 
-    # 9. 감사와 봉헌
+    # 10. 감사와 봉헌
     offering_hymn: HymnEntry = field(default_factory=HymnEntry)
 
-    # 10. 축도
+    # 11. 축도
     benediction: str = ""
     closing_note: str = ""
 
@@ -95,6 +98,7 @@ class WorshipData:
             *self.iter_prep_hymns(),
             self.praise_hymn,
             self.hymn,
+            self.choir_anthem,
             self.offering_hymn,
             self.response_hymn,
         ]

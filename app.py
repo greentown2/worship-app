@@ -171,7 +171,7 @@ DEFAULT_WORSHIP_LEADER = getattr(defaults, "DEFAULT_WORSHIP_LEADER", "엄영민 
 
 _PDF_VERSION = getattr(pdf_generator, "_PDF_VERSION", "folded-letter")
 
-HYMN_DB_BUILD = "20260918j"
+HYMN_DB_BUILD = "20260918k"
 
 st.set_page_config(
     page_title=f"Grace Worship · 찬송DB {HYMN_DB_BUILD}",
@@ -1059,7 +1059,7 @@ def main():
             f"찬송 DB {n_lyrics}/{n_index}. 이 숫자가 0/0 이고 빌드가 {HYMN_DB_BUILD}가 "
             "아니면 Streamlit이 예전 코드를 실행 중입니다. "
             "https://share.streamlit.io 에서 앱을 삭제한 뒤 "
-            "`pastoreom2-hue/senir-hotel-worship-order` / 브랜치 `master` / "
+            "`greentown2/worship-app` / 브랜치 `main` / "
             "Main file `app.py` 로 다시 Deploy 하세요."
         )
 

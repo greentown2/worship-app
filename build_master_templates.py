@@ -744,10 +744,13 @@ def build_master_pptx(path: Path) -> Path:
         prs, "6. 예배의 기도", "{{PRAYER_LEADER}}", "{{PRAYER_TEXT}}", body_size=SIZE_BODY, motif="pray"
     )
 
-    # ── 7. Scripture (seed; continues automatically) ────────
+    # ── 7. Choir anthem — intro only ───────────────────────
+    _hymn_intro_slide(prs, "7. 성가대 찬양", "{{CHOIR_ANTHEM}}", token_name="CHOIR_ANTHEM", motif="announce")
+
+    # ── 8. Scripture (seed; continues automatically) ────────
     _reading_slide(
         prs,
-        "7. 오늘의 말씀",
+        "8. 오늘의 말씀",
         "{{SCRIPTURE_REF}}",
         "{{BIBLE_TEXT_1}}",
         body_name="BIBLE_TEXT_1",
@@ -755,7 +758,7 @@ def build_master_pptx(path: Path) -> Path:
         motif="word",
     )
 
-    # ── 8. Sermon — small "설교제목" label + centered title ──
+    # ── 9. Sermon — small "설교제목" label + centered title ──
     s = _blank(prs)
     _bg(s, "sermon")
     _eyebrow(s, "설교제목")
@@ -800,13 +803,13 @@ def build_master_pptx(path: Path) -> Path:
         space_after=0,
     )
 
-    # ── 9. Offering — intro only ───────────────────────────
-    _hymn_intro_slide(prs, "9. 감사와 봉헌", "{{HYMN_3}}", token_name="HYMN_3", motif="give")
+    # ── 10. Offering — intro only ──────────────────────────
+    _hymn_intro_slide(prs, "10. 감사와 봉헌", "{{HYMN_3}}", token_name="HYMN_3", motif="give")
 
-    # ── 10. Benediction ────────────────────────────────────
+    # ── 11. Benediction ────────────────────────────────────
     _reading_slide(
         prs,
-        "10. 축도",
+        "11. 축도",
         "축도",
         "{{BENEDICTION_BODY}}",
         body_name="BENEDICTION_BODY",
@@ -817,7 +820,7 @@ def build_master_pptx(path: Path) -> Path:
     # ── Announcements ──────────────────────────────────────
     _reading_slide(
         prs,
-        "11. 안내 및 광고",
+        "12. 안내 및 광고",
         "안내 및 광고",
         "{{ANNOUNCEMENTS}}",
         body_name="ANNOUNCEMENTS",

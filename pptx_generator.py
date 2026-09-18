@@ -27,7 +27,7 @@ from template_tokens import (
 MasterSource = Union[bytes, bytearray, BinaryIO, str, Path]
 
 # Reload marker for Streamlit — bump when injection logic changes
-_INJECT_VERSION = "2026-09-04-pptx-html-capture-v4"
+_INJECT_VERSION = "2026-09-04-choir-anthem-v1"
 
 _PLACEHOLDER_ONLY_RE = re.compile(r"^\s*\{\{([A-Za-z0-9_]+)\}\}\s*$")
 
@@ -943,8 +943,8 @@ _SERIES_META = {
     "HYMN_PREP_5_LYRICS": ("1. 예배 준비의 시간", "HYMN_PREP_5", True),
     "HYMN_1_LYRICS": ("2. 찬양과 기도", "HYMN_1", True),
     "HYMN_2_LYRICS": ("5. 찬송가", "HYMN_2", True),
-    "HYMN_3_LYRICS": ("9. 감사와 봉헌", "HYMN_3", True),
-    "BIBLE_TEXT": ("7. 오늘의 말씀", "SCRIPTURE_REF", False),
+    "HYMN_3_LYRICS": ("10. 감사와 봉헌", "HYMN_3", True),
+    "BIBLE_TEXT": ("8. 오늘의 말씀", "SCRIPTURE_REF", False),
     "APOSTLES_CREED": ("3. 사도신경", "APOSTLES_CREED_HEADING", False),
     "RESPONSIVE": ("4. 교독문", "RESPONSIVE_TITLE", False),
 }

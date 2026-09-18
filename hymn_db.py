@@ -21,7 +21,11 @@ from urllib.request import Request, urlopen
 HYMN_INDEX_FILE = "hymn_index.json"
 HYMN_LYRICS_FILE = "hymns_lyrics.json"
 _FOLDERS = ("hymn_assets", "data")
-_GITHUB_REPO = "pastoreom2-hue/senir-hotel-worship-order"
+_GITHUB_REPO = "greentown2/worship-app"
+_GITHUB_REPOS = (
+    "greentown2/worship-app",
+    "pastoreom2-hue/senir-hotel-worship-order",
+)
 _LAST_ERROR = ""
 
 
@@ -82,11 +86,12 @@ def _from_package(filename: str) -> dict:
 
 
 def _from_github(filename: str) -> dict:
-    urls = [
-        f"https://raw.githubusercontent.com/{_GITHUB_REPO}/master/hymn_assets/{filename}",
-        f"https://raw.githubusercontent.com/{_GITHUB_REPO}/master/data/{filename}",
-        f"https://cdn.jsdelivr.net/gh/{_GITHUB_REPO}@master/hymn_assets/{filename}",
-    ]
+    urls = []
+    for repo in _GITHUB_REPOS:
+        for ref in ("main", "master"):
+            urls.append(f"https://raw.githubusercontent.com/{repo}/{ref}/hymn_assets/{filename}")
+            urls.append(f"https://raw.githubusercontent.com/{repo}/{ref}/data/{filename}")
+        urls.append(f"https://cdn.jsdelivr.net/gh/{repo}@master/hymn_assets/{filename}")
     headers = {
         "User-Agent": "Mozilla/5.0 (compatible; GraceWorshipPPT/1.0)",
         "Accept": "application/json,text/plain,*/*",

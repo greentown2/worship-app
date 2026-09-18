@@ -22,3 +22,5 @@ _t.pptx
 _test_*.pptx
 output/
 예배 찬송가/
+_tmp_*.py
+_tmp_*.html

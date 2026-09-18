@@ -42,7 +42,7 @@ from models import WorshipData
 from pptx_polish import refine_presentation
 from text_normalize import normalize_breaks
 
-_PPTX_SLIDES_VERSION = "2026-09-04-pptx-html-capture-v4"
+_PPTX_SLIDES_VERSION = "2026-09-04-choir-anthem-v1"
 
 _Y_HEADER = Inches(0.38)
 _Y_TITLE = Inches(0.95)
@@ -314,7 +314,7 @@ def _render_section(slide, spec: dict) -> None:
 def _render_sermon(slide, spec: dict) -> None:
     _bg(slide, "sermon")
     _pair_ornaments(slide, "sermon")
-    _add_header_row(slide, spec.get("header") or "8. 생명의 말씀", spec.get("subtitle") or "")
+    _add_header_row(slide, spec.get("header") or "9. 생명의 말씀", spec.get("subtitle") or "")
     title = (spec.get("title") or "").strip()
     footer = (spec.get("footer") or "").strip()
     _, tf = _textbox(slide, MARGIN_L, Inches(1.7), CONTENT_W, Inches(0.45), role="kicker")
@@ -390,6 +390,7 @@ def _render_title(slide, spec: dict) -> None:
     is_list = (
         title == "예배 순서"
         or title.startswith("11.")
+        or title.startswith("12.")
         or "order-list" in content
         or "list-disc" in content
     )
@@ -400,7 +401,7 @@ def _render_title(slide, spec: dict) -> None:
             _, tf = _textbox(slide, MARGIN_L, Inches(1.12), CONTENT_W, Inches(0.4), role="subtitle")
             _write_lines(tf, [subtitle], size_pt=SIZE_META, align=PP_ALIGN.CENTER, color=MUTED)
         if lines:
-            _add_body(slide, lines, size=22 if title.startswith("11.") else 24, align=PP_ALIGN.LEFT, line_spacing=1.35)
+            _add_body(slide, lines, size=22 if title.startswith(("11.", "12.")) else 24, align=PP_ALIGN.LEFT, line_spacing=1.35)
         return
     _, tf = _textbox(
         slide,

@@ -14,8 +14,12 @@ from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-_GITHUB_REPO = "pastoreom2-hue/senir-hotel-worship-order"
-_GITHUB_REFS = ("master", "feature/worship-html-hymn-pptx")
+_GITHUB_REPOS = (
+    "greentown2/worship-app",
+    "pastoreom2-hue/senir-hotel-worship-order",
+)
+_GITHUB_REPO = _GITHUB_REPOS[0]
+_GITHUB_REFS = ("main", "master", "feature/worship-html-hymn-pptx")
 
 try:
     from hymn_index_embed import INDEX as _EMBEDDED_INDEX
@@ -63,11 +67,14 @@ def _fetch_json(name: str) -> dict:
     if token:
         headers["Authorization"] = f"Bearer {token}"
     urls = [
-        f"https://raw.githubusercontent.com/{_GITHUB_REPO}/{ref}/data/{name}"
+        f"https://raw.githubusercontent.com/{repo}/{ref}/data/{name}"
+        for repo in _GITHUB_REPOS
         for ref in _GITHUB_REFS
     ]
-    urls.append(f"https://cdn.jsdelivr.net/gh/{_GITHUB_REPO}@master/data/{name}")
-    urls.append(f"https://raw.githubusercontent.com/{_GITHUB_REPO}/master/hymn_assets/{name}")
+    for repo in _GITHUB_REPOS:
+        urls.append(f"https://cdn.jsdelivr.net/gh/{repo}@master/data/{name}")
+        urls.append(f"https://raw.githubusercontent.com/{repo}/master/hymn_assets/{name}")
+        urls.append(f"https://raw.githubusercontent.com/{repo}/main/hymn_assets/{name}")
     for url in urls:
         req = Request(url, headers=headers)
         try:

@@ -451,7 +451,30 @@
             line-height: 1;
             pointer-events: auto;
         }
-        body.touch-worship.is-presenting .present-exit-btn {
+        .present-fs-btn {
+            display: none;
+            position: absolute;
+            left: 50%;
+            bottom: max(28px, env(safe-area-inset-bottom));
+            transform: translateX(-50%);
+            z-index: 90;
+            border: 0;
+            border-radius: 999px;
+            padding: 14px 28px;
+            background: linear-gradient(135deg, #2563eb, #4f46e5);
+            color: #fff;
+            font-size: 1.05rem;
+            font-weight: 700;
+            letter-spacing: 0.02em;
+            box-shadow: 0 10px 28px rgba(37, 99, 235, 0.45);
+            pointer-events: auto;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+        body.is-presenting .present-exit-btn {
+            display: block;
+        }
+        body.is-presenting:not(.native-fs) .present-fs-btn {
             display: block;
         }
         .slide-footer {
