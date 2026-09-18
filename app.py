@@ -24,6 +24,7 @@ import defaults
 import models
 import build_master_templates
 import data_enrich
+import hymn_catalog
 import hymn_lookup
 import html_presentation
 import lookup_bundle
@@ -45,6 +46,7 @@ _CODE_MODULES = (
     ("defaults", defaults),
     ("models", models),
     ("scripture_lookup", scripture_lookup),
+    ("hymn_catalog", hymn_catalog),
     ("hymn_lookup", hymn_lookup),
     ("responsive_lookup", responsive_lookup),
     ("data_enrich", data_enrich),
@@ -958,11 +960,32 @@ def main():
         n_lyrics = 0
         n_index = 0
         catalog_error = ""
+        src = ""
         try:
             import hymn_catalog as _hymn_catalog
 
-            n_index = len(getattr(_hymn_catalog, "INDEX", {}) or {})
-            n_lyrics = len(getattr(_hymn_catalog, "LYRICS", {}) or {})
+            try:
+                _hymn_catalog.load()
+            except Exception:
+                pass
+            try:
+                app_paths.clear_json_cache()
+            except Exception:
+                pass
+            from hymn_lookup import _load_index, _load_lyrics
+
+            idx = _load_index() or {}
+            lyr = _load_lyrics() or {}
+            cat_idx = getattr(_hymn_catalog, "INDEX", {}) or {}
+            cat_lyr = getattr(_hymn_catalog, "LYRICS", {}) or {}
+            n_index = max(
+                sum(1 for k in idx if str(k).isdigit()),
+                sum(1 for k in cat_idx if str(k).isdigit()),
+            )
+            n_lyrics = max(
+                sum(1 for k in lyr if str(k).isdigit()),
+                sum(1 for k in cat_lyr if str(k).isdigit()),
+            )
             src = getattr(_hymn_catalog, "SOURCE", "")
             if src:
                 st.caption(f"DB 출처: {src}")
@@ -974,8 +997,8 @@ def main():
             try:
                 from hymn_lookup import _load_index, _load_lyrics
 
-                n_lyrics = len(_load_lyrics())
-                n_index = len(_load_index())
+                n_lyrics = sum(1 for k in (_load_lyrics() or {}) if str(k).isdigit())
+                n_index = sum(1 for k in (_load_index() or {}) if str(k).isdigit())
             except Exception as exc2:
                 catalog_error = f"{catalog_error} / {type(exc2).__name__}: {exc2}"
         st.metric("로컬 찬송 가사", f"{n_lyrics} / {n_index}")

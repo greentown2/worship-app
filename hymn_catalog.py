@@ -1,8 +1,15 @@
-"""Load 찬송가 / 교독문 catalogs from JSON files or GitHub (Streamlit Cloud safe)."""
+"""Load 찬송가 / 교독문 catalogs from JSON files (Streamlit Cloud safe).
+
+GitHub raw fallback is skipped for private repos — it 404s and can stall
+the Streamlit import for minutes. Titles are always available from the
+embedded index even if data/hymn_index.json is missing on disk.
+"""
 
 from __future__ import annotations
 
 import json
+import os
+import tempfile
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
@@ -28,19 +35,37 @@ def _read_json(path: Path) -> dict:
         return {}
 
 
+def _numeric_len(data: dict) -> int:
+    return sum(1 for k in (data or {}) if str(k).isdigit())
+
+
+def _better(new: dict, old: dict) -> bool:
+    return _numeric_len(new) > _numeric_len(old)
+
+
 def _fetch_json(name: str) -> dict:
+    """Last-resort GitHub fetch. Skipped without a token (private repo 404s)."""
+    token = (
+        os.environ.get("GITHUB_TOKEN")
+        or os.environ.get("GH_TOKEN")
+        or os.environ.get("GITHUB_PAT")
+        or ""
+    ).strip()
+    if not token:
+        return {}
     headers = {
         "User-Agent": "Mozilla/5.0 (compatible; GraceWorshipPPT/1.0)",
-        "Accept": "application/json,text/plain,*/*",
+        "Accept": "application/vnd.github+json",
+        "Authorization": f"Bearer {token}",
     }
-    urls = []
-    for ref in _GITHUB_REFS:
-        urls.append(f"https://raw.githubusercontent.com/{_GITHUB_REPO}/{ref}/data/{name}")
-    urls.append(f"https://cdn.jsdelivr.net/gh/{_GITHUB_REPO}@master/data/{name}")
+    urls = [
+        f"https://raw.githubusercontent.com/{_GITHUB_REPO}/{ref}/data/{name}"
+        for ref in _GITHUB_REFS
+    ]
     for url in urls:
         req = Request(url, headers=headers)
         try:
-            with urlopen(req, timeout=25) as resp:
+            with urlopen(req, timeout=4) as resp:
                 raw = resp.read().decode("utf-8", errors="replace")
             data = json.loads(raw)
             if isinstance(data, dict) and data:
@@ -50,16 +75,18 @@ def _fetch_json(name: str) -> dict:
     return {}
 
 
-def _search_roots() -> list[Path]:
+def _search_data_dirs() -> list[Path]:
     here = Path(__file__).resolve().parent
     cwd = Path.cwd().resolve()
     roots = [
-        cwd,
         here,
+        cwd,
         Path("/mount/src"),
         Path("/app"),
+        Path("/workspace"),
         cwd.parent,
         here.parent,
+        Path(tempfile.gettempdir()) / "worship-data",
     ]
     out: list[Path] = []
     seen: set[Path] = set()
@@ -68,11 +95,22 @@ def _search_roots() -> list[Path]:
             root = root.resolve()
         except OSError:
             continue
-        if root in seen:
+        data_dir = root if root.name == "data" or root.name == "worship-data" else root / "data"
+        if data_dir in seen:
             continue
-        seen.add(root)
-        out.append(root)
+        seen.add(data_dir)
+        out.append(data_dir)
     return out
+
+
+def _embedded_index() -> dict:
+    try:
+        from hymn_index_embed import INDEX as embedded
+    except Exception:
+        return {}
+    if not isinstance(embedded, dict):
+        return {}
+    return {str(k): str(v or "") for k, v in embedded.items() if str(k).isdigit()}
 
 
 def load() -> str:
@@ -86,39 +124,44 @@ def load() -> str:
         "responsive_readings.json": "RESPONSIVE_READINGS",
     }
     loaded = {attr: {} for attr in files.values()}
-    source = "empty"
+    sources: list[str] = []
 
-    for root in _search_roots():
-        data_dir = root / "data"
-        if not (data_dir / "hymn_index.json").is_file() and not (data_dir / "hymns_lyrics.json").is_file():
-            continue
+    for data_dir in _search_data_dirs():
         for name, attr in files.items():
             data = _read_json(data_dir / name)
-            if data:
+            if data and _better(data, loaded[attr]):
                 loaded[attr] = data
-        if loaded["INDEX"] or loaded["LYRICS"]:
-            source = f"disk:{data_dir}"
-            break
+                label = f"disk:{data_dir}"
+                if label not in sources:
+                    sources.append(label)
 
-    if not loaded["INDEX"] or not loaded["LYRICS"]:
+    embedded = _embedded_index()
+    if embedded and _better(embedded, loaded["INDEX"]):
+        loaded["INDEX"] = embedded
+        sources.append("embed")
+
+    if _numeric_len(loaded["INDEX"]) < 200 or _numeric_len(loaded["LYRICS"]) < 200:
         for name, attr in files.items():
-            if loaded[attr]:
+            if _numeric_len(loaded[attr]) >= 200:
                 continue
             fetched = _fetch_json(name)
-            if fetched:
+            if fetched and _better(fetched, loaded[attr]):
                 loaded[attr] = fetched
-                source = "github"
-        if source == "empty" and not (loaded["INDEX"] or loaded["LYRICS"]):
-            ERROR = "disk and GitHub hymn JSON both empty"
-        elif not loaded["LYRICS"]:
-            ERROR = "lyrics JSON missing"
+                if "github" not in sources:
+                    sources.append("github")
 
     INDEX = loaded["INDEX"]
     LYRICS = loaded["LYRICS"]
     RESPONSIVE_INDEX = loaded["RESPONSIVE_INDEX"]
     RESPONSIVE_READINGS = loaded["RESPONSIVE_READINGS"]
-    SOURCE = source
-    return source
+    SOURCE = "+".join(sources) if sources else "empty"
+    if _numeric_len(INDEX) == 0 and _numeric_len(LYRICS) == 0:
+        ERROR = "hymn JSON missing next to app.py"
+    elif _numeric_len(LYRICS) == 0:
+        ERROR = "lyrics JSON missing"
+    elif _numeric_len(INDEX) == 0:
+        ERROR = "hymn index missing"
+    return SOURCE
 
 
 load()

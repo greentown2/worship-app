@@ -57,11 +57,21 @@ def parse_hymn_number(raw: str) -> Optional[int]:
 
 def _load_index() -> dict[str, str]:
     raw = load_bundled_json("hymn_index.json")
-    return {
+    out = {
         str(k): str(v or "")
         for k, v in (raw or {}).items()
         if not str(k).startswith("_")
     }
+    if len([k for k in out if str(k).isdigit()]) < 200:
+        lyrics = load_overlay_json("hymns_lyrics.json")
+        for k, v in (lyrics or {}).items():
+            if not str(k).isdigit() or out.get(str(k)):
+                continue
+            if isinstance(v, dict):
+                title = str(v.get("title") or "").strip()
+                if title:
+                    out[str(k)] = title
+    return out
 
 
 def _load_lyrics() -> dict[str, dict]:

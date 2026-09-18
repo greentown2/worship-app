@@ -135,20 +135,24 @@ def read_json(path: Path) -> dict:
 
 
 def _github_json(name: str) -> dict:
+    """Private GitHub repos 404 on raw URLs and stall Streamlit. Skip without a token."""
+    token = (
+        os.environ.get("GITHUB_TOKEN")
+        or os.environ.get("GH_TOKEN")
+        or os.environ.get("GITHUB_PAT")
+        or ""
+    ).strip()
+    if not token:
+        return {}
     headers = {
         "User-Agent": "Mozilla/5.0 (compatible; GraceWorshipPPT/1.0)",
         "Accept": "application/json,text/plain,*/*",
+        "Authorization": f"Bearer {token}",
     }
-    urls = []
-    for branch in _GITHUB_BRANCHES:
-        urls.append(f"https://raw.githubusercontent.com/{_GITHUB_REPO}/{branch}/data/{name}")
-        urls.append(
-            f"https://cdn.jsdelivr.net/gh/{_GITHUB_REPO}@master/data/{name}"
-            if branch == "master"
-            else f"https://raw.githubusercontent.com/{_GITHUB_REPO}/{branch}/data/{name}"
-        )
-    # jsDelivr only for master (branch names with slashes are unreliable)
-    urls.append(f"https://cdn.jsdelivr.net/gh/{_GITHUB_REPO}@master/data/{name}")
+    urls = [
+        f"https://raw.githubusercontent.com/{_GITHUB_REPO}/{branch}/data/{name}"
+        for branch in _GITHUB_BRANCHES
+    ]
     seen: set[str] = set()
     for url in urls:
         if url in seen:
@@ -156,7 +160,7 @@ def _github_json(name: str) -> dict:
         seen.add(url)
         req = Request(url, headers=headers)
         try:
-            with urlopen(req, timeout=25) as resp:
+            with urlopen(req, timeout=4) as resp:
                 raw = resp.read().decode("utf-8", errors="replace")
             data = json.loads(raw)
             if isinstance(data, dict) and data:
@@ -185,16 +189,18 @@ def _from_bundled_module(name: str) -> dict:
 
 
 def load_bundled_json(name: str) -> dict:
-    """Load embedded catalogs first, then disk, then GitHub raw."""
+    """Load the fullest copy from embed/disk (never stall on private GitHub raw)."""
     if name in _JSON_MEMO:
         return _JSON_MEMO[name]
 
+    candidates: list[dict] = []
     bundled = _from_bundled_module(name)
     if bundled:
-        _JSON_MEMO[name] = bundled
-        return bundled
+        candidates.append(bundled)
 
+    here = Path(__file__).resolve().parent
     for path in (
+        here / "data" / name,
         Path.cwd() / "data" / name,
         Path("/mount/src/data") / name,
         Path("/app/data") / name,
@@ -203,9 +209,16 @@ def load_bundled_json(name: str) -> dict:
     ):
         data = read_json(path)
         if data:
-            if name in _BUNDLED_JSON:
-                _JSON_MEMO[name] = data
-            return data
+            candidates.append(data)
+
+    best: dict = {}
+    for data in candidates:
+        if sum(1 for k in data if str(k).isdigit()) > sum(1 for k in best if str(k).isdigit()):
+            best = data
+    if best:
+        if name in _BUNDLED_JSON:
+            _JSON_MEMO[name] = best
+        return best
 
     fetched = _github_json(name) if name in _BUNDLED_JSON else {}
     if fetched:
