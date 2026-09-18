@@ -7,7 +7,7 @@ from pathlib import Path
 
 from pptx import Presentation
 from pptx.dml.color import RGBColor
-from pptx.enum.shapes import MSO_CONNECTOR
+from pptx.enum.shapes import MSO_SHAPE
 from pptx.enum.text import MSO_ANCHOR, PP_ALIGN
 from pptx.util import Inches, Pt
 from reportlab.lib.colors import HexColor
@@ -22,7 +22,7 @@ except OSError:
     pass
 
 # Bump when slide background / type system changes — app auto-reloads master
-MASTER_DESIGN_VERSION = "2026-08-24-worship-prep"
+MASTER_DESIGN_VERSION = "2026-09-18-office-safe-v2"
 
 # ── Design system: senior-friendly sanctuary projection ───
 # Deep slate + warm ivory type + champagne gold + dusty rose accents.
@@ -80,7 +80,7 @@ def _blank(prs: Presentation):
 
 
 def _solid_rect(slide, left, top, width, height, color: RGBColor):
-    shape = slide.shapes.add_shape(1, left, top, width, height)
+    shape = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, left, top, width, height)
     shape.fill.solid()
     shape.fill.fore_color.rgb = color
     shape.line.fill.background()
@@ -88,39 +88,15 @@ def _solid_rect(slide, left, top, width, height, color: RGBColor):
 
 
 def _oval(slide, left, top, width, height, color: RGBColor):
-    from pptx.enum.shapes import MSO_SHAPE
-
-    shape = slide.shapes.add_shape(MSO_SHAPE.OVAL, left, top, width, height)
-    shape.fill.solid()
-    shape.fill.fore_color.rgb = color
-    shape.line.fill.background()
-    return shape
+    # Rectangles only — Office 365 rejects some oval/connector packages from python-pptx.
+    return _solid_rect(slide, left, top, width, height, color)
 
 
 def _rose(slide, cx, cy, *, scale: float = 1.0):
-    """Simple 5-petal dusty rose — quiet corner accent, not a sticker."""
+    """Quiet corner accent (rectangle stand-in — ovals break some Office builds)."""
     s = float(scale)
-    petal = Inches(0.15 * s)
-    for dx, dy in (
-        (0.0, -0.11),
-        (0.10, -0.03),
-        (0.07, 0.09),
-        (-0.07, 0.09),
-        (-0.10, -0.03),
-    ):
-        _oval(
-            slide,
-            cx + Inches(dx * s) - petal / 2,
-            cy + Inches(dy * s) - petal / 2,
-            petal,
-            petal,
-            ROSE_PETAL,
-        )
-    bud = Inches(0.11 * s)
-    _oval(slide, cx - bud / 2, cy - bud / 2, bud, bud, ROSE)
-    # Small leaf
-    leaf_w, leaf_h = Inches(0.14 * s), Inches(0.07 * s)
-    _oval(slide, cx + Inches(0.11 * s), cy + Inches(0.05 * s), leaf_w, leaf_h, ACCENT_SOFT)
+    size = Inches(0.16 * s)
+    return _solid_rect(slide, cx - size / 2, cy - size / 2, size, size, ROSE)
 
 
 def _corner_bracket_mirrored(slide, left, top, arm=Inches(0.35), *, weight=1.15, corner: str = "tl"):
@@ -162,9 +138,8 @@ def _bg(slide, motif: str = "default"):
     layered slate wash + soft reading plane + gold/rose edges.
     Atmosphere without competing with large ivory text.
     """
-    fill = slide.background.fill
-    fill.solid()
-    fill.fore_color.rgb = BG
+    # Full-slide rectangle instead of p:bg — some Office builds reject python-pptx backgrounds.
+    _solid_rect(slide, Inches(0), Inches(0), SLIDE_W, SLIDE_H, BG)
 
     # Soft vertical wash (stepped bands ≈ gentle gradient)
     _solid_rect(slide, Inches(0), Inches(0), SLIDE_W, Inches(2.35), BG_WASH)
@@ -211,16 +186,8 @@ def _bg(slide, motif: str = "default"):
 
 
 def _vline(slide, left, top, height, *, weight=1.1, color=ACCENT):
-    line = slide.shapes.add_connector(
-        MSO_CONNECTOR.STRAIGHT,
-        left,
-        top,
-        left,
-        top + height,
-    )
-    line.line.color.rgb = color
-    line.line.width = Pt(weight)
-    return line
+    w = max(Pt(weight), Inches(0.012))
+    return _solid_rect(slide, left, top, w, height, color)
 
 
 def _corner_bracket(slide, left, top, arm=Inches(0.35), *, weight=1.15):
@@ -230,21 +197,9 @@ def _corner_bracket(slide, left, top, arm=Inches(0.35), *, weight=1.15):
 
 
 def _diamond(slide, cx, cy, half=Inches(0.09)):
-    """Tiny diamond gem."""
-    from pptx.enum.shapes import MSO_SHAPE
-
+    """Tiny gold mark (rectangle — diamond preset is unnecessary)."""
     size = half * 2
-    shape = slide.shapes.add_shape(
-        MSO_SHAPE.DIAMOND,
-        cx - half,
-        cy - half,
-        size,
-        size,
-    )
-    shape.fill.solid()
-    shape.fill.fore_color.rgb = ACCENT
-    shape.line.fill.background()
-    return shape
+    return _solid_rect(slide, cx - half, cy - half, size, size, ACCENT)
 
 
 def _soft_cross(slide, cx, cy, arm=Inches(0.22), *, weight=1.3):
@@ -369,16 +324,8 @@ def _motif(slide, kind: str) -> None:
 
 
 def _hairline(slide, left, top, width, *, weight=1.25):
-    line = slide.shapes.add_connector(
-        MSO_CONNECTOR.STRAIGHT,
-        left,
-        top,
-        left + width,
-        top,
-    )
-    line.line.color.rgb = ACCENT
-    line.line.width = Pt(weight)
-    return line
+    h = max(Pt(weight), Inches(0.012))
+    return _solid_rect(slide, left, top, width, h, ACCENT)
 
 
 def _box(

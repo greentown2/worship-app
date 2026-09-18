@@ -1425,7 +1425,7 @@ def main():
     st.checkbox("주보 PDF에 찬송 가사 포함", key="include_lyrics_ppt")
 
     st.caption(
-        f"주보 {_PDF_VERSION} · PPT {getattr(pptx_generator, '_INJECT_VERSION', 'dev')} · "
+        f"주보 {_PDF_VERSION} · PPT {getattr(pptx_from_slides, '_PPTX_SLIDES_VERSION', 'dev')} · "
         "Letter 11×8.5 접지 + 예배 PPT (찬송 소개만)"
     )
 
@@ -1459,7 +1459,8 @@ def main():
         _week_fp = ""
 
     content_fingerprint = (
-        f"{_PDF_VERSION}|{getattr(pptx_generator, '_INJECT_VERSION', '')}|"
+        f"{_PDF_VERSION}|{getattr(pptx_from_slides, '_PPTX_SLIDES_VERSION', '')}|"
+        f"{getattr(pptx_generator, '_INJECT_VERSION', '')}|"
         f"{data.church_name_ko}|{data.worship_leader}|{data.sermon_title}|{data.sermon_subtitle}|"
         f"{data.scripture_reference}|{(data.scripture_text or '')[:120]}|"
         f"{data.memory_verse_reference}|{(data.memory_verse_text or '')[:80]}|"
@@ -1544,7 +1545,8 @@ def main():
     st.caption("번호를 바꿀 때마다 PDF·PPT를 다시 만들지 않습니다. 다 입력한 뒤 「함께 만들기」를 누르세요.")
 
     engine_key = (
-        f"{_PDF_VERSION}|{design_ver}|{getattr(pptx_generator, '_INJECT_VERSION', '')}|"
+        f"{_PDF_VERSION}|{design_ver}|{getattr(pptx_from_slides, '_PPTX_SLIDES_VERSION', '')}|"
+        f"{getattr(pptx_generator, '_INJECT_VERSION', '')}|"
         f"{getattr(html_presentation, '_HTML_VERSION', 'html')}|hymn-intro"
     )
     prev_engine = st.session_state.get("output_engine")
@@ -1669,6 +1671,10 @@ def main():
                 use_container_width=True,
                 type="primary",
                 key="dl_pptx",
+            )
+            st.caption(
+                "파일 이름이 **worship_날짜.pptx** 인지 확인하세요. "
+                "Downloads의 예전 **master_worship_…pptx** 는 PowerPoint가 열 수 없습니다."
             )
         else:
             make_ppt = st.button(

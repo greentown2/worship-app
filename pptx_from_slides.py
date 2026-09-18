@@ -13,11 +13,15 @@ from typing import Optional
 
 from pptx import Presentation
 from pptx.dml.color import RGBColor
+from pptx.enum.shapes import MSO_SHAPE
 from pptx.enum.text import MSO_ANCHOR, PP_ALIGN
 from pptx.util import Inches, Pt
 
 from build_master_templates import (
     ACCENT,
+    BG,
+    BG_READ,
+    BG_WASH,
     CONG_YELLOW,
     CONTENT_W,
     FG,
@@ -35,15 +39,39 @@ from build_master_templates import (
     SIZE_TITLE,
     SLIDE_H,
     SLIDE_W,
-    _bg,
-    _pair_ornaments,
 )
 from html_presentation import build_presentation_slides
 from models import WorshipData
-from pptx_polish import refine_presentation
 from text_normalize import normalize_breaks
 
-_PPTX_SLIDES_VERSION = "2026-09-04-choir-anthem-v1"
+_PPTX_SLIDES_VERSION = "2026-09-18-office-safe-v2"
+
+
+def _rect(slide, left, top, width, height, color: RGBColor):
+    shape = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, left, top, width, height)
+    shape.fill.solid()
+    shape.fill.fore_color.rgb = color
+    try:
+        shape.line.fill.background()
+    except Exception:
+        pass
+    return shape
+
+
+def _bg_safe(slide, motif: str = "default") -> None:
+    """Background with rectangles only — no connectors/ovals/p:bg (Office rejects those)."""
+    _ = motif
+    _rect(slide, Inches(0), Inches(0), SLIDE_W, SLIDE_H, BG)
+    _rect(slide, Inches(0), Inches(0), SLIDE_W, Inches(2.4), BG_WASH)
+    _rect(
+        slide,
+        MARGIN_L - Inches(0.30),
+        Inches(0.28),
+        CONTENT_W + Inches(0.60),
+        Inches(6.80),
+        BG_READ,
+    )
+    _rect(slide, Inches(0), Inches(0), Inches(0.14), SLIDE_H, ACCENT)
 
 _Y_HEADER = Inches(0.38)
 _Y_TITLE = Inches(0.95)
@@ -117,10 +145,7 @@ def _textbox(
 
 
 def _gold_bar(slide, left, top, width, height, *, role: str = "rule"):
-    shape = slide.shapes.add_shape(1, left, top, width, height)
-    shape.fill.solid()
-    shape.fill.fore_color.rgb = ACCENT
-    shape.line.fill.background()
+    shape = _rect(slide, left, top, width, height, ACCENT)
     if role:
         shape.name = f"role:{role}"
     return shape
@@ -246,7 +271,7 @@ def _add_body(
 
 
 def _render_cover(slide, spec: dict) -> None:
-    _bg(slide, "cover")
+    _bg_safe(slide, "cover")
     title = (spec.get("title") or "주일 예배").strip()
     subtitle = (spec.get("subtitle") or "").strip()
     extra = (spec.get("extra") or "").strip()
@@ -280,8 +305,7 @@ def _render_cover(slide, spec: dict) -> None:
 
 
 def _render_section(slide, spec: dict) -> None:
-    _bg(slide, "section")
-    _pair_ornaments(slide, "section")
+    _bg_safe(slide, "section")
     title = (spec.get("title") or "").strip()
     subtitle = (spec.get("subtitle") or "").strip()
     _, tf = _textbox(
@@ -300,8 +324,7 @@ def _render_section(slide, spec: dict) -> None:
 
 
 def _render_sermon(slide, spec: dict) -> None:
-    _bg(slide, "sermon")
-    _pair_ornaments(slide, "sermon")
+    _bg_safe(slide, "sermon")
     _add_header_row(slide, spec.get("header") or "9. 생명의 말씀", spec.get("subtitle") or "")
     title = (spec.get("title") or "").strip()
     footer = (spec.get("footer") or "").strip()
@@ -323,8 +346,7 @@ def _render_sermon(slide, spec: dict) -> None:
 
 
 def _render_lyric(slide, spec: dict) -> None:
-    _bg(slide, "reading")
-    _pair_ornaments(slide, "reading")
+    _bg_safe(slide, "reading")
     _add_header_row(slide, spec.get("header") or "", spec.get("title") or "")
     lines = _lines(spec.get("content"))
     _add_body(
@@ -339,23 +361,20 @@ def _render_lyric(slide, spec: dict) -> None:
 
 
 def _render_creed(slide, spec: dict) -> None:
-    _bg(slide, "reading")
-    _pair_ornaments(slide, "reading")
+    _bg_safe(slide, "reading")
     _add_header_row(slide, spec.get("header") or "3. 사도신경", "")
     _add_title_bar(slide, spec.get("title") or "사도신경", size=40, color=ACCENT)
     _add_body(slide, _lines(spec.get("content")), size=32, align=PP_ALIGN.CENTER, line_spacing=1.45)
 
 
 def _render_scripture(slide, spec: dict) -> None:
-    _bg(slide, "reading")
-    _pair_ornaments(slide, "reading")
+    _bg_safe(slide, "reading")
     _add_header_row(slide, spec.get("header") or "", spec.get("title") or "")
     _add_body(slide, _lines(spec.get("content")), size=30, align=PP_ALIGN.CENTER, line_spacing=1.45)
 
 
 def _render_responsive(slide, spec: dict) -> None:
-    _bg(slide, "responsive")
-    _pair_ornaments(slide, "responsive")
+    _bg_safe(slide, "responsive")
     _add_header_row(slide, spec.get("header") or "", spec.get("title") or "")
     _add_body(
         slide,
@@ -369,8 +388,7 @@ def _render_responsive(slide, spec: dict) -> None:
 
 
 def _render_title(slide, spec: dict) -> None:
-    _bg(slide, "title")
-    _pair_ornaments(slide, "title")
+    _bg_safe(slide, "title")
     title = (spec.get("title") or "").strip()
     subtitle = (spec.get("subtitle") or "").strip()
     content = spec.get("content") or ""
@@ -460,13 +478,9 @@ def generate_pptx_from_slides(
         try:
             _render_slide(slide, spec)
         except Exception:
-            _bg(slide, "default")
+            _bg_safe(slide, "default")
             _add_title_bar(slide, (spec.get("title") or spec.get("header") or "예배").strip())
-    if not on_cloud:
-        try:
-            refine_presentation(prs, specs)
-        except Exception:
-            pass
+    # Never run polish on the native builder — XML reorder/auto-size breaks Office.
     buf = BytesIO()
     prs.save(buf)
     buf.seek(0)
