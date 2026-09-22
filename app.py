@@ -828,11 +828,11 @@ def _on_responsive_num_change() -> None:
     }
 
 
-def _on_scripture_ref_change() -> None:
+def _fill_scripture(*, allow_remote: bool = True) -> None:
     ref = (st.session_state.get("scripture_reference_input") or "").strip()
     if not ref:
         return
-    result = lookup_scripture(ref, allow_remote=False)
+    result = lookup_scripture(ref, allow_remote=allow_remote)
     parsed = scripture_lookup.parse_scripture_reference(ref)
     if (
         result.found
@@ -858,11 +858,15 @@ def _on_scripture_ref_change() -> None:
         }
 
 
+def _on_scripture_ref_change() -> None:
+    _fill_scripture(allow_remote=True)
+
+
 def _on_memory_verse_change() -> None:
     ref = (st.session_state.get("memory_verse_ref") or "").strip()
     if not ref:
         return
-    result = lookup_scripture(ref, allow_remote=False)
+    result = lookup_scripture(ref, allow_remote=True)
     parsed = scripture_lookup.parse_scripture_reference(ref)
     if (
         result.found
@@ -1082,7 +1086,7 @@ def main():
         if (st.session_state.get("scripture_reference_input") or "").strip() and not (
             st.session_state.get("scripture_text_area") or ""
         ).strip():
-            _on_scripture_ref_change()
+            _fill_scripture(allow_remote=True)
         st.session_state["_bootstrapped_lookups"] = True
     st.session_state["_allow_remote"] = allow_remote
 
@@ -1332,11 +1336,8 @@ def main():
         st.write("")
         st.write("")
         if st.button("본문 불러오기", use_container_width=True, key="fetch_scripture"):
-            try:
-                app_paths.clear_json_cache()
-            except Exception:
-                pass
-            _on_scripture_ref_change()
+            with st.spinner("성경 본문을 불러오는 중…"):
+                _fill_scripture(allow_remote=True)
             st.rerun()
     resolved = st.session_state.get("resolved_scripture")
     if resolved and resolved.get("found"):
@@ -1360,7 +1361,9 @@ def main():
         st.write("")
         st.write("")
         if st.button("한 절 불러오기", use_container_width=True, key="fetch_memory_verse"):
-            _on_memory_verse_change()
+            st.session_state["_allow_remote"] = True
+            with st.spinner("암송 구절을 불러오는 중…"):
+                _on_memory_verse_change()
             st.rerun()
     resolved_mv = st.session_state.get("resolved_memory_verse")
     if resolved_mv and resolved_mv.get("found"):

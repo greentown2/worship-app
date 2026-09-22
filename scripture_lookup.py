@@ -5,13 +5,14 @@ Guarantees readable verse lines for slides/PDF — never a 'missing data' notice
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass
 from typing import Optional
 from urllib.error import URLError, HTTPError
 from urllib.request import Request, urlopen
 
-from app_paths import load_bundled_json, load_overlay_json, save_json
+from app_paths import load_bundled_json, load_overlay_json, read_json, save_json, writable_data_dir
 from text_normalize import normalize_breaks, normalize_line_list
 
 # Use 개역개정 (GAE). Do not use 새번역 / English WEB.
@@ -21,6 +22,9 @@ BSKOREA_URL = (
     "https://www.bskorea.or.kr/bible/korbibReadpage.php"
     "?version=GAE&book={book}&chap={chapter}"
 )
+
+# In-memory chapter maps so a later range of the same chapter does not re-fetch
+_REMOTE_CHAPTER_CACHE: dict[tuple[str, int], dict[int, str]] = {}
 
 # bskorea book slugs (Protestant canon)
 _BOOK_SLUGS: dict[str, str] = {
@@ -312,6 +316,49 @@ def _verse_numbers(verses: list[str]) -> list[int]:
     return nums
 
 
+def _canonical_book_ko(book_en: str) -> str:
+    names = [k for k, v in BOOK_ALIASES.items() if v == book_en]
+    return max(names, key=len) if names else book_en
+
+
+def _verse_map_from_lines(verses: list[str] | None) -> dict[int, str]:
+    by_num: dict[int, str] = {}
+    for line in verses or []:
+        line = normalize_breaks(str(line)).strip()
+        if not line or _is_stub_verse_line(line):
+            continue
+        vm = re.match(r"^(\d+)\s+(.*)$", line)
+        if not vm:
+            continue
+        n = int(vm.group(1))
+        body = vm.group(2).strip()
+        if n < 1 or not body:
+            continue
+        prev = by_num.get(n, "")
+        if n not in by_num or len(body) > len(re.sub(r"^\d+\s+", "", prev)):
+            by_num[n] = f"{n} {body}"
+    return by_num
+
+
+def _range_lines(parsed: ParsedReference, by_num: dict[int, str]) -> list[str]:
+    if not by_num:
+        return []
+    if parsed.verse_start is None:
+        return [by_num[n] for n in sorted(by_num)]
+    end = parsed.verse_end or parsed.verse_start
+    return [by_num[n] for n in range(parsed.verse_start, end + 1) if n in by_num]
+
+
+def _merge_verse_maps(*maps: dict[int, str]) -> dict[int, str]:
+    out: dict[int, str] = {}
+    for src in maps:
+        for n, line in (src or {}).items():
+            prev = out.get(n, "")
+            if n not in out or len(line) > len(prev):
+                out[n] = line
+    return out
+
+
 def _is_complete_range(parsed: ParsedReference, verses: list[str]) -> bool:
     expected = _expected_verse_count(parsed)
     if expected <= 0:
@@ -471,9 +518,18 @@ def _load_cache() -> dict[str, dict]:
 def _save_cache(key: str, reference: str, verses: list[str]) -> None:
     if not verses or _is_bad_verses(verses):
         return
-    cache = _load_cache()
-    cache[key] = {"reference": reference, "verses": list(verses)}
-    save_json("scripture_cache.json", cache)
+    parsed = parse_scripture_reference(reference or key)
+    if parsed:
+        ck = (parsed.book_en.lower(), int(parsed.chapter))
+        _REMOTE_CHAPTER_CACHE[ck] = _merge_verse_maps(
+            _REMOTE_CHAPTER_CACHE.get(ck) or {},
+            _verse_map_from_lines(verses),
+        )
+    raw = read_json(writable_data_dir() / "scripture_cache.json")
+    if not isinstance(raw, dict):
+        raw = {}
+    raw[key] = {"reference": reference, "verses": list(verses)}
+    save_json("scripture_cache.json", raw)
 
 
 def _verse_map_for_chapter(db: dict, parsed: ParsedReference) -> dict[int, str]:
@@ -502,6 +558,12 @@ def _verse_map_for_chapter(db: dict, parsed: ParsedReference) -> dict[int, str]:
 
 
 def _local_lookup(raw: str, parsed: ParsedReference) -> Optional[ScriptureResult]:
+    mem = _REMOTE_CHAPTER_CACHE.get((parsed.book_en.lower(), int(parsed.chapter)))
+    if mem:
+        mem_hit = _result_from_map(parsed, mem, source="cache")
+        if mem_hit:
+            return mem_hit
+
     common = _load_common()
     # Prefer 개역개정 cache — skip leftover 새번역 / cross-book polluted entries
     cache_raw = _load_cache()
@@ -523,27 +585,28 @@ def _local_lookup(raw: str, parsed: ParsedReference) -> Optional[ScriptureResult
             continue
         cache[k] = v
     db = {**common, **cache}
+    canon_ko = _canonical_book_ko(parsed.book_en)
     candidates = [
         raw.strip(),
         _normalize_ref_text(raw),
         parsed.display,
+        f"{canon_ko} {parsed.chapter}:{parsed.verse_start}-{parsed.verse_end}"
+        if parsed.verse_start and parsed.verse_end and parsed.verse_start != parsed.verse_end
+        else "",
+        f"{canon_ko} {parsed.chapter}:{parsed.verse_start}" if parsed.verse_start else "",
+        f"{canon_ko} {parsed.chapter}장",
+        f"{canon_ko} {parsed.chapter}편",
     ]
     if parsed.verse_start and parsed.verse_end and parsed.verse_start != parsed.verse_end:
         candidates.append(
             f"{parsed.book_ko} {parsed.chapter}:{parsed.verse_start}-{parsed.verse_end}"
         )
-        # Full book name form (요 → 요한복음)
-        if parsed.book_ko != "요한복음" and parsed.book_en.lower() == "john":
-            candidates.append(
-                f"요한복음 {parsed.chapter}:{parsed.verse_start}-{parsed.verse_end}"
-            )
     elif parsed.verse_start:
         candidates.append(f"{parsed.book_ko} {parsed.chapter}:{parsed.verse_start}")
-        if parsed.book_en.lower() == "john":
-            candidates.append(f"요한복음 {parsed.chapter}:{parsed.verse_start}")
     else:
         candidates.append(f"{parsed.book_ko} {parsed.chapter}편")
         candidates.append(f"{parsed.book_ko} {parsed.chapter}장")
+    candidates = [c for c in candidates if c]
 
     for key in candidates:
         if key in db:
@@ -629,30 +692,53 @@ def _verses_match_book(parsed: ParsedReference, verses: list[str]) -> bool:
     return True
 
 
-def _fetch_remote(parsed: ParsedReference) -> Optional[ScriptureResult]:
-    """Fetch 개역개정 (GAE) from Korean Bible Society reader — never English WEB."""
-    book = _BOOK_SLUGS.get(parsed.book_en)
-    if not book:
-        return None
-    url = BSKOREA_URL.format(book=book, chapter=parsed.chapter)
+def _http_get(url: str, *, accept: str, timeout: float) -> str:
     req = Request(
         url,
         headers={
             "User-Agent": "GraceWorshipPPT/1.0 (church worship projection)",
-            "Accept": "text/html,application/xhtml+xml",
+            "Accept": accept,
         },
     )
-    try:
-        with urlopen(req, timeout=12) as resp:
-            html = resp.read().decode("utf-8", errors="replace")
-    except (URLError, HTTPError, TimeoutError, OSError):
+    with urlopen(req, timeout=timeout) as resp:
+        return resp.read().decode("utf-8", errors="replace")
+
+
+def _result_from_map(
+    parsed: ParsedReference,
+    by_num: dict[int, str],
+    *,
+    source: str,
+) -> Optional[ScriptureResult]:
+    verses = _normalize_verses(_range_lines(parsed, by_num))
+    if not verses or _is_bad_verses(verses) or _looks_like_rnksv(verses):
         return None
+    if not _verses_match_book(parsed, verses):
+        return None
+    return ScriptureResult(
+        reference=f"{parsed.display} ({TRANSLATION_LABEL})",
+        verses=verses,
+        source=source,
+        found=True,
+    )
+
+
+def _fetch_bsk_chapter(parsed: ParsedReference) -> dict[int, str]:
+    """Fetch 개역개정 (GAE) chapter from Korean Bible Society reader."""
+    book = _BOOK_SLUGS.get(parsed.book_en)
+    if not book:
+        return {}
+    url = BSKOREA_URL.format(book=book, chapter=parsed.chapter)
+    try:
+        html = _http_get(url, accept="text/html,application/xhtml+xml", timeout=8)
+    except (URLError, HTTPError, TimeoutError, OSError):
+        return {}
 
     html_probe = re.sub(r"<[^>]+>", " ", html)
     # Wrong default page guard (old bookcode URL always returned Genesis 1)
     if parsed.book_en.lower() != "genesis" and "창세기 제 1 장" in html_probe:
         if "시편" not in html_probe and parsed.book_ko not in html_probe:
-            return None
+            return {}
 
     text = re.sub(r"<script[\s\S]*?</script>", " ", html, flags=re.I)
     text = re.sub(r"<style[\s\S]*?</style>", " ", text, flags=re.I)
@@ -688,29 +774,66 @@ def _fetch_remote(parsed: ParsedReference) -> Optional[ScriptureResult]:
         if len(body) < 6:
             continue
         if n not in found or len(body) > len(found[n]):
-            found[n] = body
+            found[n] = f"{n} {body}"
+    return found
 
-    if not found:
-        return None
 
-    vs = parsed.verse_start or min(found)
-    ve = parsed.verse_end or parsed.verse_start or max(found)
-    verses: list[str] = []
-    for n in range(vs, ve + 1):
-        if n in found:
-            verses.append(f"{n} {found[n]}")
+def _fetch_bolls_chapter(parsed: ParsedReference) -> dict[int, str]:
+    """JSON fallback (KRV) when the Bible Society page is slow or down."""
+    book_id = list(_BOOK_SLUGS).index(parsed.book_en) + 1 if parsed.book_en in _BOOK_SLUGS else 0
+    if book_id < 1 or not parsed.chapter:
+        return {}
+    found: dict[int, str] = {}
+    for trans in ("KRV", "KOR"):
+        url = f"https://bolls.life/get-text/{trans}/{book_id}/{parsed.chapter}/"
+        try:
+            raw = _http_get(url, accept="application/json", timeout=8)
+            rows = json.loads(raw)
+        except (URLError, HTTPError, TimeoutError, OSError, json.JSONDecodeError, ValueError):
+            continue
+        if not isinstance(rows, list):
+            continue
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            try:
+                n = int(row.get("verse") or 0)
+            except (TypeError, ValueError):
+                continue
+            body = clean_verse_text(str(row.get("text") or ""))
+            if n < 1 or len(body) < 4:
+                continue
+            found[n] = f"{n} {body}"
+        if found:
+            break
+    return found
 
-    if not verses or _is_bad_verses(verses) or _looks_like_rnksv(verses):
-        return None
-    if not _verses_match_book(parsed, verses):
-        return None
 
-    return ScriptureResult(
-        reference=f"{parsed.display} ({TRANSLATION_LABEL})",
-        verses=verses,
-        source="remote",
-        found=True,
-    )
+def _fetch_remote(parsed: ParsedReference) -> Optional[ScriptureResult]:
+    """Fetch a chapter (retry + fallback), then slice the requested verses."""
+    cache_key = (parsed.book_en.lower(), int(parsed.chapter))
+    by_num = dict(_REMOTE_CHAPTER_CACHE.get(cache_key) or {})
+    if _is_complete_range(parsed, _range_lines(parsed, by_num)):
+        return _result_from_map(parsed, by_num, source="cache")
+
+    for _ in range(2):
+        by_num = _merge_verse_maps(by_num, _fetch_bsk_chapter(parsed))
+        if _is_complete_range(parsed, _range_lines(parsed, by_num)):
+            break
+    if not _is_complete_range(parsed, _range_lines(parsed, by_num)):
+        by_num = _merge_verse_maps(by_num, _fetch_bolls_chapter(parsed))
+
+    if by_num:
+        _REMOTE_CHAPTER_CACHE[cache_key] = by_num
+        canon = _canonical_book_ko(parsed.book_en)
+        chapter_lines = [by_num[n] for n in sorted(by_num)]
+        _save_cache(
+            f"{canon} {parsed.chapter}장",
+            f"{canon} {parsed.chapter}장 ({TRANSLATION_LABEL})",
+            chapter_lines,
+        )
+
+    return _result_from_map(parsed, by_num, source="remote")
 
 
 def _generated_reading(parsed: ParsedReference) -> ScriptureResult:
@@ -746,7 +869,9 @@ def lookup_scripture(
         if local and local.verses and _looks_like_rnksv(local.verses):
             local = None
 
-        # Prefer complete 개역개정 local, else remote 개역개정
+        merged = _verse_map_from_lines(local.verses if local else None)
+
+        # Prefer complete 개역개정 local, else fill gaps from remote
         if (
             local
             and _is_complete_range(parsed, local.verses)
@@ -759,17 +884,17 @@ def lookup_scripture(
 
         if allow_remote:
             remote = _fetch_remote(parsed)
-            if (
-                remote
-                and remote.verses
-                and not _is_bad_verses(remote.verses)
-                and not _looks_like_rnksv(remote.verses)
-                and _verses_match_book(parsed, remote.verses)
-            ):
-                remote.verses = _normalize_verses(remote.verses)
-                remote.reference = f"{parsed.display} ({TRANSLATION_LABEL})"
-                _save_cache(parsed.display, remote.reference, remote.verses)
-                return remote
+            if remote and remote.verses:
+                merged = _merge_verse_maps(merged, _verse_map_from_lines(remote.verses))
+            combined = _result_from_map(
+                parsed,
+                merged,
+                source=(remote.source if remote and remote.verses else "local"),
+            )
+            if combined:
+                combined.reference = f"{parsed.display} ({TRANSLATION_LABEL})"
+                _save_cache(parsed.display, combined.reference, combined.verses)
+                return combined
 
         if (
             local

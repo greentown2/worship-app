@@ -296,16 +296,30 @@ def save_json(name: str, payload: dict) -> None:
     path = writable_data_dir() / name
     tmp = path.with_suffix(path.suffix + ".tmp")
     text = json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
+    saved = False
     try:
         writable_data_dir().mkdir(parents=True, exist_ok=True)
-        tmp.write_text(text, encoding="utf-8")
-        tmp.replace(path)
     except OSError:
+        pass
+    for _ in range(3):
         try:
-            path.write_text(text, encoding="utf-8")
+            tmp.write_text(text, encoding="utf-8")
+            try:
+                tmp.replace(path)
+            except OSError:
+                path.write_text(text, encoding="utf-8")
+                try:
+                    tmp.unlink(missing_ok=True)
+                except OSError:
+                    pass
+            saved = True
+            break
         except OSError:
-            return
-    _JSON_MEMO.pop(name, None)
+            continue
+    # Keep this process consistent even when OneDrive locks the file
+    _JSON_MEMO[name] = payload
+    if not saved:
+        return
 
 
 def clear_json_cache() -> None:

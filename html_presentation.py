@@ -23,7 +23,7 @@ from app_paths import repo_root
 ROOT = repo_root()
 TEMPLATE_PATH = ROOT / "worship_presentation.html"
 
-_HTML_VERSION = "2026-09-06-fs-resume-v1"
+_HTML_VERSION = "2026-09-21-scripture-retry-v1"
 
 
 def _esc(text: str) -> str:

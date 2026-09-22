@@ -315,6 +315,14 @@
             font-size: 3.9vmin;
             line-height: 1.45;
         }
+        body.touch-worship.is-presenting .scripture-body .text-body {
+            font-size: 4.9vmin;
+            line-height: 1.42;
+        }
+        body.touch-worship.is-presenting .creed-body .text-body {
+            font-size: 4.4vmin;
+            line-height: 1.42;
+        }
         body.touch-worship.is-presenting .text-huge {
             font-size: 6.5vmin;
         }
@@ -490,6 +498,8 @@
         .text-title { font-size: 5.5vh; line-height: 1.4; }
         .text-lyric { font-size: 7.4vh; line-height: 1.5; font-weight: 600; text-shadow: 2px 2px 8px rgba(0,0,0,0.8); }
         .text-body { font-size: 4.2vh; line-height: 1.7; }
+        .scripture-body .text-body { font-size: 5.4vh; line-height: 1.6; }
+        .creed-body .text-body { font-size: 4.9vh; line-height: 1.65; }
         .text-responsive { font-size: 7.4vh; line-height: 1.5; font-weight: 600; }
 
         .leader-text { color: #ffe066; font-weight: 600; }

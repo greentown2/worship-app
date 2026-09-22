@@ -645,7 +645,7 @@ def _enrich_parsed_lookups(result: ParsedBulletin) -> None:
             )
 
     if result.scripture_reference and not (result.scripture_text or "").strip():
-        sc = lookup_scripture(result.scripture_reference, allow_remote=False)
+        sc = lookup_scripture(result.scripture_reference, allow_remote=True)
         if sc.found and sc.verses:
             result.scripture_text = normalize_breaks(verses_to_body(sc.verses))
             # Keep parseable ref in the form (no translation label suffix)
@@ -662,7 +662,7 @@ def _enrich_parsed_lookups(result: ParsedBulletin) -> None:
         # Prefer clean local 개역개정 when OCR body is thin
         body = (result.scripture_text or "").strip()
         if body and len(body) < 40:
-            sc = lookup_scripture(result.scripture_reference, allow_remote=False)
+            sc = lookup_scripture(result.scripture_reference, allow_remote=True)
             if sc.found and sc.verses:
                 result.scripture_text = normalize_breaks(verses_to_body(sc.verses))
                 from scripture_lookup import parse_scripture_reference
