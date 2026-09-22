@@ -154,6 +154,7 @@ from defaults import (
     DEFAULT_APOSTLES_CREED,
     DEFAULT_BENEDICTION,
     DEFAULT_RESPONSIVE_READING,
+    DEFAULT_PREACHER,
     DEFAULT_SERVICE_TIME,
     DEFAULT_SERVICE_TITLE,
     DEFAULT_WORSHIP_PRAYER,
@@ -277,7 +278,7 @@ def _init_state():
         "church_ko": CHURCH_NAME_KO,
         "service_title": DEFAULT_SERVICE_TITLE,
         "service_time": DEFAULT_SERVICE_TIME,
-        "preacher": "",
+        "preacher": DEFAULT_PREACHER,
         "worship_leader": DEFAULT_WORSHIP_LEADER,
         **{
             k: ""
@@ -338,6 +339,8 @@ def _init_state():
         st.session_state["church_ko"] = CHURCH_NAME_KO
     # Always use the full official English name on the cover
     st.session_state["church_en"] = CHURCH_NAME_EN
+    st.session_state["service_time"] = DEFAULT_SERVICE_TIME
+    st.session_state["preacher"] = DEFAULT_PREACHER
     if not (st.session_state.get("worship_leader") or "").strip():
         st.session_state["worship_leader"] = DEFAULT_WORSHIP_LEADER
     # Keep creed dense (no blank paragraph gaps); prefer user-saved template
@@ -638,8 +641,8 @@ def _build_worship_data(service_date, *, allow_remote: bool, force_lyrics: bool 
         ),
         service_title=(st.session_state.get("service_title") or DEFAULT_SERVICE_TITLE).strip(),
         date=service_date.strftime("%Y년 %m월 %d일"),
-        service_time=(st.session_state.get("service_time") or DEFAULT_SERVICE_TIME).strip(),
-        preacher=(st.session_state.get("preacher") or "").strip(),
+        service_time=DEFAULT_SERVICE_TIME,
+        preacher=DEFAULT_PREACHER,
         worship_leader=(st.session_state.get("worship_leader") or DEFAULT_WORSHIP_LEADER).strip(),
         **{
             f"prep_hymn_{i}": _hymn_from_keys(
@@ -1232,8 +1235,20 @@ def main():
     st.text_input("교회명 (KO)", key="church_ko")
     st.text_input("예배 제목", key="service_title")
     service_date = st.date_input("날짜", value=date.today(), key="service_date")
-    st.text_input("예배 시간", key="service_time")
-    st.text_input("설교자", key="preacher")
+    st.text_input(
+        "예배 시간",
+        value=DEFAULT_SERVICE_TIME,
+        disabled=True,
+        help="주일 예배는 오전 9:30으로 고정됩니다.",
+    )
+    st.session_state["service_time"] = DEFAULT_SERVICE_TIME
+    st.text_input(
+        "설교자",
+        value=DEFAULT_PREACHER,
+        disabled=True,
+        help="설교자는 엄영민 목사로 고정됩니다.",
+    )
+    st.session_state["preacher"] = DEFAULT_PREACHER
     st.text_input("예배 인도자", key="worship_leader", placeholder="엄영민 목사")
 
     st.info(

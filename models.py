@@ -23,8 +23,8 @@ class WorshipData:
     church_name_ko: str = "플러톤 빌라 교회"
     service_title: str = "주일 예배"
     date: str = ""
-    service_time: str = "오전 11:00"
-    preacher: str = ""
+    service_time: str = "오전 9:30"
+    preacher: str = "엄영민 목사"
     worship_leader: str = "엄영민 목사"
 
     # 1. 예배 준비의 시간 (up to 5 hymns)

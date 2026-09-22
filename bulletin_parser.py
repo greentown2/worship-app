@@ -679,8 +679,6 @@ def result_to_session_updates(p: ParsedBulletin) -> dict[str, str]:
         "church_en": p.church_name_en,
         "church_ko": p.church_name_ko,
         "service_title": p.service_title,
-        "service_time": p.service_time,
-        "preacher": p.preacher,
         "prep_hymn_1_num": p.prep_hymn_1_num,
         "prep_hymn_1_title": p.prep_hymn_1_title,
         "prep_hymn_2_num": p.prep_hymn_2_num,

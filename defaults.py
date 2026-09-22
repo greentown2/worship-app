@@ -16,7 +16,8 @@ CHURCH_NAME_KO_ALIASES = (
     "플러톤 빌라교회",
 )
 DEFAULT_SERVICE_TITLE = "주일 예배"
-DEFAULT_SERVICE_TIME = "오전 11:00"
+DEFAULT_SERVICE_TIME = "오전 9:30"
+DEFAULT_PREACHER = "엄영민 목사"
 DEFAULT_WORSHIP_LEADER = "엄영민 목사"
 
 # No blank lines — PPT shows exactly 4 dense lines per slide
